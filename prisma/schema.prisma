@@ -1,32 +1,905 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// Loan Ops Platform - Comprehensive Prisma Schema
+// Multi-tenant architecture with Owner, Agent, Candidate portals
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================
+// CORE: ORGANIZATION & USERS (Multi-Tenant)
+// ============================================================
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  logoUrl   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users          User[]
+  candidates     Candidate[]
+  applications   Application[]
+  loans          Loan[]
+  agents         AgentProfile[]
+  agreements     AgreementTemplate[]
+  auditLogs      AuditLog[]
+  notifications  Notification[]
+  supportTickets SupportTicket[]
+  ledgerEntries  LedgerEntry[]
+  qrLinks        QrLink[]
+  payments       Payment[]
+  collectionTasks CollectionTask[]
+}
+
+enum UserRole {
+  OWNER
+  AGENT
+  CANDIDATE
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String   @id @default(cuid())
+  organizationId String
+  email          String   @unique
+  passwordHash   String
+  name           String
+  phone          String?
+  role           UserRole
+  isActive       Boolean  @default(true)
+  lastLoginAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization       Organization      @relation(fields: [organizationId], references: [id])
+  agentProfile       AgentProfile?
+  auditLogs          AuditLog[]
+  notifications      Notification[]
+  qrLinks            QrLink[]
+  cashCollections    CashCollection[]
+  cashVerifications  CashCollection[]  @relation("VerifiedBy")
+  followUps          FollowUp[]
+  ptps               Ptp[]
+  escalations        Escalation[]
+  disbursements      Disbursement[]
+  refunds            Refund[]
+  corrections        FinancialCorrection[]
+
+  @@index([organizationId])
+  @@index([role])
 }
 
-model Post {
-  id        String   @id @default(cuid())
-  title     String
-  content   String?
-  published Boolean  @default(false)
-  authorId  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model AgentProfile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  organizationId String
+  employeeCode   String?
+  zone           String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+  candidates   Candidate[]
+  tasks        CollectionTask[] @relation("AssignedAgent")
+
+  @@index([organizationId])
+}
+
+// ============================================================
+// CANDIDATES (Borrowers)
+// ============================================================
+
+model Candidate {
+  id             String   @id @default(cuid())
+  organizationId String
+  fullName       String
+  mobile         String
+  email          String?
+  dob            DateTime?
+  address        String?
+  occupation     String?
+  employer       String?
+  monthlyIncome  Int? // in paise
+  existingObligations Int? // in paise
+  bankName       String?
+  bankAccount    String?
+  bankIfsc       String?
+  upiId          String?
+  assignedAgentId String?
+  status         CandidateStatus @default(ACTIVE)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  assignedAgent   AgentProfile? @relation(fields: [assignedAgentId], references: [id])
+  applications    Application[]
+  loans           Loan[]
+  kycDocs         KycDocument[]
+  documents       Document[]
+  payments        Payment[]
+  cashCollections CashCollection[]
+  followUps       FollowUp[]
+  ptps            Ptp[]
+  escalations     Escalation[]
+  collectionTasks CollectionTask[]
+  supportTickets  SupportTicket[]
+  notifications   Notification[]
+
+  @@index([organizationId])
+  @@index([mobile])
+  @@index([assignedAgentId])
+}
+
+enum CandidateStatus {
+  ACTIVE
+  INACTIVE
+  BLACKLISTED
+}
+
+// ============================================================
+// APPLICATIONS (Loan Applications)
+// ============================================================
+
+enum ApplicationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  INFORMATION_REQUESTED
+}
+
+enum InterestType {
+  PERCENTAGE
+  FIXED
+  NONE
+}
+
+enum RepaymentFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+model Application {
+  id             String   @id @default(cuid())
+  organizationId String
+  candidateId    String
+  qrLinkId       String?  @unique
+  applicationNumber String @unique
+  // Loan configuration
+  principalAmount Int // in paise
+  currency       String  @default("INR")
+  purpose        String
+  interestType   InterestType
+  interestRate   Int? // basis points (1% = 100)
+  fixedInterest  Int? // in paise
+  frequency      RepaymentFrequency
+  tenureCount    Int // number of units
+  installments   Int
+  firstDueDate   DateTime
+  processingFee  Int? // in paise
+  otherFees      Int? // in paise
+  totalRepayable Int? // in paise (preview, backend authoritative)
+  installmentAmount Int? // in paise (preview)
+  finalDueDate   DateTime?
+  status         ApplicationStatus @default(DRAFT)
+  // KYC snapshot
+  kycAadhaar     String?
+  kycPan         String?
+  kycStatus      String? // PENDING/VERIFIED/REJECTED
+  // Agreement
+  agreementTemplateId String?
+  agreementVersion     String?
+  agreementAcceptedAt  DateTime?
+  agreementSnapshot    Json?
+  // Review
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNotes    String?
+  rejectionReason String?
+  infoRequested  String?
+  // Audit
+  submittedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  candidate     Candidate    @relation(fields: [candidateId], references: [id])
+  qrLink        QrLink?      @relation(fields: [qrLinkId], references: [id])
+  loan          Loan?
+
+  @@index([organizationId])
+  @@index([candidateId])
+  @@index([status])
+}
+
+// ============================================================
+// QR / SECURE LINKS (Onboarding)
+// ============================================================
+
+model QrLink {
+  id             String   @id @default(cuid())
+  organizationId String
+  token          String   @unique
+  createdById     String
+  // Pre-configured loan parameters (optional)
+  prePrincipal   Int?
+  preInterestType InterestType?
+  preInterestRate Int?
+  preFixedInterest Int?
+  preFrequency   RepaymentFrequency?
+  preTenure      Int?
+  preInstallments Int?
+  preFirstDueDate DateTime?
+  prePurpose     String?
+  // Meta
+  expiresAt      DateTime?
+  isRevoked      Boolean  @default(false)
+  isUsed         Boolean  @default(false)
+  submittedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  createdBy    User         @relation(fields: [createdById], references: [id])
+  application  Application?
+
+  @@index([organizationId])
+  @@index([token])
+}
+
+// ============================================================
+// AGREEMENTS
+// ============================================================
+
+model AgreementTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  version        String
+  body           String // markdown / html
+  effectiveDate  DateTime
+  isActive       Boolean @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@unique([organizationId, version])
+}
+
+// ============================================================
+// LOANS
+// ============================================================
+
+enum LoanStatus {
+  PENDING_DISBURSEMENT
+  ACTIVE
+  CLOSED
+  DEFAULTED
+  WRITTEN_OFF
+}
+
+model Loan {
+  id             String   @id @default(cuid())
+  organizationId String
+  loanNumber     String   @unique
+  candidateId    String
+  applicationId  String?  @unique
+  // Immutable term snapshot
+  principalAmount Int // paise
+  interestType   InterestType
+  interestRate   Int?
+  fixedInterest  Int?
+  frequency      RepaymentFrequency
+  installments   Int
+  firstDueDate   DateTime
+  finalDueDate   DateTime
+  processingFee  Int?
+  otherFees      Int?
+  totalRepayable Int
+  installmentAmount Int
+  termsSnapshot  Json
+  status         LoanStatus @default(PENDING_DISBURSEMENT)
+  disbursedAt    DateTime?
+  closedAt       DateTime?
+  outstandingPrincipal Int @default(0)
+  outstandingInterest  Int @default(0)
+  outstandingFees      Int @default(0)
+  totalCollected  Int @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  candidate      Candidate    @relation(fields: [candidateId], references: [id])
+  application    Application? @relation(fields: [applicationId], references: [id])
+  schedule       Installment[]
+  payments       Payment[]
+  cashCollections CashCollection[]
+  ptps           Ptp[]
+  escalations    Escalation[]
+  collectionTasks CollectionTask[]
+  followUps      FollowUp[]
+  disbursements  Disbursement[]
+  refunds        Refund[]
+  documents      Document[]
+  corrections    FinancialCorrection[]
+
+  @@index([organizationId])
+  @@index([candidateId])
+  @@index([status])
+}
+
+enum InstallmentStatus {
+  UPCOMING
+  DUE
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+}
+
+model Installment {
+  id              String   @id @default(cuid())
+  loanId          String
+  installmentNumber Int
+  dueDate         DateTime
+  openingPrincipal Int // paise
+  principalComponent Int
+  interestComponent Int
+  feesComponent   Int
+  totalDue        Int
+  closingPrincipal Int
+  paidAmount      Int @default(0)
+  status          InstallmentStatus @default(UPCOMING)
+  paidAt          DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  loan    Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@index([loanId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+// ============================================================
+// DISBURSEMENT
+// ============================================================
+
+enum DisbursementMethod {
+  ONLINE
+  OFFLINE
+}
+
+enum DisbursementStatus {
+  INITIATED
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Disbursement {
+  id             String   @id @default(cuid())
+  loanId         String
+  method         DisbursementMethod
+  amount         Int // paise
+  reference      String?
+  notes          String?
+  proofUrl       String?
+  status         DisbursementStatus @default(INITIATED)
+  initiatedById   String
+  initiatedAt    DateTime @default(now())
+  completedAt    DateTime?
+
+  loan      Loan @relation(fields: [loanId], references: [id])
+  initiatedBy User @relation(fields: [initiatedById], references: [id])
+
+  @@index([loanId])
+}
+
+// ============================================================
+// PAYMENTS
+// ============================================================
+
+enum PaymentMethod {
+  ONLINE_UPI
+  ONLINE_NETBANKING
+  ONLINE_CARD
+  CASH
+  BANK_TRANSFER
+}
+
+enum PaymentStatus {
+  INITIATED
+  PENDING_VERIFICATION
+  VERIFIED
+  ALLOCATED
+  FAILED
+  REJECTED
+}
+
+model Payment {
+  id             String   @id @default(cuid())
+  organizationId String
+  paymentNumber  String   @unique
+  loanId         String
+  candidateId    String
+  method         PaymentMethod
+  amount         Int // paise
+  reference      String?
+  proofUrl       String?
+  status         PaymentStatus @default(INITIATED)
+  // Allocation breakdown
+  allocatedFees      Int @default(0)
+  allocatedInterest Int @default(0)
+  allocatedPrincipal Int @default(0)
+  unallocated       Int @default(0)
+  allocatedAt       DateTime?
+  verifiedById      String?
+  verifiedAt        DateTime?
+  receiptNumber     String?
+  receiptUrl        String?
+  notes             String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  loan         Loan          @relation(fields: [loanId], references: [id])
+  candidate    Candidate     @relation(fields: [candidateId], references: [id])
+
+  @@index([organizationId])
+  @@index([loanId])
+  @@index([candidateId])
+  @@index([status])
+}
+
+enum CashCollectionStatus {
+  RECORDED
+  PENDING_VERIFICATION
+  VERIFIED
+  ALLOCATED
+  REJECTED
+}
+
+model CashCollection {
+  id             String   @id @default(cuid())
+  loanId         String
+  candidateId    String
+  recordedById   String
+  verifiedById   String?
+  amount         Int // paise
+  collectionDate DateTime
+  collectionTime String
+  installmentNumber Int?
+  reference      String?
+  notes          String?
+  proofUrl       String?
+  status         CashCollectionStatus @default(PENDING_VERIFICATION)
+  rejectionReason String?
+  createdAt      DateTime @default(now())
+  verifiedAt     DateTime?
+  updatedAt      DateTime @updatedAt
+
+  loan        Loan      @relation(fields: [loanId], references: [id])
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+  recordedBy  User      @relation(fields: [recordedById], references: [id])
+  verifiedBy  User?     @relation("VerifiedBy", fields: [verifiedById], references: [id])
+
+  @@index([loanId])
+  @@index([candidateId])
+  @@index([status])
+}
+
+// ============================================================
+// COLLECTIONS / TASKS / FOLLOW-UPS / PTP
+// ============================================================
+
+enum TaskStatus {
+  OPEN
+  ASSIGNED
+  RESOLVED
+  CLOSED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model CollectionTask {
+  id             String   @id @default(cuid())
+  organizationId String
+  candidateId    String
+  loanId         String
+  assignedToId   String?
+  title          String
+  description    String?
+  amount         Int?
+  dueDate        DateTime
+  priority       TaskPriority @default(MEDIUM)
+  status         TaskStatus @default(OPEN)
+  outcome        String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  candidate    Candidate    @relation(fields: [candidateId], references: [id])
+  loan         Loan         @relation(fields: [loanId], references: [id])
+  assignedTo   AgentProfile? @relation("AssignedAgent", fields: [assignedToId], references: [id])
+
+  @@index([organizationId])
+  @@index([assignedToId])
+  @@index([status])
+}
+
+enum ContactMethod {
+  PHONE
+  WHATSAPP
+  IN_APP
+  FIELD_VISIT
+}
+
+model FollowUp {
+  id             String   @id @default(cuid())
+  candidateId    String
+  loanId         String?
+  agentId        String
+  contactDate    DateTime
+  contactMethod   ContactMethod
+  outcome        String?
+  notes          String?
+  nextFollowUp   DateTime?
+  createdAt      DateTime @default(now())
+
+  candidate Candidate @relation(fields: [candidateId], references: [id])
+  loan      Loan?    @relation(fields: [loanId], references: [id])
+  agent     User     @relation(fields: [agentId], references: [id])
+
+  @@index([candidateId])
+  @@index([agentId])
+}
+
+enum PtpStatus {
+  ACTIVE
+  FULFILLED
+  BROKEN
+  CANCELLED
+}
+
+model Ptp {
+  id             String   @id @default(cuid())
+  candidateId    String
+  loanId         String
+  agentId        String
+  promisedAmount Int // paise
+  promiseDate    DateTime
+  status         PtpStatus @default(ACTIVE)
+  notes          String?
+  fulfilledAt    DateTime?
+  brokenAt       DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  candidate Candidate @relation(fields: [candidateId], references: [id])
+  loan      Loan     @relation(fields: [loanId], references: [id])
+  agent     User     @relation(fields: [agentId], references: [id])
+
+  @@index([candidateId])
+  @@index([loanId])
+  @@index([status])
+}
+
+enum EscalationStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  CLOSED
+}
+
+enum EscalationReason {
+  REPEATED_MISSED_PAYMENT
+  BROKEN_PTP
+  LONG_OVERDUE
+  FAILED_CONTACT
+  HIGH_OUTSTANDING
+  OTHER
+}
+
+model Escalation {
+  id             String   @id @default(cuid())
+  candidateId    String
+  loanId         String
+  agentId        String
+  reason         EscalationReason
+  description    String?
+  status         EscalationStatus @default(OPEN)
+  resolvedAt     DateTime?
+  resolutionNotes String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  candidate Candidate @relation(fields: [candidateId], references: [id])
+  loan      Loan     @relation(fields: [loanId], references: [id])
+  agent     User     @relation(fields: [agentId], references: [id])
+
+  @@index([candidateId])
+  @@index([status])
+}
+
+// ============================================================
+// FINANCE: LEDGER, REFUNDS, CORRECTIONS
+// ============================================================
+
+enum LedgerEntryType {
+  DISBURSEMENT
+  PAYMENT_PRINCIPAL
+  PAYMENT_INTEREST
+  PAYMENT_FEES
+  REFUND
+  CORRECTION
+  REVERSAL
+  FEE
+}
+
+model LedgerEntry {
+  id             String   @id @default(cuid())
+  organizationId String
+  entryNumber    String   @unique
+  type           LedgerEntryType
+  debitAccount   String
+  creditAccount  String
+  amount         Int // paise
+  description    String?
+  reference      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+}
+
+enum RefundStatus {
+  REQUESTED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Refund {
+  id             String   @id @default(cuid())
+  loanId         String
+  amount         Int // paise
+  reason         String
+  status         RefundStatus @default(REQUESTED)
+  initiatedById  String
+  processedAt    DateTime?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  loan      Loan @relation(fields: [loanId], references: [id])
+  initiatedBy User @relation(fields: [initiatedById], references: [id])
+
+  @@index([loanId])
+}
+
+enum CorrectionStatus {
+  REQUESTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  APPLIED
+}
+
+model FinancialCorrection {
+  id             String   @id @default(cuid())
+  loanId         String
+  paymentId      String?
+  requestedById  String
+  reason         String
+  evidenceUrl    String?
+  status         CorrectionStatus @default(REQUESTED)
+  reviewedById   String?
+  reviewNotes    String?
+  appliedAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  loan         Loan     @relation(fields: [loanId], references: [id])
+  requestedBy  User     @relation(fields: [requestedById], references: [id])
+}
+
+// ============================================================
+// DOCUMENTS / KYC
+// ============================================================
+
+enum DocumentType {
+  AADHAAR
+  PAN
+  ADDRESS_PROOF
+  INCOME_PROOF
+  BANK_PROOF
+  BUSINESS_PROOF
+  OTHER
+}
+
+enum DocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+model Document {
+  id             String   @id @default(cuid())
+  organizationId String
+  candidateId    String?
+  loanId         String?
+  type           DocumentType
+  fileName       String
+  fileUrl        String
+  fileSize       Int?
+  mimeType       String?
+  status         DocumentStatus @default(PENDING)
+  version        Int      @default(1)
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  candidate Candidate? @relation(fields: [candidateId], references: [id])
+  loan      Loan?      @relation(fields: [loanId], references: [id])
+
+  @@index([candidateId])
+  @@index([loanId])
+}
+
+model KycDocument {
+  id             String   @id @default(cuid())
+  candidateId    String
+  aadhaarNumber  String?
+  panNumber      String?
+  aadhaarUrl     String?
+  panUrl         String?
+  status         String @default("PENDING") // PENDING/VERIFIED/REJECTED
+  verifiedAt     DateTime?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  candidate Candidate @relation(fields: [candidateId], references: [id])
+
+  @@index([candidateId])
+}
+
+// ============================================================
+// NOTIFICATIONS & SUPPORT
+// ============================================================
+
+enum NotificationType {
+  APPLICATION_SUBMITTED
+  APPLICATION_APPROVED
+  APPLICATION_REJECTED
+  INFORMATION_REQUESTED
+  AGREEMENT
+  DISBURSEMENT
+  PAYMENT_REMINDER
+  PAYMENT_CONFIRMATION
+  OVERDUE
+  PTP_REMINDER
+  RECEIPT
+  NEW_ASSIGNMENT
+  FOLLOW_UP
+  PTP_DUE
+  ESCALATION
+  COLLECTION_REMINDER
+  AI_INSIGHT
+  RECONCILIATION_EXCEPTION
+}
+
+model Notification {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String?
+  candidateId    String?
+  type           NotificationType
+  title          String
+  message        String
+  isRead         Boolean  @default(false)
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User?        @relation(fields: [userId], references: [id])
+  candidate    Candidate?   @relation(fields: [candidateId], references: [id])
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([candidateId])
+}
+
+enum SupportStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  CLOSED
+}
+
+model SupportTicket {
+  id             String   @id @default(cuid())
+  organizationId String
+  candidateId    String
+  ticketNumber  String @unique
+  category      String
+  subject       String
+  description   String
+  attachmentUrl String?
+  status        SupportStatus @default(OPEN)
+  resolution    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  candidate    Candidate    @relation(fields: [candidateId], references: [id])
+
+  @@index([organizationId])
+  @@index([candidateId])
+}
+
+// ============================================================
+// AUDIT LOG
+// ============================================================
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  APPROVE
+  REJECT
+  SUBMIT
+  VERIFY
+  ALLOCATE
+  DISBURSE
+  REFUND
+  CORRECT
+  REVOKE
+  LOGIN
+  LOGOUT
+  PTP_CREATE
+  PTP_UPDATE
+  ESCALATE
+  AGREE
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String?
+  action         AuditAction
+  entityType     String
+  entityId       String?
+  description    String
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([entityType, entityId])
 }

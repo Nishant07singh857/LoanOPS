@@ -1,0 +1,199 @@
+'use client'
+
+import * as React from 'react'
+import Link from 'next/link'
+import {
+  Users, Search, Filter, X, MessageCircle, PhoneCall, ChevronRight,
+  AlertTriangle, Handshake, Calendar, Clock,
+} from 'lucide-react'
+import { SectionHeading } from '@/components/ui/section-heading'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { toast } from 'sonner'
+import { agentCandidates } from '@/lib/mock-data'
+import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
+import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
+import { cn } from '@/lib/utils'
+
+type ChipKey = 'ALL' | 'OVERDUE' | 'HAS_PTP' | 'DUE_TODAY' | 'RISK'
+
+const CHIPS: { key: ChipKey; label: string }[] = [
+  { key: 'ALL', label: 'All' },
+  { key: 'OVERDUE', label: 'Overdue' },
+  { key: 'HAS_PTP', label: 'Has PTP' },
+  { key: 'DUE_TODAY', label: 'Due Today' },
+  { key: 'RISK', label: 'High Risk' },
+]
+
+const initials = (n: string) => n.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
+
+export default function AgentCandidatesPage() {
+  const [chip, setChip] = React.useState<ChipKey>('ALL')
+  const [search, setSearch] = React.useState('')
+
+  const filtered = React.useMemo(() => {
+    let rows = [...agentCandidates]
+    if (chip === 'OVERDUE') rows = rows.filter((c) => c.daysOverdue > 0)
+    else if (chip === 'HAS_PTP') rows = rows.filter((c) => !!c.ptp && c.ptp !== 'BROKEN')
+    else if (chip === 'DUE_TODAY') rows = rows.filter((c) => c.nextPayment === 'Today')
+    else if (chip === 'RISK') rows = rows.filter((c) => c.daysOverdue >= 18)
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      rows = rows.filter((c) => c.name.toLowerCase().includes(q) || c.loanNumber.toLowerCase().includes(q))
+    }
+    return rows
+  }, [chip, search])
+
+  const onWhatsApp = (c: typeof agentCandidates[number]) => {
+    const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.PAYMENT_REMINDER, {
+      candidateName: c.name,
+      loanNumber: c.loanNumber,
+      amount: (c.outstanding / 100).toLocaleString('en-IN'),
+      dueDate: c.nextPayment,
+    })
+    openWhatsApp(c.mobile, msg)
+    toast.success('WhatsApp draft opened', { description: `Reminder sent to ${c.name}` })
+  }
+
+  return (
+    <div className="space-y-6">
+      <SectionHeading
+        title="My Candidates"
+        description="Field book — your assigned candidates with outstanding balances."
+        icon={<Users className="h-5 w-5" />}
+      />
+
+      <FadeIn>
+        <Card className="shadow-premium">
+          <CardContent className="p-4 space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by name or loan number..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                <Filter className="h-3 w-3" /> Filter:
+              </span>
+              {CHIPS.map((c) => {
+                const active = chip === c.key
+                return (
+                  <button
+                    key={c.key}
+                    onClick={() => setChip(c.key)}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 px-3 h-7 rounded-full text-xs font-medium border transition-all',
+                      active ? 'bg-primary text-primary-foreground border-primary shadow-glow' : 'bg-card hover:bg-muted border-border text-muted-foreground'
+                    )}
+                  >
+                    {active && <X className="h-3 w-3" />}
+                    {c.label}
+                  </button>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      </FadeIn>
+
+      {filtered.length === 0 ? (
+        <EmptyState icon={<Users className="h-6 w-6" />} title="No candidates match these filters" />
+      ) : (
+        <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+          {filtered.map((c) => (
+            <StaggerItem key={c.id}>
+              <Link
+                href={`/agent/candidates/${c.id}`}
+                className="block h-full rounded-2xl border border-border bg-card p-4 hover:border-primary/40 hover:shadow-glow transition-all group"
+              >
+                <div className="flex items-start gap-3">
+                  <Avatar className="h-11 w-11 flex-shrink-0">
+                    <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
+                      {initials(c.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold truncate group-hover:text-primary transition-colors">
+                      {c.name}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">{c.mobile}</p>
+                    <p className="font-mono text-[10px] text-muted-foreground mt-0.5">{c.loanNumber}</p>
+                  </div>
+                  {c.daysOverdue > 0 ? (
+                    <StatusBadge variant="OVERDUE">{c.daysOverdue}d</StatusBadge>
+                  ) : (
+                    <StatusBadge variant="ACTIVE">Current</StatusBadge>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-border">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Outstanding</p>
+                    <p className="text-sm font-bold tabular-nums">{formatPaiseToINRShort(c.outstanding)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Overdue</p>
+                    <p className={cn('text-sm font-semibold tabular-nums', c.overdue > 0 ? 'text-destructive' : 'text-muted-foreground')}>
+                      {formatPaiseToINRShort(c.overdue)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Next Payment</p>
+                    <p className="text-xs inline-flex items-center gap-1">
+                      <Calendar className="h-3 w-3 text-muted-foreground" /> {c.nextPayment}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">PTP</p>
+                    {c.ptp ? (
+                      <span className={cn('text-[11px] font-medium', c.ptp === 'BROKEN' ? 'text-destructive' : 'text-success')}>
+                        {c.ptp === 'BROKEN' ? 'Broken' : c.ptp}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground">None</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
+                  <p className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
+                    <Clock className="h-3 w-3" /> Last: {c.lastContact}
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-info border-info/40 hover:bg-info/10"
+                      onClick={(e) => { e.preventDefault(); onWhatsApp(c) }}
+                    >
+                      <MessageCircle className="h-3 w-3" />
+                    </Button>
+                    <a
+                      href={`tel:${c.mobile.replace(/\s/g, '')}`}
+                      onClick={(e) => e.preventDefault()}
+                      className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-border hover:bg-muted transition-colors"
+                      aria-label={`Call ${c.name}`}
+                    >
+                      <PhoneCall className="h-3.5 w-3.5" />
+                    </a>
+                    <span className="inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground group-hover:text-primary transition-colors">
+                      <ChevronRight className="h-4 w-4" />
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            </StaggerItem>
+          ))}
+        </StaggerContainer>
+      )}
+    </div>
+  )
+}
