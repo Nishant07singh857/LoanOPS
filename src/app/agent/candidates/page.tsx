@@ -2,9 +2,10 @@
 
 import * as React from 'react'
 import Link from 'next/link'
+import { useQuery } from '@tanstack/react-query'
 import {
   Users, Search, Filter, X, MessageCircle, PhoneCall, ChevronRight,
-  AlertTriangle, Handshake, Calendar, Clock,
+  Calendar, Clock,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent } from '@/components/ui/card'
@@ -12,51 +13,77 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { toast } from 'sonner'
-import { agentCandidates } from '@/lib/mock-data'
-import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
+import { api } from '@/lib/api-client'
+import { formatPaiseToINRShort } from '@/lib/money'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
 import { cn } from '@/lib/utils'
 
-type ChipKey = 'ALL' | 'OVERDUE' | 'HAS_PTP' | 'DUE_TODAY' | 'RISK'
+type ChipKey = 'ALL' | 'OVERDUE' | 'HAS_PTP' | 'RISK'
 
 const CHIPS: { key: ChipKey; label: string }[] = [
   { key: 'ALL', label: 'All' },
   { key: 'OVERDUE', label: 'Overdue' },
   { key: 'HAS_PTP', label: 'Has PTP' },
-  { key: 'DUE_TODAY', label: 'Due Today' },
   { key: 'RISK', label: 'High Risk' },
 ]
 
 const initials = (n: string) => n.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
 
+interface CandidateRow {
+  id: string
+  fullName: string
+  mobile: string
+  email?: string | null
+  status: string
+  loansCount: number
+  outstanding: string
+  overdueInstallments: number
+  activeLoanNumbers: string[]
+  activePtp: { id: string; promisedAmount: string; promiseDate: string } | null
+  lastContact?: string | null
+  nextFollowUp?: string | null
+}
+
+function fmtDateShort(d?: string | null) {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+}
+
 export default function AgentCandidatesPage() {
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [search, setSearch] = React.useState('')
 
-  const filtered = React.useMemo(() => {
-    let rows = [...agentCandidates]
-    if (chip === 'OVERDUE') rows = rows.filter((c) => c.daysOverdue > 0)
-    else if (chip === 'HAS_PTP') rows = rows.filter((c) => !!c.ptp && c.ptp !== 'BROKEN')
-    else if (chip === 'DUE_TODAY') rows = rows.filter((c) => c.nextPayment === 'Today')
-    else if (chip === 'RISK') rows = rows.filter((c) => c.daysOverdue >= 18)
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      rows = rows.filter((c) => c.name.toLowerCase().includes(q) || c.loanNumber.toLowerCase().includes(q))
-    }
-    return rows
-  }, [chip, search])
+  const { data, isLoading } = useQuery({
+    queryKey: ['agent-candidates', search],
+    queryFn: () => {
+      const params = new URLSearchParams({ pageSize: '100' })
+      if (search) params.set('search', search)
+      return api.get<{ items: CandidateRow[]; total: number }>(`/api/agent/candidates?${params.toString()}`)
+    },
+  })
 
-  const onWhatsApp = (c: typeof agentCandidates[number]) => {
+  const allCandidates = data?.items ?? []
+
+  const filtered = React.useMemo(() => {
+    let rows = [...allCandidates]
+    if (chip === 'OVERDUE') rows = rows.filter((c) => c.overdueInstallments > 0)
+    else if (chip === 'HAS_PTP') rows = rows.filter((c) => !!c.activePtp)
+    else if (chip === 'RISK') rows = rows.filter((c) => c.overdueInstallments >= 2)
+    return rows
+  }, [allCandidates, chip])
+
+  const onWhatsApp = (c: CandidateRow) => {
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.PAYMENT_REMINDER, {
-      candidateName: c.name,
-      loanNumber: c.loanNumber,
-      amount: (c.outstanding / 100).toLocaleString('en-IN'),
-      dueDate: c.nextPayment,
+      candidateName: c.fullName,
+      loanNumber: c.activeLoanNumbers[0] ?? '',
+      amount: (Number(c.outstanding) / 100).toLocaleString('en-IN'),
+      dueDate: fmtDateShort(c.nextFollowUp),
     })
     openWhatsApp(c.mobile, msg)
-    toast.success('WhatsApp draft opened', { description: `Reminder sent to ${c.name}` })
+    toast.success('WhatsApp draft opened', { description: `Reminder sent to ${c.fullName}` })
   }
 
   return (
@@ -73,7 +100,7 @@ export default function AgentCandidatesPage() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search by name or loan number..."
+                placeholder="Search by name or mobile..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9"
@@ -104,8 +131,12 @@ export default function AgentCandidatesPage() {
         </Card>
       </FadeIn>
 
-      {filtered.length === 0 ? (
-        <EmptyState icon={<Users className="h-6 w-6" />} title="No candidates match these filters" />
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-48 w-full" />)}
+        </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState icon={<Users className="h-6 w-6" />} title="No candidates match these filters" description="Try adjusting your search or filter." />
       ) : (
         <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {filtered.map((c) => (
@@ -117,18 +148,20 @@ export default function AgentCandidatesPage() {
                 <div className="flex items-start gap-3">
                   <Avatar className="h-11 w-11 flex-shrink-0">
                     <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
-                      {initials(c.name)}
+                      {initials(c.fullName)}
                     </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold truncate group-hover:text-primary transition-colors">
-                      {c.name}
+                      {c.fullName}
                     </p>
                     <p className="text-[11px] text-muted-foreground">{c.mobile}</p>
-                    <p className="font-mono text-[10px] text-muted-foreground mt-0.5">{c.loanNumber}</p>
+                    {c.activeLoanNumbers[0] && (
+                      <p className="font-mono text-[10px] text-muted-foreground mt-0.5">{c.activeLoanNumbers[0]}</p>
+                    )}
                   </div>
-                  {c.daysOverdue > 0 ? (
-                    <StatusBadge variant="OVERDUE">{c.daysOverdue}d</StatusBadge>
+                  {c.overdueInstallments > 0 ? (
+                    <StatusBadge variant="OVERDUE">{c.overdueInstallments} inst.</StatusBadge>
                   ) : (
                     <StatusBadge variant="ACTIVE">Current</StatusBadge>
                   )}
@@ -137,25 +170,23 @@ export default function AgentCandidatesPage() {
                 <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-border">
                   <div>
                     <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Outstanding</p>
-                    <p className="text-sm font-bold tabular-nums">{formatPaiseToINRShort(c.outstanding)}</p>
+                    <p className="text-sm font-bold tabular-nums">{formatPaiseToINRShort(Number(c.outstanding))}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Overdue</p>
-                    <p className={cn('text-sm font-semibold tabular-nums', c.overdue > 0 ? 'text-destructive' : 'text-muted-foreground')}>
-                      {formatPaiseToINRShort(c.overdue)}
-                    </p>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Loans</p>
+                    <p className="text-sm font-semibold tabular-nums">{c.loansCount}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Next Payment</p>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Last Contact</p>
                     <p className="text-xs inline-flex items-center gap-1">
-                      <Calendar className="h-3 w-3 text-muted-foreground" /> {c.nextPayment}
+                      <Clock className="h-3 w-3 text-muted-foreground" /> {fmtDateShort(c.lastContact)}
                     </p>
                   </div>
                   <div>
                     <p className="text-[10px] uppercase tracking-wider text-muted-foreground">PTP</p>
-                    {c.ptp ? (
-                      <span className={cn('text-[11px] font-medium', c.ptp === 'BROKEN' ? 'text-destructive' : 'text-success')}>
-                        {c.ptp === 'BROKEN' ? 'Broken' : c.ptp}
+                    {c.activePtp ? (
+                      <span className="text-[11px] font-medium text-success">
+                        {fmtDateShort(c.activePtp.promiseDate)}
                       </span>
                     ) : (
                       <span className="text-[11px] text-muted-foreground">None</span>
@@ -165,7 +196,7 @@ export default function AgentCandidatesPage() {
 
                 <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
                   <p className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> Last: {c.lastContact}
+                    <Calendar className="h-3 w-3" /> Next: {fmtDateShort(c.nextFollowUp)}
                   </p>
                   <div className="flex items-center gap-1.5">
                     <Button
@@ -180,7 +211,7 @@ export default function AgentCandidatesPage() {
                       href={`tel:${c.mobile.replace(/\s/g, '')}`}
                       onClick={(e) => e.preventDefault()}
                       className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-border hover:bg-muted transition-colors"
-                      aria-label={`Call ${c.name}`}
+                      aria-label={`Call ${c.fullName}`}
                     >
                       <PhoneCall className="h-3.5 w-3.5" />
                     </a>

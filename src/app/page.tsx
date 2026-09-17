@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { SessionProvider, useSession, type Role } from '@/lib/session'
 import { Toaster } from '@/components/ui/sonner'
-import { toast } from 'sonner'
 
 const PORTALS: Array<{
   role: Role
@@ -67,17 +66,22 @@ const FEATURES = [
 
 function LandingInner() {
   const router = useRouter()
-  const { loginAs, user } = useSession()
+  const { user } = useSession()
 
-  const enter = async (role: Role) => {
-    await loginAs(role)
+  const enter = (role: Role) => {
+    if (user && user.role === role) {
+      // Already authenticated — go straight to portal
+      const target = role === 'OWNER' ? '/admin' : role === 'AGENT' ? '/agent' : '/portal'
+      router.push(target)
+      return
+    }
+    // Go to login with the desired role preselected
     const target = role === 'OWNER' ? '/admin' : role === 'AGENT' ? '/agent' : '/portal'
-    toast.success(`Entering ${role.toLowerCase()} portal`, { description: 'Loading your dashboard...' })
-    setTimeout(() => router.push(target), 200)
+    router.push(`/login?redirect=${encodeURIComponent(target)}&role=${role}`)
   }
 
   React.useEffect(() => {
-    // If user already logged in, route them on first mount
+    // If user already logged in, route them to their portal
     if (user) {
       const target = user.role === 'OWNER' ? '/admin' : user.role === 'AGENT' ? '/agent' : '/portal'
       router.replace(target)

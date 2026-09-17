@@ -1,0 +1,2435 @@
+You are a principal software architect, senior full-stack engineer, fintech systems engineer, database architect, security engineer, QA engineer, and product designer with 20+ years of production experience.
+
+You are continuing an EXISTING Loan Ops Platform repository.
+
+IMPORTANT:
+DO NOT START A NEW PROJECT.
+DO NOT REWRITE THE PROJECT FROM SCRATCH.
+DO NOT DESTROY EXISTING WORK.
+DO NOT replace working features unnecessarily.
+FIRST inspect the existing repository, architecture, routes, Prisma schema, components, API, authentication, database configuration, and current implementation.
+
+Your job is to transform the existing project from a premium UI/demo implementation into a REAL, END-TO-END, DATABASE-BACKED, SECURE Loan Operations Platform.
+
+==================================================
+1. PRODUCT
+==================================================
+
+Product name:
+Loan Ops Platform
+
+Exactly THREE portals:
+
+1. OWNER PORTAL
+   Route: /admin
+
+2. AGENT PORTAL
+   Route: /agent
+
+3. CANDIDATE PORTAL
+   Route: /portal
+
+Additional public application route:
+
+4. LOAN APPLICATION
+   Route: /apply/[secureToken]
+
+Do NOT create unnecessary fourth/fifth/sixth portals.
+
+Internal roles/permissions may exist for RBAC, but the user-facing product remains exactly these 3 portals.
+
+==================================================
+2. EXISTING STACK
+==================================================
+
+Preserve the existing stack wherever practical.
+
+Expected architecture:
+
+Frontend:
+- Next.js
+- TypeScript
+- responsive UI
+- existing design system
+- existing Framer Motion/motion implementation
+- existing reusable components
+
+Backend:
+- NestJS
+- TypeScript
+- Prisma
+
+Database:
+- Neon PostgreSQL
+
+Supporting infrastructure:
+- Redis for sessions/cache/queues
+- S3-compatible private object storage for documents
+- payment provider abstraction
+- WhatsApp deep links for manual messaging
+
+Architecture:
+
+Browser
+   ↓
+Next.js
+   ↓
+NestJS API
+   ↓
+Prisma
+   ↓
+Neon PostgreSQL
+
+Redis is NOT the financial source of truth.
+
+Object storage is NOT the financial source of truth.
+
+Frontend is NEVER the source of truth for money, authorization, loan status, payment status, or ledger balances.
+
+==================================================
+3. FIRST STEP — AUDIT EXISTING PROJECT
+==================================================
+
+Before changing code:
+
+Inspect:
+
+- package.json
+- pnpm workspace
+- Next.js structure
+- NestJS structure
+- Prisma schema
+- migrations
+- environment files
+- authentication/session implementation
+- middleware
+- guards
+- API modules
+- existing pages
+- existing components
+- mock data
+- financial engine
+- loan calculations
+- payment implementation
+- webhook implementation
+- notification implementation
+- collection implementation
+- reports
+- audit logging
+- tests
+- existing Neon connection
+- existing routes
+- existing UI
+
+Create an internal implementation checklist.
+
+DO NOT blindly recreate files.
+
+Identify:
+
+A. Already implemented
+B. Partially implemented
+C. Mock/demo implementation
+D. Missing
+E. Broken
+F. Security risks
+G. Database inconsistencies
+H. Financial integrity risks
+
+Then implement the missing pieces incrementally.
+
+==================================================
+4. CORE RULE
+==================================================
+
+The final system must work as one connected business workflow.
+
+The complete lifecycle must be:
+
+OWNER CREATES LOAN
+        ↓
+GENERATES SECURE APPLICATION LINK / QR
+        ↓
+CANDIDATE OPENS LINK
+        ↓
+CANDIDATE COMPLETES APPLICATION
+        ↓
+KYC + DOCUMENTS
+        ↓
+AGREEMENT / CONSENT
+        ↓
+SUBMIT APPLICATION
+        ↓
+OWNER REVIEWS
+        ↓
+APPROVE / REJECT / REQUEST INFORMATION
+        ↓
+APPROVED LOAN CREATED
+        ↓
+IMMUTABLE LOAN TERMS SNAPSHOT
+        ↓
+REPAYMENT SCHEDULE GENERATED
+        ↓
+OWNER DISBURSES
+        ↓
+ACTIVE LOAN
+        ↓
+CANDIDATE SEES LOAN
+        ↓
+INSTALLMENT BECOMES DUE
+        ↓
+CANDIDATE PAYS ONLINE
+OR
+AGENT RECORDS CASH COLLECTION
+        ↓
+PAYMENT VERIFICATION
+        ↓
+PAYMENT ALLOCATION
+        ↓
+LEDGER TRANSACTION
+        ↓
+RECEIPT
+        ↓
+NOTIFICATION
+        ↓
+LOAN BALANCE UPDATED
+        ↓
+OVERDUE DETECTION
+        ↓
+AGENT COLLECTION TASK
+        ↓
+FOLLOW-UP
+        ↓
+PTP
+        ↓
+ESCALATION
+        ↓
+SETTLEMENT / COMPLETION
+        ↓
+AUDIT TRAIL
+
+EVERY STEP MUST BE DATABASE-BACKED.
+
+==================================================
+5. DATABASE — NEON POSTGRESQL
+==================================================
+
+Neon PostgreSQL is the production database.
+
+Use DATABASE_URL.
+
+Do NOT expose DATABASE_URL to frontend.
+
+Do NOT connect browser directly to Neon.
+
+Do NOT use Neon API key for normal application runtime.
+
+Prisma must connect server-side.
+
+Inspect existing schema first.
+
+Preserve existing valid schema.
+
+Fix relations cleanly rather than using hacks.
+
+Ensure appropriate indexes, foreign keys, unique constraints, enums and transaction boundaries.
+
+Required conceptual entities include:
+
+organizations
+users
+roles
+permissions
+user_roles
+organization_memberships
+
+borrowers
+borrower_profiles
+
+kyc_records
+kyc_reviews
+
+documents
+document_versions
+
+loan_products
+loan_product_versions
+
+loan_applications
+application_reviews
+
+application_tokens
+
+loans
+loan_term_snapshots
+
+repayment_schedules
+repayment_schedule_items
+
+payments
+payment_attempts
+payment_provider_events
+payment_allocations
+
+ledger_accounts
+ledger_transactions
+ledger_entries
+
+refunds
+financial_corrections
+
+notifications
+notification_templates
+notification_logs
+
+communication_preferences
+
+agreements
+agreement_versions
+agreement_acceptances
+
+collection_tasks
+collection_notes
+ptp_records
+collection_escalations
+
+complaints
+support_requests
+
+reconciliation_runs
+reconciliation_exceptions
+
+audit_logs
+
+ai_insights
+ai_events
+risk_features
+
+consents
+disclosures
+
+webhook_events
+
+break_glass_grants
+
+Use actual existing model names when already implemented rather than creating duplicate models.
+
+==================================================
+6. DATABASE MIGRATION SAFETY
+==================================================
+
+NEVER run:
+
+prisma migrate reset
+
+NEVER delete the Neon database.
+
+NEVER drop production data.
+
+NEVER use destructive db push against production.
+
+Before migration:
+
+1. inspect current migration status
+2. inspect schema
+3. generate Prisma client
+4. create safe migration if required
+5. apply migration
+6. verify schema
+7. run tests
+
+If schema is already correct, do not create unnecessary migrations.
+
+==================================================
+7. AUTHENTICATION
+==================================================
+
+Replace demo authentication with real authentication.
+
+Use the existing architecture if it is already secure.
+
+Requirements:
+
+- secure password hashing
+- minimum password policy
+- HTTP-only session cookie
+- secure cookie in production
+- SameSite protection
+- session expiration
+- session rotation where appropriate
+- logout
+- CSRF protection for cookie-authenticated state-changing requests
+- login rate limiting
+- failed-login protection
+- no passwords in logs
+- no tokens in URLs except intentionally designed secure application tokens
+- password reset flow if supported by existing product architecture
+
+Never trust:
+
+localStorage role
+frontend role
+query parameter role
+hidden input role
+client-side permissions
+
+Server session determines identity.
+
+==================================================
+8. RBAC
+==================================================
+
+Implement real server-side authorization.
+
+Portal roles:
+
+OWNER
+AGENT
+CANDIDATE
+
+Additional internal permissions may be represented separately.
+
+Example permissions:
+
+loan:create
+loan:view
+loan:approve
+loan:reject
+loan:disburse
+payment:view
+payment:verify
+payment:refund
+ledger:view
+ledger:correct
+collection:view
+collection:create
+collection:assign
+candidate:view
+candidate:update
+document:view
+document:approve
+report:view
+report:export
+audit:view
+settings:update
+
+Candidate:
+
+Can ONLY access own records.
+
+Agent:
+
+Can ONLY access authorized organization/candidate/collection records.
+
+Owner:
+
+Can access organization data according to permissions.
+
+Every protected API endpoint must perform server-side authorization.
+
+Prevent IDOR.
+
+Example:
+
+GET /loans/:id
+
+must verify that authenticated user has access to that exact loan.
+
+Never rely only on frontend navigation.
+
+==================================================
+9. TENANT ISOLATION
+==================================================
+
+The system is multi-tenant ready.
+
+Every organization-owned entity must respect organizationId.
+
+Never allow:
+
+organization A user → organization B data.
+
+Use:
+
+TenantGuard
+service-level organization filtering
+Prisma tenant extension/helper where already available
+
+Super-admin/break-glass access, if existing, must remain explicitly scoped, audited and time limited.
+
+==================================================
+10. OWNER PORTAL
+==================================================
+
+Route:
+
+/admin
+
+Build all existing Owner pages using REAL API data.
+
+Required areas:
+
+Dashboard
+Loan Applications
+Create Loan
+Application Links / QR
+Candidates
+Candidate 360
+KYC
+Documents
+Agreements
+Loan Origination
+Loan Approval
+Disbursement
+Loans
+Loan Detail
+Repayments
+Payments
+Collections
+Finance
+Ledger
+Refunds
+Financial Corrections
+Reconciliation
+Reports
+Analytics
+AI Insights
+Users & Roles
+Audit
+Settings
+Support / Complaints
+WhatsApp
+Reminder Center
+Agent Performance
+
+Owner dashboard should show:
+
+Total disbursed
+Active loans
+Outstanding principal
+Interest outstanding
+Overdue amount
+Today's collections
+Upcoming dues
+Pending applications
+Pending verification
+Collection workload
+
+All KPIs must come from database queries.
+
+NO fake hardcoded financial numbers.
+
+==================================================
+11. CREATE LOAN
+==================================================
+
+Owner must be able to create a loan/application.
+
+Fields:
+
+Candidate
+Loan amount
+Interest type:
+- percentage
+- fixed amount
+- no interest
+
+Interest value
+
+Calculation method
+
+Repayment frequency:
+
+DAILY
+WEEKLY
+MONTHLY
+
+Tenure / number of installments
+
+Fees
+
+Disbursement method:
+
+ONLINE
+OFFLINE
+
+Start date
+
+First due date where applicable
+
+Notes
+
+The frontend may preview calculations.
+
+Backend is authoritative.
+
+Validate everything server-side.
+
+==================================================
+12. FINANCIAL ENGINE
+==================================================
+
+Money must be represented safely.
+
+Use:
+
+BigInt paise
+
+NOT floating-point money.
+
+Do not use:
+
+Number()
+parseFloat()
+parseInt()
+
+for authoritative money calculations.
+
+API monetary values should use safe serialized strings.
+
+Example:
+
+"10000000"
+
+for ₹100,000.00 if represented in paise.
+
+Frontend should use a safe formatter.
+
+==================================================
+13. INTEREST
+==================================================
+
+Support:
+
+1. Percentage interest
+2. Fixed ₹ interest
+3. No interest
+
+Support the existing calculation methods in the repository.
+
+Do not silently change financial semantics.
+
+For reducing-balance loans:
+
+periodic interest should be based on applicable opening principal.
+
+Use deterministic rounding.
+
+Use HALF-UP where the existing specification requires it.
+
+==================================================
+14. REPAYMENT SCHEDULE
+==================================================
+
+Generate schedule server-side.
+
+Inputs:
+
+principal
+interest
+fees
+frequency
+tenure
+start date
+calculation method
+
+Output:
+
+installment number
+due date
+opening principal
+principal component
+interest component
+fee component
+total due
+closing principal
+status
+
+Statuses:
+
+UPCOMING
+DUE
+PARTIALLY_PAID
+PAID
+OVERDUE
+WAIVED where explicitly supported
+
+Final installment must close principal exactly to zero.
+
+Monthly dates must preserve original anchor-day semantics.
+
+Example:
+
+31st → 28/29/30 as applicable
+
+but should not permanently drift the anchor day.
+
+Schedule generation must be deterministic and testable.
+
+==================================================
+15. IMMUTABLE LOAN TERMS
+==================================================
+
+Once a loan is approved/originated:
+
+create immutable LoanTermSnapshot.
+
+Store:
+
+principal
+interest type
+interest value
+calculation method
+fees
+frequency
+tenure
+dates
+number of installments
+total repayment
+other relevant contractual terms
+
+Do not allow normal users to silently mutate historical financial terms.
+
+Any correction must use an explicit financial correction workflow.
+
+==================================================
+16. APPLICATION LINKS / QR
+==================================================
+
+Generate secure random application tokens.
+
+NEVER expose database IDs as the application token.
+
+Token requirements:
+
+- cryptographically random
+- sufficient entropy
+- expiry
+- revocation
+- usage tracking
+- organization association
+- optional loan/application association
+- one-time or controlled reuse based on business rule
+
+Public route:
+
+/apply/[token]
+
+Backend must validate token.
+
+Never trust frontend prefilled values.
+
+==================================================
+17. CANDIDATE APPLICATION
+==================================================
+
+9-step or existing onboarding flow should remain premium and responsive.
+
+Steps can include:
+
+1. Basic Information
+2. Personal Details
+3. Address
+4. Aadhaar/KYC
+5. PAN
+6. Financial Information
+7. Bank Details
+8. Documents
+9. Agreement + Signature + Review
+
+Do not collect unnecessary sensitive information.
+
+Validate every field.
+
+Allow save/resume where supported.
+
+Application states:
+
+DRAFT
+SUBMITTED
+UNDER_REVIEW
+REQUESTED_INFO
+APPROVED
+REJECTED
+
+Candidate sees only their own application.
+
+==================================================
+18. KYC / DOCUMENTS
+==================================================
+
+Actual files go to private object storage.
+
+Database stores:
+
+document metadata
+document type
+storage key
+version
+owner
+status
+timestamps
+
+Do not store large binary files directly in PostgreSQL unless explicitly required.
+
+Validate:
+
+MIME type
+file size
+extension
+filename
+ownership
+authorization
+
+Use randomized storage keys.
+
+Never expose private storage directly.
+
+Use short-lived presigned URLs.
+
+Document statuses:
+
+UPLOADED
+UNDER_REVIEW
+VERIFIED
+REJECTED
+EXPIRED
+
+Audit document actions.
+
+==================================================
+19. AGREEMENT
+==================================================
+
+Owner can configure agreement templates/versions.
+
+Candidate must:
+
+review agreement
+accept required disclosures
+sign/accept
+submit
+
+Store:
+
+agreement version
+terms/version reference
+signer
+candidate
+timestamp
+IP/device metadata only where legally appropriate and already designed
+acceptance evidence
+
+Accepted agreements must be immutable.
+
+Do not silently modify historical agreements.
+
+==================================================
+20. LOAN APPROVAL
+==================================================
+
+Owner reviews application.
+
+Actions:
+
+Approve
+Reject
+Request Information
+
+Approval must happen server-side.
+
+Implement separation of duties where configured.
+
+A creator should not automatically self-approve if SoD policy prohibits it.
+
+Approval creates an immutable approved decision record.
+
+==================================================
+21. DISBURSEMENT
+==================================================
+
+Support:
+
+ONLINE
+OFFLINE
+
+Online:
+
+create authorized provider transaction
+server-side verification
+webhook confirmation
+idempotency
+
+NEVER mark disbursed because frontend says "success".
+
+Offline:
+
+Owner must explicitly record:
+
+amount
+date/time
+method
+reference
+notes
+proof if required
+
+Backend validates.
+
+Disbursement must be auditable.
+
+==================================================
+22. PAYMENT SYSTEM
+==================================================
+
+Candidate payment flow:
+
+Candidate opens loan
+↓
+selects installment or amount
+↓
+creates payment intent
+↓
+payment provider
+↓
+provider webhook
+↓
+signature verification
+↓
+capture confirmation
+↓
+allocation
+↓
+ledger
+↓
+receipt
+↓
+notification
+
+Payment statuses should support existing implementation:
+
+CREATED
+PENDING
+AUTHORIZED
+CAPTURED
+FAILED
+CANCELLED
+REFUND_PENDING
+REFUNDED
+PARTIALLY_REFUNDED
+
+Frontend callback is NOT authoritative.
+
+==================================================
+23. WEBHOOK SECURITY
+==================================================
+
+Webhook endpoints are public but secure.
+
+Validate:
+
+signature
+raw request body
+provider event ID
+timestamp/replay protection where supported
+
+Store provider events.
+
+Make processing idempotent.
+
+If the same webhook arrives twice:
+
+DO NOT create duplicate payment
+DO NOT create duplicate allocation
+DO NOT create duplicate ledger transaction
+DO NOT create duplicate receipt
+
+Use database uniqueness constraints + transactional logic.
+
+==================================================
+24. PAYMENT ALLOCATION
+==================================================
+
+Use the existing financial allocation rules.
+
+Default allocation order:
+
+FEE
+↓
+INTEREST
+↓
+PRINCIPAL
+
+Support partial payments.
+
+Support overpayments according to existing business rules.
+
+Any unallocated amount must be explicitly represented.
+
+Allocation must be immutable/auditable after posting.
+
+==================================================
+25. LEDGER
+==================================================
+
+Financial events must create ledger transactions.
+
+Do not calculate financial truth from frontend state.
+
+Use double-entry principles where implemented.
+
+Example conceptual flow:
+
+Payment captured
+↓
+Debit CASH_CLEARING
+Credit applicable income/principal/unallocated account
+
+Loan disbursement:
+
+Debit LOAN_RECEIVABLE
+Credit CASH/BANK/CLEARING
+
+Use database transactions.
+
+Every posted ledger transaction must balance.
+
+==================================================
+26. CASH COLLECTION
+==================================================
+
+Agent must have:
+
+Record Cash Collection
+
+NOT:
+
+Mark Paid
+
+Fields:
+
+candidate
+loan
+amount
+date/time
+installment
+reference
+notes
+proof where required
+
+Lifecycle:
+
+RECORDED
+↓
+PENDING_VERIFICATION
+↓
+VERIFIED
+↓
+ALLOCATED
+
+or
+
+REJECTED
+
+Agent must NOT self-verify unless explicitly authorized.
+
+Verification must be server-side.
+
+Only after verification:
+
+allocation engine
+ledger
+receipt
+notification
+
+==================================================
+27. AGENT PORTAL
+==================================================
+
+Route:
+
+/agent
+
+Build real operational workflow.
+
+Required:
+
+Dashboard
+Candidates
+Candidate 360
+Loan Details
+Due Payments
+Overdue Payments
+Collection Tasks
+Follow-ups
+PTP
+Escalations
+Record Cash Collection
+Payment Activity
+Create Loan / QR / Link
+Application Status
+WhatsApp Candidate
+AI Reminders
+My Performance
+
+Agent dashboard:
+
+Today's tasks
+Due today
+Overdue
+PTP due
+Cash pending verification
+Follow-ups
+Escalations
+
+Mobile-first.
+
+Optimize for field operations.
+
+==================================================
+28. COLLECTION TASKS
+==================================================
+
+Task lifecycle:
+
+OPEN
+ASSIGNED
+RESOLVED
+CLOSED
+
+Allow valid transitions only.
+
+Task contains:
+
+candidate
+loan
+installment
+priority
+due date
+assigned agent
+status
+notes
+outcome
+
+Outcomes:
+
+UNREACHABLE
+PROMISE_TO_PAY
+REFUSED
+PAID
+OTHER where appropriate
+
+All actions audited.
+
+==================================================
+29. PTP
+==================================================
+
+Agent can record:
+
+promise date
+promise amount
+notes
+contact attempt
+
+Statuses:
+
+ACTIVE
+FULFILLED
+BROKEN
+CANCELLED
+
+A broken PTP can generate an AI/advisory signal.
+
+Do not automatically alter financial records.
+
+==================================================
+30. ESCALATIONS
+==================================================
+
+Support escalation based on explicit business rules.
+
+Examples:
+
+3+ collection contacts
+repeated missed installments
+broken PTP
+long overdue
+
+Escalation must be explainable.
+
+Never use AI as the source of truth for money.
+
+==================================================
+31. WHATSAPP
+==================================================
+
+Use WhatsApp only where requested.
+
+Candidate:
+
+WhatsApp Agent
+WhatsApp Owner
+
+Agent:
+
+WhatsApp Candidate
+
+Owner:
+
+WhatsApp Candidate
+WhatsApp Agent
+
+Use manually initiated WhatsApp deep links.
+
+Prepared templates:
+
+Payment Reminder
+Due Today
+Overdue
+PTP Reminder
+Document Request
+Application Reminder
+General Follow-up
+
+Do not claim message was sent unless actual WhatsApp API integration confirms it.
+
+Manual wa.me opening means:
+
+"prepared message"
+
+not:
+
+"message sent"
+
+==================================================
+32. CANDIDATE PORTAL
+==================================================
+
+Route:
+
+/portal
+
+Simple, trustworthy, mobile-first.
+
+Required:
+
+Dashboard
+Loan
+Repayment Schedule
+Calendar
+Pay
+Payment History
+Outstanding / Overdue
+Receipts
+Notifications
+WhatsApp
+Support
+Profile
+
+Candidate must never see another candidate's data.
+
+==================================================
+33. CANDIDATE DASHBOARD
+==================================================
+
+Show:
+
+active loan
+outstanding amount
+next installment
+next due date
+payment status
+recent payment
+overdue amount if any
+
+All values from backend.
+
+No mock financial values.
+
+==================================================
+34. SUPPORT / COMPLAINTS
+==================================================
+
+Candidate can create support request.
+
+Fields:
+
+category
+description
+attachments where supported
+
+States:
+
+OPEN
+IN_REVIEW
+RESOLVED
+CLOSED
+
+Owner manages support.
+
+All changes audited.
+
+==================================================
+35. NOTIFICATIONS
+==================================================
+
+Build event-driven notifications.
+
+Examples:
+
+application submitted
+application approved
+application rejected
+information requested
+loan disbursed
+payment captured
+cash verified
+payment failed
+installment due
+installment overdue
+PTP reminder
+collection task
+support update
+
+Existing queue system may use BullMQ + Redis.
+
+Do not make Redis the source of truth.
+
+Database stores notification records.
+
+==================================================
+36. REMINDERS
+==================================================
+
+Implement reminders based on authoritative schedule data.
+
+Examples:
+
+T-3
+T-2
+T-1
+Due date
+Post-due
+
+Never create reminders based on frontend displayed dates.
+
+Use backend schedule.
+
+Make jobs idempotent.
+
+Avoid duplicate notifications.
+
+==================================================
+37. AI INSIGHTS
+==================================================
+
+AI is ADVISORY ONLY.
+
+AI may:
+
+prioritize collection attention
+summarize collection history
+explain risk signals
+suggest follow-up timing
+surface overdue patterns
+generate communication suggestions
+
+AI MUST NOT:
+
+approve loans
+reject loans
+change interest
+change principal
+modify repayment schedule
+mark payment successful
+move money
+create ledger entries
+bypass permissions
+verify cash automatically
+override owner decisions
+
+Required signals may include:
+
+PAYMENT_DELAY
+REPEATED_MISSED_INSTALLMENTS
+RECENT_PAYMENT_FAILURE
+BROKEN_PROMISE_TO_PAY
+COLLECTION_ESCALATION
+
+Use deterministic backend signals first.
+
+Any AI-generated explanation must be traceable to underlying data.
+
+==================================================
+38. REPORTS
+==================================================
+
+Owner reports:
+
+Portfolio
+Loans
+Applications
+Payments
+Collections
+Overdue
+PTP
+Agent Performance
+Disbursements
+Reconciliation
+Audit
+
+Filters:
+
+date range
+agent
+status
+frequency
+loan
+candidate
+
+Exports:
+
+CSV/XLSX where existing architecture supports them.
+
+Do not load unlimited records into memory.
+
+Use pagination and controlled export limits.
+
+==================================================
+39. ANALYTICS
+==================================================
+
+Charts must be based on actual database aggregation.
+
+Metrics:
+
+disbursement trend
+collection trend
+outstanding trend
+overdue trend
+repayment frequency
+collection aging
+PTP performance
+agent workload
+payment success/failure
+
+Never fabricate analytics.
+
+==================================================
+40. RECONCILIATION
+==================================================
+
+Build reconciliation chain:
+
+Expected
+↓
+Provider
+↓
+Payment
+↓
+Allocation
+↓
+Ledger
+
+Also include:
+
+Cash Collection
+↓
+Verification
+↓
+Payment
+↓
+Allocation
+↓
+Ledger
+
+Detect:
+
+duplicate provider event
+missing payment
+provider mismatch
+missing ledger
+allocation mismatch
+amount mismatch
+unmatched transaction
+
+Exceptions should be explicit records.
+
+Do not silently repair financial anomalies.
+
+==================================================
+41. REFUNDS
+==================================================
+
+Refund lifecycle:
+
+REQUESTED
+PROCESSING
+COMPLETED
+FAILED
+CANCELLED
+
+Refund must reference original payment.
+
+Refund accounting must reverse appropriate original allocations according to existing accounting rules.
+
+Do not simply subtract from loan balance.
+
+Use reversal transactions.
+
+Audit everything.
+
+==================================================
+42. FINANCIAL CORRECTIONS
+==================================================
+
+Never allow direct balance editing.
+
+Correction flow:
+
+REQUEST
+↓
+REVIEW
+↓
+APPROVE
+↓
+REVERSAL / CORRECTION TRANSACTION
+↓
+AUDIT
+
+Use separation of duties where required.
+
+Loan can enter:
+
+NEEDS_REVIEW
+
+after material correction/refund scenarios.
+
+==================================================
+43. AUDIT LOG
+==================================================
+
+Audit:
+
+login
+logout
+application creation
+application submission
+approval
+rejection
+agreement acceptance
+loan creation
+disbursement
+payment creation
+payment capture
+cash collection
+verification
+allocation
+refund
+financial correction
+PTP
+escalation
+permission change
+role change
+document actions
+support actions
+settings changes
+
+Audit record:
+
+actor
+organization
+action
+entity
+entityId
+timestamp
+metadata
+IP/device metadata where appropriate
+
+Never log:
+
+passwords
+payment secrets
+API keys
+raw sensitive credentials
+unnecessary KYC data
+
+==================================================
+44. SECURITY
+==================================================
+
+Perform a full security audit.
+
+Check:
+
+authentication
+authorization
+RBAC
+tenant isolation
+IDOR
+CSRF
+XSS
+SQL injection
+Prisma query safety
+file upload attacks
+path traversal
+session fixation
+cookie security
+rate limiting
+webhook replay
+webhook signature
+secret leakage
+PII exposure
+API error leakage
+logging leakage
+mass assignment
+unsafe redirects
+broken access control
+
+Never weaken security just to make a UI test pass.
+
+==================================================
+45. ERROR HANDLING
+==================================================
+
+Frontend must distinguish:
+
+401
+403
+404
+422
+429
+500
+network failure
+
+Do NOT display misleading messages.
+
+Example:
+
+Do not show:
+
+"Not a Borrower Account"
+
+for every API failure.
+
+Show the actual appropriate state:
+
+Unauthorized
+Forbidden
+Not Found
+Validation Error
+Server Error
+Network Error
+
+Provide retry where appropriate.
+
+==================================================
+46. API DESIGN
+==================================================
+
+All business operations go through backend APIs.
+
+Use DTO validation.
+
+Use consistent responses.
+
+Use:
+
+pagination
+filtering
+sorting
+search
+validation
+authorization
+
+Never trust client-provided:
+
+organizationId
+userId
+role
+loan balance
+payment status
+ledger balance
+approval status
+
+Derive sensitive identity from authenticated session.
+
+==================================================
+47. TRANSACTIONS / CONCURRENCY
+==================================================
+
+Use database transactions for:
+
+loan approval/origination
+schedule creation
+disbursement
+payment capture
+allocation
+ledger posting
+refund
+financial correction
+cash verification
+
+Handle concurrent requests safely.
+
+Use:
+
+unique constraints
+idempotency keys
+database locking where required
+transaction isolation appropriate to operation
+
+==================================================
+48. IDEMPOTENCY
+==================================================
+
+Implement idempotency for financial operations.
+
+Especially:
+
+payment intent
+webhook processing
+payment capture
+allocation
+receipt creation
+disbursement
+refund
+
+Repeated request must not duplicate money movement.
+
+==================================================
+49. FRONTEND
+==================================================
+
+DO NOT redesign working premium UI unnecessarily.
+
+Preserve:
+
+emerald/teal fintech visual language
+responsive layouts
+existing components
+Framer Motion
+mobile navigation
+desktop sidebar
+cards
+tables
+drawers
+modals
+status badges
+loading states
+
+But replace mock values with API data.
+
+Use:
+
+skeleton loading
+empty states
+error states
+retry
+confirmation dialogs
+success/error toasts
+
+Financial numbers should be clearly formatted.
+
+==================================================
+50. RESPONSIVE DESIGN
+==================================================
+
+Verify:
+
+mobile
+tablet
+desktop
+
+Minimum conceptual test sizes:
+
+iPhone-class width
+tablet width
+1920 desktop
+
+Owner:
+analytics-heavy desktop, usable mobile
+
+Agent:
+mobile-first
+
+Candidate:
+mobile-first/simple
+
+Do not allow tables to destroy mobile layout.
+
+Use responsive cards or horizontal scrolling where appropriate.
+
+==================================================
+51. REMOVE MOCK DATA
+==================================================
+
+Find all:
+
+mockData
+demoData
+fakeData
+hardcoded financial numbers
+static loan balances
+static payment statuses
+fake notifications
+fake analytics
+fake candidates
+fake applications
+
+Replace them with real API/database calls.
+
+EXCEPTION:
+
+Demo seed data may remain ONLY if explicitly implemented as a database seed.
+
+Never mix fake frontend state with real financial backend state.
+
+==================================================
+52. SEED DATA
+==================================================
+
+Create an idempotent development seed.
+
+Use clearly marked demo organization and demo users.
+
+Example conceptual users:
+
+owner
+agent
+candidate
+
+Do NOT use real credentials.
+
+Use environment-controlled seed passwords.
+
+Seed:
+
+organization
+users
+roles
+candidate
+application
+loan
+schedule
+collection task
+notifications
+
+Do NOT seed fake CAPTURED payments or fake ledger transactions unless they are deliberately created through the real financial workflow.
+
+==================================================
+53. ENVIRONMENT
+==================================================
+
+Audit environment variables.
+
+Required conceptual variables:
+
+DATABASE_URL
+SESSION_SECRET
+CSRF configuration if applicable
+REDIS_URL
+OBJECT_STORAGE configuration
+PAYMENT_PROVIDER configuration
+WHATSAPP configuration if actual API is used
+EMAIL configuration if existing implementation requires it
+
+Never commit secrets.
+
+Create/update:
+
+.env.example
+
+with placeholders only.
+
+==================================================
+54. OBSERVABILITY
+==================================================
+
+Add structured logging.
+
+Logs must include:
+
+request ID
+user ID where safe
+organization ID where safe
+operation
+duration
+result
+
+Never log secrets or unnecessary PII.
+
+Health checks:
+
+API health
+database health
+Redis health where applicable
+
+Do not expose sensitive infrastructure details publicly.
+
+==================================================
+55. TESTING
+==================================================
+
+Write/repair tests.
+
+Unit tests:
+
+money arithmetic
+interest
+schedule generation
+rounding
+allocation
+loan completion
+refund reversal
+
+Integration tests:
+
+authentication
+RBAC
+tenant isolation
+application
+approval
+loan origination
+disbursement
+payment
+webhook
+cash verification
+ledger
+refund
+correction
+
+Security tests:
+
+IDOR
+cross-tenant access
+role escalation
+CSRF
+unauthorized payment modification
+unauthorized ledger modification
+
+E2E:
+
+Owner creates application
+Candidate completes application
+Owner approves
+Loan created
+Schedule generated
+Owner disburses
+Candidate pays
+Webhook arrives
+Payment captured
+Allocation occurs
+Ledger posted
+Receipt generated
+Candidate sees receipt
+Overdue generated
+Agent sees task
+Agent records cash
+Owner verifies
+Allocation/ledger occurs
+
+==================================================
+56. CRITICAL FINANCIAL TEST
+==================================================
+
+Create deterministic test:
+
+Loan:
+₹100,000
+
+Interest:
+18%
+
+Frequency:
+weekly
+
+Installments:
+20
+
+Verify:
+
+schedule generated
+totals reconcile
+principal closes to zero
+allocation works
+payment history matches
+outstanding matches
+ledger balances
+receipt matches payment
+
+Do not assume exact total if the existing financial specification defines a different calculation method.
+
+Use the project's actual configured calculation engine.
+
+==================================================
+57. UI/API CONTRACT
+==================================================
+
+For every portal page:
+
+UI
+↓
+API
+↓
+authorization
+↓
+service
+↓
+Prisma
+↓
+Neon
+
+No direct frontend database access.
+
+No fake local mutation pretending to be server state.
+
+After mutation:
+
+invalidate/refetch authoritative data.
+
+==================================================
+58. LOADING / EMPTY / ERROR
+==================================================
+
+Every major screen needs:
+
+loading
+empty
+error
+retry
+success
+
+Examples:
+
+No applications
+No active loans
+No payments
+No collection tasks
+No overdue loans
+No notifications
+
+Do not show fake records simply to avoid empty states.
+
+==================================================
+59. PERFORMANCE
+==================================================
+
+Use:
+
+server-side pagination
+indexed database queries
+select only required fields
+avoid N+1 queries
+cache only non-authoritative data
+debounce search
+controlled chart aggregation
+lazy loading where appropriate
+
+Do not optimize by weakening financial correctness.
+
+==================================================
+60. PRODUCTION READINESS
+==================================================
+
+Before declaring complete, verify:
+
+- build
+- lint
+- typecheck
+- Prisma generate
+- migration status
+- API startup
+- frontend startup
+- database connection
+- Redis connection/fallback
+- object storage configuration
+- payment configuration
+- authentication
+- authorization
+- tenant isolation
+- financial engine
+- webhooks
+- ledger
+- reconciliation
+- audit
+- reports
+- responsive UI
+
+==================================================
+61. ROUTE VERIFICATION
+==================================================
+
+Automatically enumerate all existing routes.
+
+Verify:
+
+Owner routes
+Agent routes
+Candidate routes
+Application route
+API routes
+
+Do not assume "HTTP 200" means the feature works.
+
+HTTP 200 is only a basic routing check.
+
+Perform actual authenticated workflow tests.
+
+==================================================
+62. NO SECURITY BYPASS
+==================================================
+
+Absolutely forbidden:
+
+- disabling authentication to make pages work
+- accepting arbitrary role from query parameter
+- bypassing tenant checks
+- exposing Neon credentials
+- trusting payment callbacks
+- allowing frontend balance edits
+- direct ledger edits
+- hardcoded production credentials
+- disabling CSRF
+- making all APIs public
+- using fake payment success
+- auto-verifying cash
+- allowing candidate to access another candidate
+- using DB IDs as public application secrets
+
+==================================================
+63. IMPLEMENTATION STRATEGY
+==================================================
+
+Work in phases.
+
+PHASE 0:
+Audit existing project.
+
+PHASE 1:
+Authentication + sessions + RBAC + tenant isolation.
+
+PHASE 2:
+Real Neon + Prisma repositories/services + API.
+
+PHASE 3:
+Candidate application workflow.
+
+PHASE 4:
+Owner approval + loan origination.
+
+PHASE 5:
+Financial engine + schedule.
+
+PHASE 6:
+Disbursement.
+
+PHASE 7:
+Payments + provider webhook + allocation.
+
+PHASE 8:
+Ledger + receipts.
+
+PHASE 9:
+Agent collection + cash verification.
+
+PHASE 10:
+Notifications + reminders + WhatsApp.
+
+PHASE 11:
+AI advisory signals.
+
+PHASE 12:
+Reports + analytics + reconciliation.
+
+PHASE 13:
+Refunds + financial corrections.
+
+PHASE 14:
+Audit + security hardening.
+
+PHASE 15:
+Full E2E verification.
+
+Do not jump randomly between phases.
+
+==================================================
+64. IMPORTANT EXISTING IMPLEMENTATION RULE
+==================================================
+
+If an existing implementation already satisfies a requirement:
+
+KEEP IT.
+
+Only modify it if:
+
+- incorrect
+- insecure
+- mock-only
+- disconnected from database
+- inconsistent with current architecture
+- causing a verified bug
+
+Do not create duplicate implementations.
+
+Reuse:
+
+existing Prisma models
+existing financial engine
+existing API modules
+existing shared UI components
+existing auth infrastructure
+existing notification queues
+existing payment abstraction
+existing audit service
+
+==================================================
+65. FINAL ACCEPTANCE CRITERIA
+==================================================
+
+The platform is COMPLETE only when this real workflow succeeds:
+
+OWNER LOGIN
+↓
+CREATE/SELECT CANDIDATE
+↓
+CREATE LOAN APPLICATION
+↓
+GENERATE SECURE APPLICATION LINK/QR
+↓
+CANDIDATE OPENS LINK
+↓
+COMPLETE APPLICATION
+↓
+UPLOAD DOCUMENTS
+↓
+ACCEPT AGREEMENT
+↓
+SUBMIT
+↓
+OWNER SEES APPLICATION
+↓
+OWNER REVIEWS
+↓
+OWNER APPROVES
+↓
+LOAN CREATED
+↓
+IMMUTABLE TERMS SNAPSHOT
+↓
+REPAYMENT SCHEDULE GENERATED
+↓
+OWNER DISBURSES
+↓
+CANDIDATE SEES ACTIVE LOAN
+↓
+CANDIDATE PAYS
+↓
+PAYMENT PROVIDER CONFIRMS
+↓
+WEBHOOK VERIFIED
+↓
+PAYMENT CAPTURED
+↓
+PAYMENT ALLOCATED
+↓
+LEDGER POSTED
+↓
+RECEIPT GENERATED
+↓
+CANDIDATE SEES RECEIPT
+↓
+REMINDER SYSTEM RUNS
+↓
+OVERDUE DETECTED
+↓
+AGENT SEES COLLECTION TASK
+↓
+AGENT CONTACTS CANDIDATE
+↓
+AGENT RECORDS PTP OR CASH
+↓
+CASH VERIFIED BY AUTHORIZED USER
+↓
+PAYMENT ALLOCATED
+↓
+LEDGER UPDATED
+↓
+RECONCILIATION PASSES
+↓
+AUDIT TRAIL COMPLETE
+
+==================================================
+66. FINAL REPORT
+==================================================
+
+At the end provide:
+
+1. Architecture summary
+2. Files changed
+3. Database changes
+4. Migrations created
+5. APIs created/updated
+6. Authentication implementation
+7. RBAC implementation
+8. Tenant isolation implementation
+9. Financial engine status
+10. Payment/webhook status
+11. Ledger status
+12. Collection status
+13. Notification status
+14. AI status
+15. Reports status
+16. Security audit results
+17. Tests executed
+18. Test results
+19. Remaining blockers
+20. Environment variables required
+21. Exact commands to run locally
+22. Exact commands to deploy
+23. Demo credentials ONLY if safely seeded
+24. Known limitations
+
+DO NOT claim "production ready" unless the actual acceptance workflow has been executed successfully.
+
+==================================================
+67. WORKING STYLE
+==================================================
+
+You are an autonomous senior engineer.
+
+Do not stop after creating UI.
+
+Do not stop after schema creation.
+
+Do not stop after route creation.
+
+Do not stop after HTTP 200.
+
+Trace every important feature end-to-end.
+
+When you encounter an error:
+
+1. inspect root cause
+2. fix root cause
+3. rerun affected test
+4. run regression tests
+5. continue
+
+Do not hide errors.
+
+Do not weaken security.
+
+Do not fabricate successful results.
+
+Do not invent financial values.
+
+Do not create duplicate architecture.
+
+Use the existing repository as the source of truth for implementation details.
+
+==================================================
+68. START NOW
+==================================================
+
+Begin immediately.
+
+STEP 1:
+Audit repository.
+
+STEP 2:
+Produce a concise internal gap analysis.
+
+STEP 3:
+Inspect current Neon/Prisma state.
+
+STEP 4:
+Inspect existing auth/RBAC.
+
+STEP 5:
+Inspect existing financial engine.
+
+STEP 6:
+Inspect all three portals.
+
+STEP 7:
+Implement PHASE 1.
+
+STEP 8:
+Run tests.
+
+STEP 9:
+Continue sequentially through all phases.
+
+After each phase:
+- verify
+- fix
+- regression test
+- continue
+
+Do not ask me for confirmation for ordinary implementation decisions.
+
+Only stop and ask if:
+- a destructive database operation would be required
+- a required secret/credential is genuinely unavailable
+- a legally/commercially material business rule is ambiguous and cannot safely be inferred from the existing project specification
+
+Otherwise make the safest implementation choice and continue.
+
+FINAL OBJECTIVE:
+
+Turn the EXISTING Loan Ops Platform into a fully connected, secure, database-backed, production-quality fintech operations system with:
+
+OWNER PORTAL
++
+AGENT PORTAL
++
+CANDIDATE PORTAL
++
+SECURE APPLICATION FLOW
++
+NEON POSTGRESQL
++
+REAL AUTH
++
+RBAC
++
+TENANT ISOLATION
++
+REAL LOAN ORIGINATION
++
+DETERMINISTIC REPAYMENT ENGINE
++
+DISBURSEMENT
++
+PAYMENTS
++
+WEBHOOKS
++
+ALLOCATION
++
+DOUBLE-ENTRY LEDGER
++
+CASH COLLECTION
++
+RECONCILIATION
++
+REFUNDS
++
+FINANCIAL CORRECTIONS
++
+AUDIT
++
+NOTIFICATIONS
++
+WHATSAPP
++
+AI ADVISORY INSIGHTS
++
+REPORTING
++
+FULL E2E TESTING.
+
+DO NOT BUILD A DEMO.
+
+BUILD THE REAL SYSTEM.

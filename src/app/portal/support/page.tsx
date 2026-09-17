@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   LifeBuoy, MessageCircle, Plus, Paperclip, Send, Clock,
   HelpCircle, UserCog, ShieldCheck,
@@ -12,7 +13,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
-import { FadeIn, StaggerContainer, StaggerItem } from '@/components/ui/motion'
+import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
@@ -23,17 +25,14 @@ import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from '@/components/ui/accordion'
 import { toast } from 'sonner'
-import { supportTickets } from '@/lib/mock-data'
+import { api } from '@/lib/api-client'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
 import { useSession } from '@/lib/session'
-import { cn } from '@/lib/utils'
 
-const AGENT_PHONE = '+91 98201 44556' // Arjun Nair
-const OWNER_PHONE = '+91 98200 11223' // Ravi Mehta
+const AGENT_PHONE = '+91 98201 44556'
+const OWNER_PHONE = '+91 98200 11223'
 
-const CATEGORIES = [
-  'Repayment', 'Receipt', 'KYC', 'Agreement', 'Disbursement', 'Other',
-]
+const CATEGORIES = ['Repayment', 'Receipt', 'KYC', 'Agreement', 'Disbursement', 'Other']
 
 const FAQS = [
   {
@@ -58,21 +57,48 @@ const FAQS = [
   },
   {
     q: 'What happens if I miss a payment?',
-    a: 'A reminder is sent on the due date. If unpaid within 3 days, late charges may apply as per your agreement. Reach out to your agent via WhatsApp to discuss a payment plan — we\'re here to help, not to penalize.',
+    a: 'A reminder is sent on the due date. If unpaid within 3 days, late charges may apply as per your agreement. Reach out to your agent via WhatsApp to discuss a payment plan.',
   },
 ]
 
-export default function SupportPage() {
-  const { user } = useSession()
-  const candidateName = user?.name || 'Priya Sharma'
+interface Ticket {
+  id: string
+  ticketNumber: string
+  category: string
+  subject: string
+  description?: string
+  status: 'OPEN' | 'IN_REVIEW' | 'RESOLVED' | 'CLOSED'
+  resolution?: string | null
+  createdAt: string
+}
 
-  const [tickets, setTickets] = React.useState(supportTickets)
+function fmtTimestamp(d: string) {
+  const date = new Date(d)
+  const now = new Date()
+  const diff = (now.getTime() - date.getTime()) / 1000
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+}
+
+export default function SupportPage() {
+  const queryClient = useQueryClient()
+  const { user } = useSession()
+  const candidateName = user?.name || 'Candidate'
   const [newOpen, setNewOpen] = React.useState(false)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['candidate-support'],
+    queryFn: () => api.get<{ items: Ticket[] }>('/api/candidate/support'),
+  })
+  const tickets = data?.items ?? []
 
   const onWhatsAppAgent = () => {
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.CANDIDATE_TO_AGENT, {
       candidateName,
-      loanNumber: 'LON-2024-0892',
+      loanNumber: '',
     })
     openWhatsApp(AGENT_PHONE, msg)
     toast.success('WhatsApp draft opened', { description: 'Your agent Arjun will respond shortly.' })
@@ -80,7 +106,7 @@ export default function SupportPage() {
   const onWhatsAppOwner = () => {
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.CANDIDATE_TO_OWNER, {
       candidateName,
-      loanNumber: 'LON-2024-0892',
+      loanNumber: '',
     })
     openWhatsApp(OWNER_PHONE, msg)
     toast.success('WhatsApp draft opened', { description: 'Owner notified.' })
@@ -99,7 +125,6 @@ export default function SupportPage() {
         }
       />
 
-      {/* Contact cards */}
       <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
         <StaggerItem>
           <Card className="shadow-premium border-info/15 bg-info/5">
@@ -151,7 +176,6 @@ export default function SupportPage() {
         </StaggerItem>
       </StaggerContainer>
 
-      {/* My support tickets */}
       <FadeIn>
         <Card className="shadow-premium">
           <CardHeader className="pb-3">
@@ -171,37 +195,44 @@ export default function SupportPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <StaggerContainer className="space-y-3">
-              {tickets.map((t) => (
-                <StaggerItem key={t.id}>
-                  <div className="rounded-xl border border-border bg-card p-4 hover:border-primary/40 hover:shadow-premium transition-all">
-                    <div className="flex items-start justify-between gap-2 flex-wrap">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-mono text-xs text-primary font-semibold">{t.ticketNumber}</p>
-                          <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-[10px] font-medium">{t.category}</span>
+            {isLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+              </div>
+            ) : tickets.length === 0 ? (
+              <EmptyState icon={<LifeBuoy className="h-6 w-6" />} title="No support requests" description="Raise a ticket and our team will respond within 4 hours." />
+            ) : (
+              <StaggerContainer className="space-y-3">
+                {tickets.map((t) => (
+                  <StaggerItem key={t.id}>
+                    <div className="rounded-xl border border-border bg-card p-4 hover:border-primary/40 hover:shadow-premium transition-all">
+                      <div className="flex items-start justify-between gap-2 flex-wrap">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-mono text-xs text-primary font-semibold">{t.ticketNumber}</p>
+                            <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-[10px] font-medium">{t.category}</span>
+                          </div>
+                          <p className="text-sm font-medium mt-1.5">{t.subject}</p>
+                          <p className="text-[11px] text-muted-foreground mt-1 inline-flex items-center gap-1">
+                            <Clock className="h-3 w-3" /> {fmtTimestamp(t.createdAt)}
+                          </p>
                         </div>
-                        <p className="text-sm font-medium mt-1.5">{t.subject}</p>
-                        <p className="text-[11px] text-muted-foreground mt-1 inline-flex items-center gap-1">
-                          <Clock className="h-3 w-3" /> {t.createdAt}
-                        </p>
+                        <StatusBadge variant={t.status}>{formatStatus(t.status)}</StatusBadge>
                       </div>
-                      <StatusBadge variant={t.status}>{formatStatus(t.status)}</StatusBadge>
+                      {t.resolution && (
+                        <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
+                          <span className="font-semibold text-foreground">Resolution: </span>{t.resolution}
+                        </p>
+                      )}
                     </div>
-                    {t.resolution && (
-                      <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
-                        <span className="font-semibold text-foreground">Resolution: </span>{t.resolution}
-                      </p>
-                    )}
-                  </div>
-                </StaggerItem>
-              ))}
-            </StaggerContainer>
+                  </StaggerItem>
+                ))}
+              </StaggerContainer>
+            )}
           </CardContent>
         </Card>
       </FadeIn>
 
-      {/* FAQs */}
       <FadeIn>
         <Card className="shadow-premium">
           <CardHeader className="pb-3">
@@ -232,7 +263,6 @@ export default function SupportPage() {
         </Card>
       </FadeIn>
 
-      {/* Trust strip */}
       <FadeIn>
         <div className="rounded-xl bg-success/5 border border-success/15 p-4 flex items-start gap-3">
           <ShieldCheck className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
@@ -243,55 +273,41 @@ export default function SupportPage() {
         </div>
       </FadeIn>
 
-      <NewTicketDialog
-        open={newOpen}
-        onOpenChange={setNewOpen}
-        onSubmit={(t) => setTickets([t, ...tickets])}
-      />
+      <NewTicketDialog open={newOpen} onOpenChange={setNewOpen} onCreated={() => {
+        queryClient.invalidateQueries({ queryKey: ['candidate-support'] })
+      }} />
     </div>
   )
 }
 
-interface Ticket {
-  id: string
-  ticketNumber: string
-  category: string
-  subject: string
-  status: 'OPEN' | 'IN_REVIEW' | 'RESOLVED' | 'CLOSED'
-  createdAt: string
-  resolution?: string
-}
-
-function NewTicketDialog({ open, onOpenChange, onSubmit }: {
+function NewTicketDialog({ open, onOpenChange, onCreated }: {
   open: boolean
   onOpenChange: (v: boolean) => void
-  onSubmit: (t: Ticket) => void
+  onCreated: () => void
 }) {
   const [category, setCategory] = React.useState('Repayment')
   const [subject, setSubject] = React.useState('')
   const [description, setDescription] = React.useState('')
 
-  const submit = () => {
-    if (!subject.trim()) {
-      toast.error('Add a subject first')
-      return
-    }
-    if (!description.trim()) {
-      toast.error('Add a description so we can help you better')
-      return
-    }
-    const t: Ticket = {
-      id: `st${Math.random().toString(36).slice(2, 8)}`,
-      ticketNumber: `SUP-2024-${Math.floor(130 + Math.random() * 80)}`,
+  const mutation = useMutation({
+    mutationFn: () => api.post<{ id: string; ticketNumber: string }>('/api/candidate/support', {
       category,
-      subject: subject.trim(),
-      status: 'OPEN',
-      createdAt: 'Just now',
-    }
-    onSubmit(t)
-    toast.success('Support request created', { description: `${t.ticketNumber} · ${category}` })
-    setCategory('Repayment'); setSubject(''); setDescription('')
-    onOpenChange(false)
+      subject,
+      description,
+    }),
+    onSuccess: (res) => {
+      toast.success('Support request created', { description: `${res.ticketNumber} · ${category}` })
+      onCreated()
+      setCategory('Repayment'); setSubject(''); setDescription('')
+      onOpenChange(false)
+    },
+    onError: (e: Error) => toast.error('Failed to create ticket', { description: e.message }),
+  })
+
+  const submit = () => {
+    if (!subject.trim()) { toast.error('Add a subject first'); return }
+    if (!description.trim()) { toast.error('Add a description so we can help you better'); return }
+    mutation.mutate()
   }
 
   return (
@@ -329,7 +345,7 @@ function NewTicketDialog({ open, onOpenChange, onSubmit }: {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit}><Send className="h-4 w-4" /> Submit Request</Button>
+          <Button onClick={submit} disabled={mutation.isPending}><Send className="h-4 w-4" /> Submit Request</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

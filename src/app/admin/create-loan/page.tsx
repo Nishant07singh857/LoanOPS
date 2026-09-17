@@ -18,10 +18,17 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import { toast } from 'sonner'
-import { loans } from '@/lib/mock-data'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import { api } from '@/lib/api-client'
 import { generateSchedulePreview, type ScheduleInput, type InterestType, type RepaymentFrequency } from '@/lib/financial-engine'
 import { formatPaiseToINR, formatBpsToPercent, parseDisplayPaise } from '@/lib/money'
 import { cn } from '@/lib/utils'
+
+interface CandidateRow {
+  id: string
+  fullName: string
+  mobile: string
+}
 
 type StepKey = 'candidate' | 'loan' | 'interest' | 'frequency' | 'tenure' | 'fees' | 'preview'
 
@@ -101,12 +108,53 @@ export default function CreateLoanPage() {
     return true
   }
 
+  const { data: candidatesData } = useQuery({
+    queryKey: ['owner-candidates-create-loan'],
+    queryFn: () => api.get<{ items: CandidateRow[] }>('/api/owner/candidates?pageSize=100'),
+  })
+  const candidates = candidatesData?.items ?? []
+  const candidateNames = Array.from(new Set(candidates.map((c) => c.fullName)))
+
+  const createMutation = useMutation({
+    mutationFn: () => {
+      // Resolve candidate
+      let candidateId: string | undefined
+      let newCandidate: any = undefined
+      if (candidateMode === 'EXISTING') {
+        const c = candidates.find((c) => c.fullName === existingCandidate)
+        if (!c) throw new Error('Candidate not found')
+        candidateId = c.id
+      } else {
+        newCandidate = { fullName: newName, mobile: newMobile }
+      }
+      return api.post<{ id: string; applicationNumber: string }>('/api/owner/applications', {
+        candidateId,
+        newCandidate,
+        principalAmount: String(principalPaise),
+        purpose,
+        interestType,
+        interestRate: interestType === 'PERCENTAGE' ? Number(interestRateBps) : null,
+        fixedInterest: interestType === 'FIXED' ? String(fixedInterestPaise) : null,
+        frequency,
+        tenureCount: installmentsNum,
+        installments: installmentsNum,
+        firstDueDate: firstDue.toISOString(),
+        processingFee: processingFeePaise > 0 ? String(processingFeePaise) : null,
+        otherFees: otherFeesPaise > 0 ? String(otherFeesPaise) : null,
+      })
+    },
+    onSuccess: (res) => {
+      const candidateName = candidateMode === 'EXISTING' ? existingCandidate : newName
+      toast.success('Application created!', {
+        description: `${res.applicationNumber} created for ${candidateName} · ${formatPaiseToINR(principalPaise)} ${frequency.toLowerCase()} × ${installmentsNum}.`,
+      })
+      router.push('/admin/applications')
+    },
+    onError: (e: Error) => toast.error('Failed to create application', { description: e.message }),
+  })
+
   const submit = () => {
-    const candidateName = candidateMode === 'EXISTING' ? existingCandidate : newName
-    toast.success('Application link generated!', {
-      description: `QR link created for ${candidateName} · ${formatPaiseToINR(principalPaise)} ${frequency.toLowerCase()} × ${installmentsNum}.`,
-    })
-    router.push('/admin/qr-links')
+    createMutation.mutate()
   }
 
   return (
@@ -195,13 +243,13 @@ export default function CreateLoanPage() {
                           className="pl-9"
                         />
                         <datalist id="candidates-list">
-                          {Array.from(new Set(loans.map((l) => l.candidateName))).map((n) => (
+                          {candidateNames.map((n) => (
                             <option key={n} value={n} />
                           ))}
                         </datalist>
                       </div>
                       <div className="flex flex-wrap gap-2 mt-3">
-                        {Array.from(new Set(loans.map((l) => l.candidateName))).slice(0, 6).map((n) => (
+                        {candidateNames.slice(0, 6).map((n) => (
                           <button key={n} onClick={() => setExistingCandidate(n)} className={cn('text-xs px-2.5 py-1 rounded-full border transition-all', existingCandidate === n ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted hover:bg-muted/60')}>
                             {n}
                           </button>
@@ -464,7 +512,7 @@ export default function CreateLoanPage() {
                 Continue <ArrowRight className="h-4 w-4" />
               </Button>
             ) : (
-              <Button onClick={submit} disabled={!preview} className="gap-1">
+              <Button onClick={submit} disabled={!preview || createMutation.isPending} className="gap-1">
                 <Link2 className="h-4 w-4" /> Generate Application Link
               </Button>
             )}

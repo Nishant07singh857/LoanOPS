@@ -2,20 +2,21 @@
 
 import * as React from 'react'
 import Link from 'next/link'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  PhoneCall, Phone, MessageCircle, MapPin, Calendar, CheckCircle2,
-  Clock, Plus, Filter, X, ChevronRight, PhoneForwarded, User,
-  CalendarClock,
+  PhoneCall, Phone, Plus, Filter, X, ChevronRight,
+  Clock, CheckCircle2, Calendar, CalendarClock,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { KPICard } from '@/components/ui/kpi-card'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -24,75 +25,86 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { agentCandidates } from '@/lib/mock-data'
-import { formatPaiseToINR } from '@/lib/money'
+import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 
-type ChipKey = 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'OVERDUE' | 'COMPLETED'
+type ChipKey = 'TODAY' | 'UPCOMING' | 'OVERDUE' | 'COMPLETED' | 'ALL'
 type Method = 'PHONE' | 'WHATSAPP' | 'IN_APP' | 'FIELD_VISIT'
-
-interface FollowUp {
-  id: string
-  candidateName: string
-  loanNumber: string
-  scheduledAt: string
-  method: Method
-  outcome: string
-  nextFollowUp?: string
-  status: 'PENDING' | 'COMPLETED' | 'OVERDUE'
-}
 
 const CHIPS: { key: ChipKey; label: string }[] = [
   { key: 'TODAY', label: 'Today' },
-  { key: 'TOMORROW', label: 'Tomorrow' },
-  { key: 'THIS_WEEK', label: 'This Week' },
+  { key: 'UPCOMING', label: 'Upcoming' },
   { key: 'OVERDUE', label: 'Overdue' },
   { key: 'COMPLETED', label: 'Completed' },
+  { key: 'ALL', label: 'All' },
 ]
 
 const methodBadge: Record<Method, string> = {
   PHONE: 'AI_LOW',
   WHATSAPP: 'AI_LOW',
   IN_APP: 'PASSIVE',
-  'FIELD_VISIT': 'AI_MEDIUM',
+  FIELD_VISIT: 'AI_MEDIUM',
 }
 
 const initials = (n: string) => n.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
 
-// Synthesize follow-ups using agentCandidates
-const followUps: FollowUp[] = [
-  { id: 'f1', candidateName: 'Karthik Iyer', loanNumber: 'LON-2024-0812', scheduledAt: 'Today 4:00 PM', method: 'PHONE', outcome: 'Pending', nextFollowUp: 'Today 4:00 PM', status: 'PENDING' },
-  { id: 'f2', candidateName: 'Sahil Khan', loanNumber: 'LON-2024-0712', scheduledAt: 'Today 5:30 PM', method: 'FIELD_VISIT', outcome: 'Pending', nextFollowUp: 'Today 5:30 PM', status: 'PENDING' },
-  { id: 'f3', candidateName: 'Meena Desai', loanNumber: 'LON-2024-0834', scheduledAt: 'Today 6:00 PM', method: 'WHATSAPP', outcome: 'Pending', nextFollowUp: 'Today 6:00 PM', status: 'PENDING' },
-  { id: 'f4', candidateName: 'Suresh Patel', loanNumber: 'LON-2024-0698', scheduledAt: 'Yesterday 4:00 PM', method: 'PHONE', outcome: 'No answer — retry tomorrow', nextFollowUp: 'Tomorrow 10:00 AM', status: 'OVERDUE' },
-  { id: 'f5', candidateName: 'Rahul Verma', loanNumber: 'LON-2024-0892', scheduledAt: 'Tomorrow 11:00 AM', method: 'PHONE', outcome: 'Pending', nextFollowUp: '20 Sep 11:00 AM', status: 'PENDING' },
-  { id: 'f6', candidateName: 'Imran Khan', loanNumber: 'LON-2024-0884', scheduledAt: '19 Sep 10:00 AM', method: 'IN_APP', outcome: 'Pending', nextFollowUp: '19 Sep 10:00 AM', status: 'PENDING' },
-  { id: 'f7', candidateName: 'Meena Desai', loanNumber: 'LON-2024-0834', scheduledAt: 'Yesterday 1:00 PM', method: 'WHATSAPP', outcome: 'Reminder sent', nextFollowUp: 'Today 6:00 PM', status: 'COMPLETED' },
-  { id: 'f8', candidateName: 'Karthik Iyer', loanNumber: 'LON-2024-0812', scheduledAt: '2 days ago', method: 'PHONE', outcome: 'PTP created for 22 Sep', status: 'COMPLETED' },
-  { id: 'f9', candidateName: 'Sahil Khan', loanNumber: 'LON-2024-0712', scheduledAt: '5 days ago', method: 'PHONE', outcome: 'No answer for 3 days', status: 'COMPLETED' },
-  { id: 'f10', candidateName: 'Suresh Patel', loanNumber: 'LON-2024-0698', scheduledAt: '1 week ago', method: 'FIELD_VISIT', outcome: 'Visited shop — shut', status: 'COMPLETED' },
-]
+interface FollowUp {
+  id: string
+  contactDate: string
+  contactMethod: Method
+  outcome?: string | null
+  notes?: string | null
+  nextFollowUp?: string | null
+  candidate: { id: string; fullName: string; mobile: string }
+  loan?: { loanNumber: string } | null
+  createdAt: string
+}
+
+interface CandidateRow {
+  id: string
+  fullName: string
+  mobile: string
+  activeLoanNumbers: string[]
+}
+
+function isToday(d: Date) {
+  const n = new Date()
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate()
+}
+function isFuture(d: Date) { return d > new Date() }
+function isPast(d: Date) { return d < new Date() && !isToday(d) }
+
+function fmtDateTime(d?: string | null) {
+  if (!d) return '—'
+  return new Date(d).toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+  })
+}
 
 export default function AgentFollowupsPage() {
-  const [chip, setChip] = React.useState<ChipKey>('TODAY')
+  const queryClient = useQueryClient()
+  const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [newOpen, setNewOpen] = React.useState(false)
 
+  const { data, isLoading } = useQuery({
+    queryKey: ['agent-follow-ups'],
+    queryFn: () => api.get<{ items: FollowUp[]; total: number }>('/api/agent/follow-ups?pageSize=100'),
+  })
+
+  const all = data?.items ?? []
+
   const filtered = React.useMemo(() => {
-    if (chip === 'TODAY') return followUps.filter((f) => f.scheduledAt.includes('Today'))
-    if (chip === 'TOMORROW') return followUps.filter((f) => f.scheduledAt.includes('Tomorrow'))
-    if (chip === 'OVERDUE') return followUps.filter((f) => f.status === 'OVERDUE')
-    if (chip === 'COMPLETED') return followUps.filter((f) => f.status === 'COMPLETED')
-    if (chip === 'THIS_WEEK') return followUps.filter((f) => !f.scheduledAt.includes('ago'))
-    return followUps
-  }, [chip])
+    if (chip === 'TODAY') return all.filter((f) => f.nextFollowUp && isToday(new Date(f.nextFollowUp)))
+    if (chip === 'UPCOMING') return all.filter((f) => f.nextFollowUp && isFuture(new Date(f.nextFollowUp)))
+    if (chip === 'OVERDUE') return all.filter((f) => f.nextFollowUp && isPast(new Date(f.nextFollowUp)) && !f.outcome)
+    if (chip === 'COMPLETED') return all.filter((f) => !!f.outcome)
+    return all
+  }, [all, chip])
 
-  const todaysCount = followUps.filter((f) => f.scheduledAt.includes('Today') && f.status !== 'COMPLETED').length
-  const upcomingCount = followUps.filter((f) => !f.scheduledAt.includes('Today') && !f.scheduledAt.includes('ago') && f.status !== 'COMPLETED').length
-  const overdueCount = followUps.filter((f) => f.status === 'OVERDUE').length
-  const completedCount = followUps.filter((f) => f.status === 'COMPLETED').length
-
-  const onComplete = (id: string) => toast.success('Follow-up completed', { description: `Follow-up ${id} marked COMPLETED.` })
-  const onReschedule = (id: string) => toast.info('Reschedule dialog', { description: `Pick a new time for ${id}.` })
+  const todaysCount = all.filter((f) => f.nextFollowUp && isToday(new Date(f.nextFollowUp)) && !f.outcome).length
+  const upcomingCount = all.filter((f) => f.nextFollowUp && isFuture(new Date(f.nextFollowUp)) && !f.outcome).length
+  const overdueCount = all.filter((f) => f.nextFollowUp && isPast(new Date(f.nextFollowUp)) && !f.outcome).length
+  const completedCount = all.filter((f) => !!f.outcome).length
 
   return (
     <div className="space-y-6">
@@ -142,12 +154,17 @@ export default function AgentFollowupsPage() {
         </Card>
       </FadeIn>
 
-      {filtered.length === 0 ? (
-        <EmptyState icon={<PhoneCall className="h-6 w-6" />} title="No follow-ups in this view" />
+      {isLoading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+        </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState icon={<PhoneCall className="h-6 w-6" />} title="No follow-ups in this view" description="Schedule a follow-up to see it here." />
       ) : (
         <StaggerContainer className="space-y-3">
           {filtered.map((f) => {
-            const cand = agentCandidates.find((c) => c.name === f.candidateName)
+            const nextDate = f.nextFollowUp ? new Date(f.nextFollowUp) : null
+            const overdue = nextDate ? isPast(nextDate) && !f.outcome : false
             return (
               <StaggerItem key={f.id}>
                 <Card className="shadow-premium hover:border-primary/40 hover:shadow-glow transition-all">
@@ -155,60 +172,49 @@ export default function AgentFollowupsPage() {
                     <div className="flex items-start gap-3">
                       <Avatar className="h-10 w-10 flex-shrink-0">
                         <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-                          {initials(f.candidateName)}
+                          {initials(f.candidate.fullName)}
                         </AvatarFallback>
                       </Avatar>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-3 flex-wrap">
                           <div className="min-w-0">
-                            <Link href={`/agent/candidates/${cand?.id || 'c1'}`} className="text-sm font-semibold hover:text-primary">
-                              {f.candidateName}
+                            <Link href={`/agent/candidates/${f.candidate.id}`} className="text-sm font-semibold hover:text-primary">
+                              {f.candidate.fullName}
                             </Link>
-                            <p className="font-mono text-[11px] text-muted-foreground">{f.loanNumber}</p>
+                            <p className="font-mono text-[11px] text-muted-foreground">{f.loan?.loanNumber ?? '—'}</p>
                           </div>
                           <div className="flex items-center gap-2">
-                            <StatusBadge variant={methodBadge[f.method]}>{f.method.replace(/_/g, ' ')}</StatusBadge>
-                            <StatusBadge variant={f.status === 'COMPLETED' ? 'RESOLVED' : f.status === 'OVERDUE' ? 'OVERDUE' : 'ASSIGNED'}>
-                              {f.status === 'COMPLETED' ? 'Completed' : f.status === 'OVERDUE' ? 'Overdue' : 'Pending'}
+                            <StatusBadge variant={methodBadge[f.contactMethod] as any}>{f.contactMethod.replace(/_/g, ' ')}</StatusBadge>
+                            <StatusBadge variant={overdue ? 'OVERDUE' : f.outcome ? 'RESOLVED' : 'ASSIGNED'}>
+                              {overdue ? 'Overdue' : f.outcome ? 'Completed' : 'Pending'}
                             </StatusBadge>
                           </div>
                         </div>
                         <div className="flex items-center gap-3 mt-2 text-[11px] text-muted-foreground flex-wrap">
-                          <span className="inline-flex items-center gap-1">
-                            <Clock className="h-3 w-3" /> {f.scheduledAt}
-                          </span>
-                          <span>·</span>
-                          <span>Outcome: <span className="font-medium text-foreground">{f.outcome}</span></span>
-                          {f.nextFollowUp && (
+                          {nextDate && (
+                            <span className="inline-flex items-center gap-1">
+                              <Clock className="h-3 w-3" /> {fmtDateTime(f.nextFollowUp)}
+                            </span>
+                          )}
+                          {f.outcome && (
                             <>
                               <span>·</span>
-                              <span className="inline-flex items-center gap-1 text-info">
-                                <Calendar className="h-3 w-3" /> Next: {f.nextFollowUp}
-                              </span>
+                              <span>Outcome: <span className="font-medium text-foreground">{f.outcome}</span></span>
                             </>
                           )}
                         </div>
+                        {f.notes && <p className="text-xs text-muted-foreground mt-1">{f.notes}</p>}
                         <div className="flex flex-wrap gap-2 mt-3">
-                          {f.method === 'PHONE' && (
+                          {f.contactMethod === 'PHONE' && (
                             <Button asChild size="sm" variant="outline" className="h-8">
-                              <a href={`tel:${cand?.mobile.replace(/\s/g, '') || ''}`}><Phone className="h-3.5 w-3.5" /> Call</a>
+                              <a href={`tel:${f.candidate.mobile.replace(/\s/g, '')}`}><Phone className="h-3.5 w-3.5" /> Call</a>
                             </Button>
                           )}
                           <Button asChild size="sm" variant="ghost" className="h-8">
-                            <Link href={`/agent/candidates/${cand?.id || 'c1'}`}>
+                            <Link href={`/agent/candidates/${f.candidate.id}`}>
                               Open <ChevronRight className="h-3.5 w-3.5" />
                             </Link>
                           </Button>
-                          {f.status !== 'COMPLETED' && (
-                            <>
-                              <Button size="sm" variant="outline" className="h-8 ml-auto" onClick={() => onReschedule(f.id)}>
-                                <Calendar className="h-3.5 w-3.5" /> Reschedule
-                              </Button>
-                              <Button size="sm" className="h-8" onClick={() => onComplete(f.id)}>
-                                <CheckCircle2 className="h-3.5 w-3.5" /> Complete
-                              </Button>
-                            </>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -226,16 +232,40 @@ export default function AgentFollowupsPage() {
 }
 
 function NewFollowupDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const [candidate, setCandidate] = React.useState('')
-  const [date, setDate] = React.useState('')
-  const [time, setTime] = React.useState('')
-  const [method, setMethod] = React.useState<Method>('PHONE')
+  const queryClient = useQueryClient()
+  const { data: candidatesData } = useQuery({
+    queryKey: ['agent-candidates-for-followup'],
+    queryFn: () => api.get<{ items: CandidateRow[] }>('/api/agent/candidates?pageSize=100'),
+  })
+  const candidates = candidatesData?.items ?? []
+
+  const [candidateId, setCandidateId] = React.useState('')
+  const [contactMethod, setContactMethod] = React.useState<Method>('PHONE')
+  const [outcome, setOutcome] = React.useState('')
   const [notes, setNotes] = React.useState('')
+  const [nextFollowUp, setNextFollowUp] = React.useState('')
+
+  const createMutation = useMutation({
+    mutationFn: () => api.post('/api/agent/follow-ups', {
+      candidateId,
+      contactMethod,
+      outcome: outcome || null,
+      notes: notes || null,
+      nextFollowUp: nextFollowUp ? new Date(nextFollowUp).toISOString() : null,
+    }),
+    onSuccess: () => {
+      toast.success('Follow-up scheduled', { description: `${contactMethod.replace(/_/g, ' ')} for ${candidates.find((c) => c.id === candidateId)?.fullName ?? ''}` })
+      queryClient.invalidateQueries({ queryKey: ['agent-follow-ups'] })
+      queryClient.invalidateQueries({ queryKey: ['agent-dashboard'] })
+      setCandidateId(''); setContactMethod('PHONE'); setOutcome(''); setNotes(''); setNextFollowUp('')
+      onOpenChange(false)
+    },
+    onError: (e: Error) => toast.error('Failed to schedule follow-up', { description: e.message }),
+  })
 
   const submit = () => {
-    toast.success('Follow-up scheduled', { description: `${candidate || 'Candidate'} · ${method.replace(/_/g, ' ')} · ${date} ${time}` })
-    setCandidate(''); setDate(''); setTime(''); setMethod('PHONE'); setNotes('')
-    onOpenChange(false)
+    if (!candidateId) { toast.error('Please select a candidate'); return }
+    createMutation.mutate()
   }
 
   return (
@@ -248,28 +278,18 @@ function NewFollowupDialog({ open, onOpenChange }: { open: boolean; onOpenChange
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label>Candidate</Label>
-            <Select value={candidate} onValueChange={setCandidate}>
+            <Select value={candidateId} onValueChange={setCandidateId}>
               <SelectTrigger className="w-full"><SelectValue placeholder="Select candidate" /></SelectTrigger>
               <SelectContent>
-                {agentCandidates.map((c) => (
-                  <SelectItem key={c.id} value={c.name}>{c.name} · {c.loanNumber}</SelectItem>
+                {candidates.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.fullName} · {c.mobile}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Date</Label>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Time</Label>
-              <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-            </div>
-          </div>
           <div className="space-y-1.5">
             <Label>Method</Label>
-            <Select value={method} onValueChange={(v: string) => setMethod(v as Method)}>
+            <Select value={contactMethod} onValueChange={(v: string) => setContactMethod(v as Method)}>
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="PHONE">Phone</SelectItem>
@@ -280,13 +300,21 @@ function NewFollowupDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             </Select>
           </div>
           <div className="space-y-1.5">
+            <Label>Next Follow-up Date & Time</Label>
+            <Input type="datetime-local" value={nextFollowUp} onChange={(e) => setNextFollowUp(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Outcome (optional)</Label>
+            <Input value={outcome} onChange={(e) => setOutcome(e.target.value)} placeholder="e.g. reminder sent" />
+          </div>
+          <div className="space-y-1.5">
             <Label>Notes</Label>
             <Textarea placeholder="e.g. try after 5 PM, candidate works in shop" value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit}>Schedule</Button>
+          <Button onClick={submit} disabled={createMutation.isPending}>Schedule</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

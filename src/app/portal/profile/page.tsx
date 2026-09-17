@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   UserCircle, Mail, Phone, MapPin, Calendar, ShieldCheck, IdCard,
   Building2, Banknote, Briefcase, Wallet, Edit, LogOut, CheckCircle2,
@@ -12,42 +13,68 @@ import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { FadeIn } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
+import { api } from '@/lib/api-client'
 import { useSession } from '@/lib/session'
+import { formatPaiseToINR } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
-// Static candidate profile data
-const PROFILE = {
-  fullName: 'Priya Sharma',
-  mobile: '+91 98202 77889',
-  email: 'priya.sharma@example.com',
-  dob: '14 March 1992',
-  address: '14, SeaView Apartments, Bandra West, Mumbai 400050',
-  // KYC
-  aadhaarMasked: 'XXXX-XXXX-4521',
-  pan: 'AKJPS9214H',
-  kycStatus: 'VERIFIED',
-  kycVerifiedAt: '12 Aug 2024',
-  // Bank
-  bankName: 'Axis Bank',
-  accountMasked: 'XXXX5678',
-  ifsc: 'AXIS0001234',
-  upiId: 'priya@okhdfcbank',
-  // Employment
-  occupation: 'Salaried',
-  employer: 'Tata Consultancy Services',
-  monthlyIncome: 850000, // paise → ₹8,500
-  existingObligations: 0,
+interface Profile {
+  id: string
+  fullName: string
+  mobile: string
+  email?: string | null
+  dob?: string | null
+  address?: string | null
+  occupation?: string | null
+  employer?: string | null
+  monthlyIncome?: number | null
+  bankName?: string | null
+  bankAccount?: string | null
+  bankIfsc?: string | null
+  upiId?: string | null
+  aadhaarMasked?: string | null
+  panMasked?: string | null
+  status: string
+  assignedAgent?: { id: string; name: string; phone?: string | null } | null
+  kyc?: {
+    aadhaarNumber?: string | null
+    panNumber?: string | null
+    status: string
+    verifiedAt?: string | null
+  } | null
+  counts: { loans: number; payments: number; supportTickets: number }
+}
+
+function fmtDate(d?: string | null) {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })
 }
 
 export default function ProfilePage() {
   const { user, logout } = useSession()
   const [editOpen, setEditOpen] = React.useState(false)
 
-  const initials = (PROFILE.fullName.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase())
+  const { data: profile, isLoading } = useQuery({
+    queryKey: ['candidate-profile'],
+    queryFn: () => api.get<Profile>('/api/candidate/profile'),
+  })
+
+  const fullName = profile?.fullName ?? user?.name ?? 'Candidate'
+  const initials = fullName.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -62,7 +89,6 @@ export default function ProfilePage() {
         }
       />
 
-      {/* Profile card */}
       <FadeIn>
         <Card className="shadow-premium overflow-hidden border-success/15">
           <div className="h-24 bg-gradient-to-r from-success/15 via-primary/5 to-info/10" />
@@ -75,11 +101,15 @@ export default function ProfilePage() {
                   </AvatarFallback>
                 </Avatar>
                 <div className="pb-2">
-                  <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{PROFILE.fullName}</h2>
-                  <p className="text-xs text-muted-foreground mt-0.5">{PROFILE.mobile} · {PROFILE.email}</p>
+                  <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{fullName}</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">{profile?.mobile ?? '—'}{profile?.email ? ` · ${profile.email}` : ''}</p>
                   <div className="flex items-center gap-2 mt-2">
-                    <StatusBadge variant="VERIFIED" dot>KYC Verified</StatusBadge>
-                    <StatusBadge variant="ACTIVE">Active Loan</StatusBadge>
+                    {profile?.kyc?.status === 'VERIFIED' && (
+                      <StatusBadge variant="VERIFIED" dot>KYC Verified</StatusBadge>
+                    )}
+                    {(profile?.counts?.loans ?? 0) > 0 && (
+                      <StatusBadge variant="ACTIVE">Active Loan</StatusBadge>
+                    )}
                   </div>
                 </div>
               </div>
@@ -104,7 +134,6 @@ export default function ProfilePage() {
         </Card>
       </FadeIn>
 
-      {/* Personal details */}
       <FadeIn>
         <Card className="shadow-premium">
           <CardHeader className="pb-3">
@@ -120,17 +149,16 @@ export default function ProfilePage() {
           </CardHeader>
           <CardContent>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-              <DetailRow label="Full Name" value={PROFILE.fullName} icon={<UserCircle className="h-4 w-4" />} />
-              <DetailRow label="Mobile" value={PROFILE.mobile} icon={<Phone className="h-4 w-4" />} />
-              <DetailRow label="Email" value={PROFILE.email} icon={<Mail className="h-4 w-4" />} />
-              <DetailRow label="Date of Birth" value={PROFILE.dob} icon={<Calendar className="h-4 w-4" />} />
-              <DetailRow label="Address" value={PROFILE.address} icon={<MapPin className="h-4 w-4" />} full />
+              <DetailRow label="Full Name" value={fullName} icon={<UserCircle className="h-4 w-4" />} />
+              <DetailRow label="Mobile" value={profile?.mobile ?? '—'} icon={<Phone className="h-4 w-4" />} />
+              <DetailRow label="Email" value={profile?.email ?? '—'} icon={<Mail className="h-4 w-4" />} />
+              <DetailRow label="Date of Birth" value={fmtDate(profile?.dob)} icon={<Calendar className="h-4 w-4" />} />
+              <DetailRow label="Address" value={profile?.address ?? '—'} icon={<MapPin className="h-4 w-4" />} full />
             </dl>
           </CardContent>
         </Card>
       </FadeIn>
 
-      {/* KYC details */}
       <FadeIn>
         <Card className="shadow-premium border-success/15">
           <CardHeader className="pb-3">
@@ -141,18 +169,18 @@ export default function ProfilePage() {
                 </div>
                 <div>
                   <CardTitle className="text-base">KYC Details</CardTitle>
-                  <CardDescription className="text-xs">Verified {PROFILE.kycVerifiedAt}</CardDescription>
+                  <CardDescription className="text-xs">Verified {fmtDate(profile?.kyc?.verifiedAt)}</CardDescription>
                 </div>
               </div>
-              <StatusBadge variant={PROFILE.kycStatus}>Verified</StatusBadge>
+              <StatusBadge variant={profile?.kyc?.status ?? 'PENDING'}>{profile?.kyc?.status ?? 'Pending'}</StatusBadge>
             </div>
           </CardHeader>
           <CardContent>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-              <DetailRow label="Aadhaar Number" value={PROFILE.aadhaarMasked} icon={<IdCard className="h-4 w-4" />} mono />
-              <DetailRow label="PAN Number" value={PROFILE.pan} icon={<FileText className="h-4 w-4" />} mono />
-              <DetailRow label="KYC Status" value="Verified" icon={<CheckCircle2 className="h-4 w-4" />} />
-              <DetailRow label="Verified On" value={PROFILE.kycVerifiedAt} icon={<Calendar className="h-4 w-4" />} />
+              <DetailRow label="Aadhaar Number" value={profile?.aadhaarMasked ?? profile?.kyc?.aadhaarNumber ?? '—'} icon={<IdCard className="h-4 w-4" />} mono />
+              <DetailRow label="PAN Number" value={profile?.panMasked ?? profile?.kyc?.panNumber ?? '—'} icon={<FileText className="h-4 w-4" />} mono />
+              <DetailRow label="KYC Status" value={profile?.kyc?.status ?? 'Pending'} icon={<CheckCircle2 className="h-4 w-4" />} />
+              <DetailRow label="Verified On" value={fmtDate(profile?.kyc?.verifiedAt)} icon={<Calendar className="h-4 w-4" />} />
             </dl>
             <div className="rounded-xl bg-info/5 border border-info/15 p-3 mt-4 flex items-start gap-2">
               <AlertCircle className="h-4 w-4 text-info flex-shrink-0 mt-0.5" />
@@ -162,7 +190,6 @@ export default function ProfilePage() {
         </Card>
       </FadeIn>
 
-      {/* Bank + Employment */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <FadeIn>
           <Card className="shadow-premium h-full">
@@ -179,10 +206,10 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent>
               <dl className="space-y-3">
-                <DetailRow label="Bank Name" value={PROFILE.bankName} icon={<Building2 className="h-4 w-4" />} />
-                <DetailRow label="Account Number" value={PROFILE.accountMasked} icon={<Banknote className="h-4 w-4" />} mono />
-                <DetailRow label="IFSC Code" value={PROFILE.ifsc} icon={<Banknote className="h-4 w-4" />} mono />
-                <DetailRow label="UPI ID" value={PROFILE.upiId} icon={<Wallet className="h-4 w-4" />} mono />
+                <DetailRow label="Bank Name" value={profile?.bankName ?? '—'} icon={<Building2 className="h-4 w-4" />} />
+                <DetailRow label="Account Number" value={profile?.bankAccount ?? '—'} icon={<Banknote className="h-4 w-4" />} mono />
+                <DetailRow label="IFSC Code" value={profile?.bankIfsc ?? '—'} icon={<Banknote className="h-4 w-4" />} mono />
+                <DetailRow label="UPI ID" value={profile?.upiId ?? '—'} icon={<Wallet className="h-4 w-4" />} mono />
               </dl>
             </CardContent>
           </Card>
@@ -203,17 +230,15 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent>
               <dl className="space-y-3">
-                <DetailRow label="Occupation" value={PROFILE.occupation} icon={<Briefcase className="h-4 w-4" />} />
-                <DetailRow label="Employer" value={PROFILE.employer} icon={<Building2 className="h-4 w-4" />} />
-                <DetailRow label="Monthly Income" value={`₹${(PROFILE.monthlyIncome / 100).toLocaleString('en-IN')}`} icon={<Wallet className="h-4 w-4" />} />
-                <DetailRow label="Existing Obligations" value={`₹${(PROFILE.existingObligations / 100).toLocaleString('en-IN')}`} icon={<Banknote className="h-4 w-4" />} />
+                <DetailRow label="Occupation" value={profile?.occupation ?? '—'} icon={<Briefcase className="h-4 w-4" />} />
+                <DetailRow label="Employer" value={profile?.employer ?? '—'} icon={<Building2 className="h-4 w-4" />} />
+                <DetailRow label="Monthly Income" value={profile?.monthlyIncome ? formatPaiseToINR(profile.monthlyIncome) : '—'} icon={<Wallet className="h-4 w-4" />} />
               </dl>
             </CardContent>
           </Card>
         </FadeIn>
       </div>
 
-      {/* Logout button at bottom */}
       <FadeIn>
         <Card className="border-destructive/15">
           <CardContent className="p-4 flex items-center justify-between gap-3">

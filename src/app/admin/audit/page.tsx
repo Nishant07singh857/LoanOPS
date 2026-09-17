@@ -2,15 +2,15 @@
 
 import * as React from 'react'
 import {
-  ScrollText, Search, Download, Filter, X, Plus, User, FileText, Banknote, Activity,
-  CheckCircle2, XCircle, Clock, AlertTriangle,
+  ScrollText, Search, Download, Filter, X,
 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { SectionHeading } from '@/components/ui/section-heading'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
-import { FadeIn, StaggerContainer, StaggerItem } from '@/components/ui/motion'
+import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
@@ -19,74 +19,89 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { recentActivity } from '@/lib/mock-data'
-import { formatPaiseToINR } from '@/lib/money'
+import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
-
-type AuditAction = 'CREATE' | 'UPDATE' | 'APPROVE' | 'REJECT' | 'DISBURSE' | 'LOGIN' | 'VIEW' | 'EXPORT' | 'PTP' | 'PAYMENT'
 
 interface AuditEntry {
   id: string
-  timestamp: string
-  actor: string
-  action: AuditAction
+  action: string
   entityType: string
+  entityId?: string | null
   description: string
-  amount?: number
+  metadata?: any
+  user?: { name: string; email: string } | null
+  createdAt: string
 }
 
-const actionTint: Record<AuditAction, string> = {
+const actionTint: Record<string, string> = {
   CREATE: 'bg-success/15 text-success',
   UPDATE: 'bg-info/15 text-info',
   APPROVE: 'bg-success/15 text-success',
   REJECT: 'bg-destructive/15 text-destructive',
   DISBURSE: 'bg-warning/15 text-warning',
   LOGIN: 'bg-muted text-muted-foreground',
+  LOGOUT: 'bg-muted text-muted-foreground',
   VIEW: 'bg-muted text-muted-foreground',
   EXPORT: 'bg-info/15 text-info',
-  PTP: 'bg-warning/15 text-warning',
+  PTP_CREATE: 'bg-warning/15 text-warning',
+  PTP_UPDATE: 'bg-warning/15 text-warning',
+  ALLOCATE: 'bg-success/15 text-success',
   PAYMENT: 'bg-success/15 text-success',
+  SUBMIT: 'bg-info/15 text-info',
+  VERIFY: 'bg-success/15 text-success',
+  AGREE: 'bg-info/15 text-info',
+  REFUND: 'bg-warning/15 text-warning',
+  CORRECT: 'bg-warning/15 text-warning',
+  REVOKE: 'bg-destructive/15 text-destructive',
+  DELETE: 'bg-destructive/15 text-destructive',
+  ESCALATE: 'bg-destructive/15 text-destructive',
 }
 
-const seedAudit: AuditEntry[] = [
-  ...recentActivity.map((a, i) => ({
-    id: `s${i}`,
-    timestamp: a.timestamp,
-    actor: a.actor,
-    action: (a.type === 'APPLICATION' ? 'CREATE' : a.type === 'DISBURSEMENT' ? 'DISBURSE' : a.type === 'PAYMENT' ? 'PAYMENT' : a.type === 'PTP' ? 'PTP' : a.type === 'ESCALATION' ? 'UPDATE' : a.type === 'CASH' ? 'PAYMENT' : 'VIEW') as AuditAction,
-    entityType: a.type,
-    description: a.description,
-    amount: a.amount,
-  })),
-  // Synthesize more audit entries
-  { id: 'a10', timestamp: '5h ago', actor: 'Owner', action: 'LOGIN', entityType: 'SESSION', description: 'Owner logged in from web' },
-  { id: 'a11', timestamp: '6h ago', actor: 'Agent: Divya Menon', action: 'PTP', entityType: 'PTP', description: 'Created PTP for ₹5,40,000 on 25 Sep', amount: 540000 },
-  { id: 'a12', timestamp: '8h ago', actor: 'Owner', action: 'APPROVE', entityType: 'APPLICATION', description: 'Approved APP-2024-1018 — Karthik Iyer' },
-  { id: 'a13', timestamp: '10h ago', actor: 'Owner', action: 'EXPORT', entityType: 'REPORT', description: 'Exported Reconciliation Report CSV' },
-  { id: 'a14', timestamp: '12h ago', actor: 'Agent: Vikram Singh', action: 'PAYMENT', entityType: 'PAYMENT', description: 'Cash verified ₹2,850', amount: 285000 },
-  { id: 'a15', timestamp: '14h ago', actor: 'Owner', action: 'REJECT', entityType: 'APPLICATION', description: 'Rejected APP-2024-1019 — insufficient income' },
-  { id: 'a16', timestamp: '1 day ago', actor: 'Agent: Arjun Nair', action: 'UPDATE', entityType: 'ESCALATION', description: 'Marked escalation as resolved for LON-2024-0812' },
-  { id: 'a17', timestamp: '1 day ago', actor: 'System', action: 'CREATE', entityType: 'LEDGER', description: 'Auto-posted ledger entry LED-10521', amount: 50000 },
-  { id: 'a18', timestamp: '2 days ago', actor: 'Owner', action: 'CREATE', entityType: 'QR_LINK', description: 'Generated QR link a3f8d2e9' },
-  { id: 'a19', timestamp: '2 days ago', actor: 'Agent: Sneha Kapoor', action: 'VIEW', entityType: 'LOAN', description: 'Viewed LON-2024-0712 schedule' },
-  { id: 'a20', timestamp: '3 days ago', actor: 'Owner', action: 'DISBURSE', entityType: 'LOAN', description: 'Disbursed LON-2024-0834 ₹1,50,000', amount: 15000000 },
+const ACTIONS = [
+  'CREATE', 'UPDATE', 'APPROVE', 'REJECT', 'DISBURSE', 'LOGIN', 'LOGOUT',
+  'VIEW', 'EXPORT', 'PTP_CREATE', 'PTP_UPDATE', 'ALLOCATE', 'SUBMIT', 'VERIFY',
+  'AGREE', 'REFUND', 'CORRECT', 'REVOKE', 'DELETE', 'ESCALATE',
 ]
 
-const ACTIONS: AuditAction[] = ['CREATE', 'UPDATE', 'APPROVE', 'REJECT', 'DISBURSE', 'LOGIN', 'VIEW', 'EXPORT', 'PTP', 'PAYMENT']
+function fmtTimestamp(d: string) {
+  const date = new Date(d)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMin = Math.floor(diffMs / 60000)
+  const diffHr = Math.floor(diffMin / 60)
+  const diffDay = Math.floor(diffHr / 24)
+  if (diffMin < 1) return 'just now'
+  if (diffMin < 60) return `${diffMin}m ago`
+  if (diffHr < 24) return `${diffHr}h ago`
+  if (diffDay < 7) return `${diffDay}d ago`
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
 
 export default function AuditPage() {
   const [search, setSearch] = React.useState('')
   const [action, setAction] = React.useState<string>('all')
   const [actor, setActor] = React.useState<string>('all')
 
-  const actors = Array.from(new Set(seedAudit.map((a) => a.actor)))
+  const { data, isLoading } = useQuery({
+    queryKey: ['owner-audit', action],
+    queryFn: () => {
+      const params = new URLSearchParams({ pageSize: '100' })
+      if (action !== 'all') params.set('action', action)
+      return api.get<{ items: AuditEntry[]; total: number }>(`/api/owner/audit?${params.toString()}`)
+    },
+  })
 
-  const filtered = seedAudit.filter((a) => {
-    if (action !== 'all' && a.action !== action) return false
-    if (actor !== 'all' && a.actor !== actor) return false
+  const allEntries = data?.items ?? []
+  const actors = Array.from(new Set(allEntries.map((a) => a.user?.name ?? 'System')))
+
+  const filtered = allEntries.filter((a) => {
+    const actorName = a.user?.name ?? 'System'
+    if (actor !== 'all' && actorName !== actor) return false
     if (search.trim()) {
       const q = search.toLowerCase()
-      return a.description.toLowerCase().includes(q) || a.actor.toLowerCase().includes(q) || a.entityType.toLowerCase().includes(q)
+      return a.description.toLowerCase().includes(q)
+        || actorName.toLowerCase().includes(q)
+        || a.entityType.toLowerCase().includes(q)
     }
     return true
   })
@@ -138,76 +153,91 @@ export default function AuditPage() {
 
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Showing <span className="font-semibold text-foreground">{filtered.length}</span> of {seedAudit.length} entries
+          {isLoading ? 'Loading…' : <>Showing <span className="font-semibold text-foreground">{filtered.length}</span> of {allEntries.length} entries</>}
         </p>
       </div>
 
-      <FadeIn>
-        <Card className="shadow-premium">
-          <CardContent className="p-0">
-            <div className="hidden md:block">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/40">
-                    <TableHead className="pl-6">Timestamp</TableHead>
-                    <TableHead>Actor</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Entity</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="text-right pr-6">Amount</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((a) => (
-                    <TableRow key={a.id}>
-                      <TableCell className="pl-6 text-xs text-muted-foreground whitespace-nowrap">{a.timestamp}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Avatar className="h-6 w-6">
-                            <AvatarFallback className="text-[10px] bg-muted">{a.actor.split(' ').map(p => p[0]).join('').slice(0, 2)}</AvatarFallback>
-                          </Avatar>
-                          <span className="text-xs">{a.actor}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', actionTint[a.action])}>{a.action}</span>
-                      </TableCell>
-                      <TableCell className="text-xs">{a.entityType}</TableCell>
-                      <TableCell className="text-sm">{a.description}</TableCell>
-                      <TableCell className="text-right tabular-nums pr-6 text-xs">{a.amount ? formatPaiseToINR(a.amount) : '—'}</TableCell>
+      {isLoading ? (
+        <Card className="shadow-premium"><CardContent className="p-4 space-y-3">
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+        </CardContent></Card>
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={<ScrollText className="h-6 w-6" />}
+          title="No audit entries match these filters"
+          description="Try adjusting your search or filters."
+        />
+      ) : (
+        <FadeIn>
+          <Card className="shadow-premium">
+            <CardContent className="p-0">
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/40">
+                      <TableHead className="pl-6">Timestamp</TableHead>
+                      <TableHead>Actor</TableHead>
+                      <TableHead>Action</TableHead>
+                      <TableHead>Entity</TableHead>
+                      <TableHead>Description</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            <StaggerContainer className="md:hidden divide-y divide-border">
-              {filtered.map((a) => (
-                <StaggerItem key={a.id}>
-                  <div className="p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-7 w-7">
-                          <AvatarFallback className="text-[10px] bg-muted">{a.actor.split(' ').map(p => p[0]).join('').slice(0, 2)}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="text-xs font-medium">{a.actor}</p>
-                          <p className="text-[11px] text-muted-foreground">{a.timestamp}</p>
+                  </TableHeader>
+                  <TableBody>
+                    {filtered.map((a) => {
+                      const actorName = a.user?.name ?? 'System'
+                      return (
+                        <TableRow key={a.id}>
+                          <TableCell className="pl-6 text-xs text-muted-foreground whitespace-nowrap">{fmtTimestamp(a.createdAt)}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Avatar className="h-6 w-6">
+                                <AvatarFallback className="text-[10px] bg-muted">{actorName.split(' ').map(p => p[0]).join('').slice(0, 2)}</AvatarFallback>
+                              </Avatar>
+                              <span className="text-xs">{actorName}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', actionTint[a.action] ?? 'bg-muted text-muted-foreground')}>{a.action}</span>
+                          </TableCell>
+                          <TableCell className="text-xs">{a.entityType}</TableCell>
+                          <TableCell className="text-sm">{a.description}</TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+              <StaggerContainer className="md:hidden divide-y divide-border">
+                {filtered.map((a) => {
+                  const actorName = a.user?.name ?? 'System'
+                  return (
+                    <StaggerItem key={a.id}>
+                      <div className="p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-7 w-7">
+                              <AvatarFallback className="text-[10px] bg-muted">{actorName.split(' ').map(p => p[0]).join('').slice(0, 2)}</AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="text-xs font-medium">{actorName}</p>
+                              <p className="text-[11px] text-muted-foreground">{fmtTimestamp(a.createdAt)}</p>
+                            </div>
+                          </div>
+                          <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', actionTint[a.action] ?? 'bg-muted text-muted-foreground')}>{a.action}</span>
+                        </div>
+                        <p className="text-sm mt-2">{a.description}</p>
+                        <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground">
+                          <span>{a.entityType}</span>
                         </div>
                       </div>
-                      <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', actionTint[a.action])}>{a.action}</span>
-                    </div>
-                    <p className="text-sm mt-2">{a.description}</p>
-                    <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground">
-                      <span>{a.entityType}</span>
-                      {a.amount && <><span>·</span><span className="tabular-nums">{formatPaiseToINR(a.amount)}</span></>}
-                    </div>
-                  </div>
-                </StaggerItem>
-              ))}
-            </StaggerContainer>
-          </CardContent>
-        </Card>
-      </FadeIn>
+                    </StaggerItem>
+                  )
+                })}
+              </StaggerContainer>
+            </CardContent>
+          </Card>
+        </FadeIn>
+      )}
     </div>
   )
 }

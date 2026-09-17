@@ -1,0 +1,2002 @@
+     1→You are a principal software architect, senior full-stack engineer, fintech systems engineer, database architect, security engineer, QA engineer, and product designer with 20+ years of production experience.
+     2→
+     3→You are continuing an EXISTING Loan Ops Platform repository.
+     4→
+     5→IMPORTANT:
+     6→DO NOT START A NEW PROJECT.
+     7→DO NOT REWRITE THE PROJECT FROM SCRATCH.
+     8→DO NOT DESTROY EXISTING WORK.
+     9→DO NOT replace working features unnecessarily.
+    10→FIRST inspect the existing repository, architecture, routes, Prisma schema, components, API, authentication, database configuration, and current implementation.
+    11→
+    12→Your job is to transform the existing project from a premium UI/demo implementation into a REAL, END-TO-END, DATABASE-BACKED, SECURE Loan Operations Platform.
+    13→
+    14→==================================================
+    15→1. PRODUCT
+    16→==================================================
+    17→
+    18→Product name:
+    19→Loan Ops Platform
+    20→
+    21→Exactly THREE portals:
+    22→
+    23→1. OWNER PORTAL
+    24→   Route: /admin
+    25→
+    26→2. AGENT PORTAL
+    27→   Route: /agent
+    28→
+    29→3. CANDIDATE PORTAL
+    30→   Route: /portal
+    31→
+    32→Additional public application route:
+    33→
+    34→4. LOAN APPLICATION
+    35→   Route: /apply/[secureToken]
+    36→
+    37→Do NOT create unnecessary fourth/fifth/sixth portals.
+    38→
+    39→Internal roles/permissions may exist for RBAC, but the user-facing product remains exactly these 3 portals.
+    40→
+    41→==================================================
+    42→2. EXISTING STACK
+    43→==================================================
+    44→
+    45→Preserve the existing stack wherever practical.
+    46→
+    47→Expected architecture:
+    48→
+    49→Frontend:
+    50→- Next.js
+    51→- TypeScript
+    52→- responsive UI
+    53→- existing design system
+    54→- existing Framer Motion/motion implementation
+    55→- existing reusable components
+    56→
+    57→Backend:
+    58→- NestJS
+    59→- TypeScript
+    60→- Prisma
+    61→
+    62→Database:
+    63→- Neon PostgreSQL
+    64→
+    65→Supporting infrastructure:
+    66→- Redis for sessions/cache/queues
+    67→- S3-compatible private object storage for documents
+    68→- payment provider abstraction
+    69→- WhatsApp deep links for manual messaging
+    70→
+    71→Architecture:
+    72→
+    73→Browser
+    74→   ↓
+    75→Next.js
+    76→   ↓
+    77→NestJS API
+    78→   ↓
+    79→Prisma
+    80→   ↓
+    81→Neon PostgreSQL
+    82→
+    83→Redis is NOT the financial source of truth.
+    84→
+    85→Object storage is NOT the financial source of truth.
+    86→
+    87→Frontend is NEVER the source of truth for money, authorization, loan status, payment status, or ledger balances.
+    88→
+    89→==================================================
+    90→3. FIRST STEP — AUDIT EXISTING PROJECT
+    91→==================================================
+    92→
+    93→Before changing code:
+    94→
+    95→Inspect:
+    96→
+    97→- package.json
+    98→- pnpm workspace
+    99→- Next.js structure
+   100→- NestJS structure
+   101→- Prisma schema
+   102→- migrations
+   103→- environment files
+   104→- authentication/session implementation
+   105→- middleware
+   106→- guards
+   107→- API modules
+   108→- existing pages
+   109→- existing components
+   110→- mock data
+   111→- financial engine
+   112→- loan calculations
+   113→- payment implementation
+   114→- webhook implementation
+   115→- notification implementation
+   116→- collection implementation
+   117→- reports
+   118→- audit logging
+   119→- tests
+   120→- existing Neon connection
+   121→- existing routes
+   122→- existing UI
+   123→
+   124→Create an internal implementation checklist.
+   125→
+   126→DO NOT blindly recreate files.
+   127→
+   128→Identify:
+   129→
+   130→A. Already implemented
+   131→B. Partially implemented
+   132→C. Mock/demo implementation
+   133→D. Missing
+   134→E. Broken
+   135→F. Security risks
+   136→G. Database inconsistencies
+   137→H. Financial integrity risks
+   138→
+   139→Then implement the missing pieces incrementally.
+   140→
+   141→==================================================
+   142→4. CORE RULE
+   143→==================================================
+   144→
+   145→The final system must work as one connected business workflow.
+   146→
+   147→The complete lifecycle must be:
+   148→
+   149→OWNER CREATES LOAN
+   150→        ↓
+   151→GENERATES SECURE APPLICATION LINK / QR
+   152→        ↓
+   153→CANDIDATE OPENS LINK
+   154→        ↓
+   155→CANDIDATE COMPLETES APPLICATION
+   156→        ↓
+   157→KYC + DOCUMENTS
+   158→        ↓
+   159→AGREEMENT / CONSENT
+   160→        ↓
+   161→SUBMIT APPLICATION
+   162→        ↓
+   163→OWNER REVIEWS
+   164→        ↓
+   165→APPROVE / REJECT / REQUEST INFORMATION
+   166→        ↓
+   167→APPROVED LOAN CREATED
+   168→        ↓
+   169→IMMUTABLE LOAN TERMS SNAPSHOT
+   170→        ↓
+   171→REPAYMENT SCHEDULE GENERATED
+   172→        ↓
+   173→OWNER DISBURSES
+   174→        ↓
+   175→ACTIVE LOAN
+   176→        ↓
+   177→CANDIDATE SEES LOAN
+   178→        ↓
+   179→INSTALLMENT BECOMES DUE
+   180→        ↓
+   181→CANDIDATE PAYS ONLINE
+   182→OR
+   183→AGENT RECORDS CASH COLLECTION
+   184→        ↓
+   185→PAYMENT VERIFICATION
+   186→        ↓
+   187→PAYMENT ALLOCATION
+   188→        ↓
+   189→LEDGER TRANSACTION
+   190→        ↓
+   191→RECEIPT
+   192→        ↓
+   193→NOTIFICATION
+   194→        ↓
+   195→LOAN BALANCE UPDATED
+   196→        ↓
+   197→OVERDUE DETECTION
+   198→        ↓
+   199→AGENT COLLECTION TASK
+   200→        ↓
+   201→FOLLOW-UP
+   202→        ↓
+   203→PTP
+   204→        ↓
+   205→ESCALATION
+   206→        ↓
+   207→SETTLEMENT / COMPLETION
+   208→        ↓
+   209→AUDIT TRAIL
+   210→
+   211→EVERY STEP MUST BE DATABASE-BACKED.
+   212→
+   213→==================================================
+   214→5. DATABASE — NEON POSTGRESQL
+   215→==================================================
+   216→
+   217→Neon PostgreSQL is the production database.
+   218→
+   219→Use DATABASE_URL.
+   220→
+   221→Do NOT expose DATABASE_URL to frontend.
+   222→
+   223→Do NOT connect browser directly to Neon.
+   224→
+   225→Do NOT use Neon API key for normal application runtime.
+   226→
+   227→Prisma must connect server-side.
+   228→
+   229→Inspect existing schema first.
+   230→
+   231→Preserve existing valid schema.
+   232→
+   233→Fix relations cleanly rather than using hacks.
+   234→
+   235→Ensure appropriate indexes, foreign keys, unique constraints, enums and transaction boundaries.
+   236→
+   237→Required conceptual entities include:
+   238→
+   239→organizations
+   240→users
+   241→roles
+   242→permissions
+   243→user_roles
+   244→organization_memberships
+   245→
+   246→borrowers
+   247→borrower_profiles
+   248→
+   249→kyc_records
+   250→kyc_reviews
+   251→
+   252→documents
+   253→document_versions
+   254→
+   255→loan_products
+   256→loan_product_versions
+   257→
+   258→loan_applications
+   259→application_reviews
+   260→
+   261→application_tokens
+   262→
+   263→loans
+   264→loan_term_snapshots
+   265→
+   266→repayment_schedules
+   267→repayment_schedule_items
+   268→
+   269→payments
+   270→payment_attempts
+   271→payment_provider_events
+   272→payment_allocations
+   273→
+   274→ledger_accounts
+   275→ledger_transactions
+   276→ledger_entries
+   277→
+   278→refunds
+   279→financial_corrections
+   280→
+   281→notifications
+   282→notification_templates
+   283→notification_logs
+   284→
+   285→communication_preferences
+   286→
+   287→agreements
+   288→agreement_versions
+   289→agreement_acceptances
+   290→
+   291→collection_tasks
+   292→collection_notes
+   293→ptp_records
+   294→collection_escalations
+   295→
+   296→complaints
+   297→support_requests
+   298→
+   299→reconciliation_runs
+   300→reconciliation_exceptions
+   301→
+   302→audit_logs
+   303→
+   304→ai_insights
+   305→ai_events
+   306→risk_features
+   307→
+   308→consents
+   309→disclosures
+   310→
+   311→webhook_events
+   312→
+   313→break_glass_grants
+   314→
+   315→Use actual existing model names when already implemented rather than creating duplicate models.
+   316→
+   317→==================================================
+   318→6. DATABASE MIGRATION SAFETY
+   319→==================================================
+   320→
+   321→NEVER run:
+   322→
+   323→prisma migrate reset
+   324→
+   325→NEVER delete the Neon database.
+   326→
+   327→NEVER drop production data.
+   328→
+   329→NEVER use destructive db push against production.
+   330→
+   331→Before migration:
+   332→
+   333→1. inspect current migration status
+   334→2. inspect schema
+   335→3. generate Prisma client
+   336→4. create safe migration if required
+   337→5. apply migration
+   338→6. verify schema
+   339→7. run tests
+   340→
+   341→If schema is already correct, do not create unnecessary migrations.
+   342→
+   343→==================================================
+   344→7. AUTHENTICATION
+   345→==================================================
+   346→
+   347→Replace demo authentication with real authentication.
+   348→
+   349→Use the existing architecture if it is already secure.
+   350→
+   351→Requirements:
+   352→
+   353→- secure password hashing
+   354→- minimum password policy
+   355→- HTTP-only session cookie
+   356→- secure cookie in production
+   357→- SameSite protection
+   358→- session expiration
+   359→- session rotation where appropriate
+   360→- logout
+   361→- CSRF protection for cookie-authenticated state-changing requests
+   362→- login rate limiting
+   363→- failed-login protection
+   364→- no passwords in logs
+   365→- no tokens in URLs except intentionally designed secure application tokens
+   366→- password reset flow if supported by existing product architecture
+   367→
+   368→Never trust:
+   369→
+   370→localStorage role
+   371→frontend role
+   372→query parameter role
+   373→hidden input role
+   374→client-side permissions
+   375→
+   376→Server session determines identity.
+   377→
+   378→==================================================
+   379→8. RBAC
+   380→==================================================
+   381→
+   382→Implement real server-side authorization.
+   383→
+   384→Portal roles:
+   385→
+   386→OWNER
+   387→AGENT
+   388→CANDIDATE
+   389→
+   390→Additional internal permissions may be represented separately.
+   391→
+   392→Example permissions:
+   393→
+   394→loan:create
+   395→loan:view
+   396→loan:approve
+   397→loan:reject
+   398→loan:disburse
+   399→payment:view
+   400→payment:verify
+   401→payment:refund
+   402→ledger:view
+   403→ledger:correct
+   404→collection:view
+   405→collection:create
+   406→collection:assign
+   407→candidate:view
+   408→candidate:update
+   409→document:view
+   410→document:approve
+   411→report:view
+   412→report:export
+   413→audit:view
+   414→settings:update
+   415→
+   416→Candidate:
+   417→
+   418→Can ONLY access own records.
+   419→
+   420→Agent:
+   421→
+   422→Can ONLY access authorized organization/candidate/collection records.
+   423→
+   424→Owner:
+   425→
+   426→Can access organization data according to permissions.
+   427→
+   428→Every protected API endpoint must perform server-side authorization.
+   429→
+   430→Prevent IDOR.
+   431→
+   432→Example:
+   433→
+   434→GET /loans/:id
+   435→
+   436→must verify that authenticated user has access to that exact loan.
+   437→
+   438→Never rely only on frontend navigation.
+   439→
+   440→==================================================
+   441→9. TENANT ISOLATION
+   442→==================================================
+   443→
+   444→The system is multi-tenant ready.
+   445→
+   446→Every organization-owned entity must respect organizationId.
+   447→
+   448→Never allow:
+   449→
+   450→organization A user → organization B data.
+   451→
+   452→Use:
+   453→
+   454→TenantGuard
+   455→service-level organization filtering
+   456→Prisma tenant extension/helper where already available
+   457→
+   458→Super-admin/break-glass access, if existing, must remain explicitly scoped, audited and time limited.
+   459→
+   460→==================================================
+   461→10. OWNER PORTAL
+   462→==================================================
+   463→
+   464→Route:
+   465→
+   466→/admin
+   467→
+   468→Build all existing Owner pages using REAL API data.
+   469→
+   470→Required areas:
+   471→
+   472→Dashboard
+   473→Loan Applications
+   474→Create Loan
+   475→Application Links / QR
+   476→Candidates
+   477→Candidate 360
+   478→KYC
+   479→Documents
+   480→Agreements
+   481→Loan Origination
+   482→Loan Approval
+   483→Disbursement
+   484→Loans
+   485→Loan Detail
+   486→Repayments
+   487→Payments
+   488→Collections
+   489→Finance
+   490→Ledger
+   491→Refunds
+   492→Financial Corrections
+   493→Reconciliation
+   494→Reports
+   495→Analytics
+   496→AI Insights
+   497→Users & Roles
+   498→Audit
+   499→Settings
+   500→Support / Complaints
+   501→WhatsApp
+   502→Reminder Center
+   503→Agent Performance
+   504→
+   505→Owner dashboard should show:
+   506→
+   507→Total disbursed
+   508→Active loans
+   509→Outstanding principal
+   510→Interest outstanding
+   511→Overdue amount
+   512→Today's collections
+   513→Upcoming dues
+   514→Pending applications
+   515→Pending verification
+   516→Collection workload
+   517→
+   518→All KPIs must come from database queries.
+   519→
+   520→NO fake hardcoded financial numbers.
+   521→
+   522→==================================================
+   523→11. CREATE LOAN
+   524→==================================================
+   525→
+   526→Owner must be able to create a loan/application.
+   527→
+   528→Fields:
+   529→
+   530→Candidate
+   531→Loan amount
+   532→Interest type:
+   533→- percentage
+   534→- fixed amount
+   535→- no interest
+   536→
+   537→Interest value
+   538→
+   539→Calculation method
+   540→
+   541→Repayment frequency:
+   542→
+   543→DAILY
+   544→WEEKLY
+   545→MONTHLY
+   546→
+   547→Tenure / number of installments
+   548→
+   549→Fees
+   550→
+   551→Disbursement method:
+   552→
+   553→ONLINE
+   554→OFFLINE
+   555→
+   556→Start date
+   557→
+   558→First due date where applicable
+   559→
+   560→Notes
+   561→
+   562→The frontend may preview calculations.
+   563→
+   564→Backend is authoritative.
+   565→
+   566→Validate everything server-side.
+   567→
+   568→==================================================
+   569→12. FINANCIAL ENGINE
+   570→==================================================
+   571→
+   572→Money must be represented safely.
+   573→
+   574→Use:
+   575→
+   576→BigInt paise
+   577→
+   578→NOT floating-point money.
+   579→
+   580→Do not use:
+   581→
+   582→Number()
+   583→parseFloat()
+   584→parseInt()
+   585→
+   586→for authoritative money calculations.
+   587→
+   588→API monetary values should use safe serialized strings.
+   589→
+   590→Example:
+   591→
+   592→"10000000"
+   593→
+   594→for ₹100,000.00 if represented in paise.
+   595→
+   596→Frontend should use a safe formatter.
+   597→
+   598→==================================================
+   599→13. INTEREST
+   600→==================================================
+   601→
+   602→Support:
+   603→
+   604→1. Percentage interest
+   605→2. Fixed ₹ interest
+   606→3. No interest
+   607→
+   608→Support the existing calculation methods in the repository.
+   609→
+   610→Do not silently change financial semantics.
+   611→
+   612→For reducing-balance loans:
+   613→
+   614→periodic interest should be based on applicable opening principal.
+   615→
+   616→Use deterministic rounding.
+   617→
+   618→Use HALF-UP where the existing specification requires it.
+   619→
+   620→==================================================
+   621→14. REPAYMENT SCHEDULE
+   622→==================================================
+   623→
+   624→Generate schedule server-side.
+   625→
+   626→Inputs:
+   627→
+   628→principal
+   629→interest
+   630→fees
+   631→frequency
+   632→tenure
+   633→start date
+   634→calculation method
+   635→
+   636→Output:
+   637→
+   638→installment number
+   639→due date
+   640→opening principal
+   641→principal component
+   642→interest component
+   643→fee component
+   644→total due
+   645→closing principal
+   646→status
+   647→
+   648→Statuses:
+   649→
+   650→UPCOMING
+   651→DUE
+   652→PARTIALLY_PAID
+   653→PAID
+   654→OVERDUE
+   655→WAIVED where explicitly supported
+   656→
+   657→Final installment must close principal exactly to zero.
+   658→
+   659→Monthly dates must preserve original anchor-day semantics.
+   660→
+   661→Example:
+   662→
+   663→31st → 28/29/30 as applicable
+   664→
+   665→but should not permanently drift the anchor day.
+   666→
+   667→Schedule generation must be deterministic and testable.
+   668→
+   669→==================================================
+   670→15. IMMUTABLE LOAN TERMS
+   671→==================================================
+   672→
+   673→Once a loan is approved/originated:
+   674→
+   675→create immutable LoanTermSnapshot.
+   676→
+   677→Store:
+   678→
+   679→principal
+   680→interest type
+   681→interest value
+   682→calculation method
+   683→fees
+   684→frequency
+   685→tenure
+   686→dates
+   687→number of installments
+   688→total repayment
+   689→other relevant contractual terms
+   690→
+   691→Do not allow normal users to silently mutate historical financial terms.
+   692→
+   693→Any correction must use an explicit financial correction workflow.
+   694→
+   695→==================================================
+   696→16. APPLICATION LINKS / QR
+   697→==================================================
+   698→
+   699→Generate secure random application tokens.
+   700→
+   701→NEVER expose database IDs as the application token.
+   702→
+   703→Token requirements:
+   704→
+   705→- cryptographically random
+   706→- sufficient entropy
+   707→- expiry
+   708→- revocation
+   709→- usage tracking
+   710→- organization association
+   711→- optional loan/application association
+   712→- one-time or controlled reuse based on business rule
+   713→
+   714→Public route:
+   715→
+   716→/apply/[token]
+   717→
+   718→Backend must validate token.
+   719→
+   720→Never trust frontend prefilled values.
+   721→
+   722→==================================================
+   723→17. CANDIDATE APPLICATION
+   724→==================================================
+   725→
+   726→9-step or existing onboarding flow should remain premium and responsive.
+   727→
+   728→Steps can include:
+   729→
+   730→1. Basic Information
+   731→2. Personal Details
+   732→3. Address
+   733→4. Aadhaar/KYC
+   734→5. PAN
+   735→6. Financial Information
+   736→7. Bank Details
+   737→8. Documents
+   738→9. Agreement + Signature + Review
+   739→
+   740→Do not collect unnecessary sensitive information.
+   741→
+   742→Validate every field.
+   743→
+   744→Allow save/resume where supported.
+   745→
+   746→Application states:
+   747→
+   748→DRAFT
+   749→SUBMITTED
+   750→UNDER_REVIEW
+   751→REQUESTED_INFO
+   752→APPROVED
+   753→REJECTED
+   754→
+   755→Candidate sees only their own application.
+   756→
+   757→==================================================
+   758→18. KYC / DOCUMENTS
+   759→==================================================
+   760→
+   761→Actual files go to private object storage.
+   762→
+   763→Database stores:
+   764→
+   765→document metadata
+   766→document type
+   767→storage key
+   768→version
+   769→owner
+   770→status
+   771→timestamps
+   772→
+   773→Do not store large binary files directly in PostgreSQL unless explicitly required.
+   774→
+   775→Validate:
+   776→
+   777→MIME type
+   778→file size
+   779→extension
+   780→filename
+   781→ownership
+   782→authorization
+   783→
+   784→Use randomized storage keys.
+   785→
+   786→Never expose private storage directly.
+   787→
+   788→Use short-lived presigned URLs.
+   789→
+   790→Document statuses:
+   791→
+   792→UPLOADED
+   793→UNDER_REVIEW
+   794→VERIFIED
+   795→REJECTED
+   796→EXPIRED
+   797→
+   798→Audit document actions.
+   799→
+   800→==================================================
+   801→19. AGREEMENT
+   802→==================================================
+   803→
+   804→Owner can configure agreement templates/versions.
+   805→
+   806→Candidate must:
+   807→
+   808→review agreement
+   809→accept required disclosures
+   810→sign/accept
+   811→submit
+   812→
+   813→Store:
+   814→
+   815→agreement version
+   816→terms/version reference
+   817→signer
+   818→candidate
+   819→timestamp
+   820→IP/device metadata only where legally appropriate and already designed
+   821→acceptance evidence
+   822→
+   823→Accepted agreements must be immutable.
+   824→
+   825→Do not silently modify historical agreements.
+   826→
+   827→==================================================
+   828→20. LOAN APPROVAL
+   829→==================================================
+   830→
+   831→Owner reviews application.
+   832→
+   833→Actions:
+   834→
+   835→Approve
+   836→Reject
+   837→Request Information
+   838→
+   839→Approval must happen server-side.
+   840→
+   841→Implement separation of duties where configured.
+   842→
+   843→A creator should not automatically self-approve if SoD policy prohibits it.
+   844→
+   845→Approval creates an immutable approved decision record.
+   846→
+   847→==================================================
+   848→21. DISBURSEMENT
+   849→==================================================
+   850→
+   851→Support:
+   852→
+   853→ONLINE
+   854→OFFLINE
+   855→
+   856→Online:
+   857→
+   858→create authorized provider transaction
+   859→server-side verification
+   860→webhook confirmation
+   861→idempotency
+   862→
+   863→NEVER mark disbursed because frontend says "success".
+   864→
+   865→Offline:
+   866→
+   867→Owner must explicitly record:
+   868→
+   869→amount
+   870→date/time
+   871→method
+   872→reference
+   873→notes
+   874→proof if required
+   875→
+   876→Backend validates.
+   877→
+   878→Disbursement must be auditable.
+   879→
+   880→==================================================
+   881→22. PAYMENT SYSTEM
+   882→==================================================
+   883→
+   884→Candidate payment flow:
+   885→
+   886→Candidate opens loan
+   887→↓
+   888→selects installment or amount
+   889→↓
+   890→creates payment intent
+   891→↓
+   892→payment provider
+   893→↓
+   894→provider webhook
+   895→↓
+   896→signature verification
+   897→↓
+   898→capture confirmation
+   899→↓
+   900→allocation
+   901→↓
+   902→ledger
+   903→↓
+   904→receipt
+   905→↓
+   906→notification
+   907→
+   908→Payment statuses should support existing implementation:
+   909→
+   910→CREATED
+   911→PENDING
+   912→AUTHORIZED
+   913→CAPTURED
+   914→FAILED
+   915→CANCELLED
+   916→REFUND_PENDING
+   917→REFUNDED
+   918→PARTIALLY_REFUNDED
+   919→
+   920→Frontend callback is NOT authoritative.
+   921→
+   922→==================================================
+   923→23. WEBHOOK SECURITY
+   924→==================================================
+   925→
+   926→Webhook endpoints are public but secure.
+   927→
+   928→Validate:
+   929→
+   930→signature
+   931→raw request body
+   932→provider event ID
+   933→timestamp/replay protection where supported
+   934→
+   935→Store provider events.
+   936→
+   937→Make processing idempotent.
+   938→
+   939→If the same webhook arrives twice:
+   940→
+   941→DO NOT create duplicate payment
+   942→DO NOT create duplicate allocation
+   943→DO NOT create duplicate ledger transaction
+   944→DO NOT create duplicate receipt
+   945→
+   946→Use database uniqueness constraints + transactional logic.
+   947→
+   948→==================================================
+   949→24. PAYMENT ALLOCATION
+   950→==================================================
+   951→
+   952→Use the existing financial allocation rules.
+   953→
+   954→Default allocation order:
+   955→
+   956→FEE
+   957→↓
+   958→INTEREST
+   959→↓
+   960→PRINCIPAL
+   961→
+   962→Support partial payments.
+   963→
+   964→Support overpayments according to existing business rules.
+   965→
+   966→Any unallocated amount must be explicitly represented.
+   967→
+   968→Allocation must be immutable/auditable after posting.
+   969→
+   970→==================================================
+   971→25. LEDGER
+   972→==================================================
+   973→
+   974→Financial events must create ledger transactions.
+   975→
+   976→Do not calculate financial truth from frontend state.
+   977→
+   978→Use double-entry principles where implemented.
+   979→
+   980→Example conceptual flow:
+   981→
+   982→Payment captured
+   983→↓
+   984→Debit CASH_CLEARING
+   985→Credit applicable income/principal/unallocated account
+   986→
+   987→Loan disbursement:
+   988→
+   989→Debit LOAN_RECEIVABLE
+   990→Credit CASH/BANK/CLEARING
+   991→
+   992→Use database transactions.
+   993→
+   994→Every posted ledger transaction must balance.
+   995→
+   996→==================================================
+   997→26. CASH COLLECTION
+   998→==================================================
+   999→
+  1000→Agent must have:
+  1001→
+  1002→Record Cash Collection
+  1003→
+  1004→NOT:
+  1005→
+  1006→Mark Paid
+  1007→
+  1008→Fields:
+  1009→
+  1010→candidate
+  1011→loan
+  1012→amount
+  1013→date/time
+  1014→installment
+  1015→reference
+  1016→notes
+  1017→proof where required
+  1018→
+  1019→Lifecycle:
+  1020→
+  1021→RECORDED
+  1022→↓
+  1023→PENDING_VERIFICATION
+  1024→↓
+  1025→VERIFIED
+  1026→↓
+  1027→ALLOCATED
+  1028→
+  1029→or
+  1030→
+  1031→REJECTED
+  1032→
+  1033→Agent must NOT self-verify unless explicitly authorized.
+  1034→
+  1035→Verification must be server-side.
+  1036→
+  1037→Only after verification:
+  1038→
+  1039→allocation engine
+  1040→ledger
+  1041→receipt
+  1042→notification
+  1043→
+  1044→==================================================
+  1045→27. AGENT PORTAL
+  1046→==================================================
+  1047→
+  1048→Route:
+  1049→
+  1050→/agent
+  1051→
+  1052→Build real operational workflow.
+  1053→
+  1054→Required:
+  1055→
+  1056→Dashboard
+  1057→Candidates
+  1058→Candidate 360
+  1059→Loan Details
+  1060→Due Payments
+  1061→Overdue Payments
+  1062→Collection Tasks
+  1063→Follow-ups
+  1064→PTP
+  1065→Escalations
+  1066→Record Cash Collection
+  1067→Payment Activity
+  1068→Create Loan / QR / Link
+  1069→Application Status
+  1070→WhatsApp Candidate
+  1071→AI Reminders
+  1072→My Performance
+  1073→
+  1074→Agent dashboard:
+  1075→
+  1076→Today's tasks
+  1077→Due today
+  1078→Overdue
+  1079→PTP due
+  1080→Cash pending verification
+  1081→Follow-ups
+  1082→Escalations
+  1083→
+  1084→Mobile-first.
+  1085→
+  1086→Optimize for field operations.
+  1087→
+  1088→==================================================
+  1089→28. COLLECTION TASKS
+  1090→==================================================
+  1091→
+  1092→Task lifecycle:
+  1093→
+  1094→OPEN
+  1095→ASSIGNED
+  1096→RESOLVED
+  1097→CLOSED
+  1098→
+  1099→Allow valid transitions only.
+  1100→
+  1101→Task contains:
+  1102→
+  1103→candidate
+  1104→loan
+  1105→installment
+  1106→priority
+  1107→due date
+  1108→assigned agent
+  1109→status
+  1110→notes
+  1111→outcome
+  1112→
+  1113→Outcomes:
+  1114→
+  1115→UNREACHABLE
+  1116→PROMISE_TO_PAY
+  1117→REFUSED
+  1118→PAID
+  1119→OTHER where appropriate
+  1120→
+  1121→All actions audited.
+  1122→
+  1123→==================================================
+  1124→29. PTP
+  1125→==================================================
+  1126→
+  1127→Agent can record:
+  1128→
+  1129→promise date
+  1130→promise amount
+  1131→notes
+  1132→contact attempt
+  1133→
+  1134→Statuses:
+  1135→
+  1136→ACTIVE
+  1137→FULFILLED
+  1138→BROKEN
+  1139→CANCELLED
+  1140→
+  1141→A broken PTP can generate an AI/advisory signal.
+  1142→
+  1143→Do not automatically alter financial records.
+  1144→
+  1145→==================================================
+  1146→30. ESCALATIONS
+  1147→==================================================
+  1148→
+  1149→Support escalation based on explicit business rules.
+  1150→
+  1151→Examples:
+  1152→
+  1153→3+ collection contacts
+  1154→repeated missed installments
+  1155→broken PTP
+  1156→long overdue
+  1157→
+  1158→Escalation must be explainable.
+  1159→
+  1160→Never use AI as the source of truth for money.
+  1161→
+  1162→==================================================
+  1163→31. WHATSAPP
+  1164→==================================================
+  1165→
+  1166→Use WhatsApp only where requested.
+  1167→
+  1168→Candidate:
+  1169→
+  1170→WhatsApp Agent
+  1171→WhatsApp Owner
+  1172→
+  1173→Agent:
+  1174→
+  1175→WhatsApp Candidate
+  1176→
+  1177→Owner:
+  1178→
+  1179→WhatsApp Candidate
+  1180→WhatsApp Agent
+  1181→
+  1182→Use manually initiated WhatsApp deep links.
+  1183→
+  1184→Prepared templates:
+  1185→
+  1186→Payment Reminder
+  1187→Due Today
+  1188→Overdue
+  1189→PTP Reminder
+  1190→Document Request
+  1191→Application Reminder
+  1192→General Follow-up
+  1193→
+  1194→Do not claim message was sent unless actual WhatsApp API integration confirms it.
+  1195→
+  1196→Manual wa.me opening means:
+  1197→
+  1198→"prepared message"
+  1199→
+  1200→not:
+  1201→
+  1202→"message sent"
+  1203→
+  1204→==================================================
+  1205→32. CANDIDATE PORTAL
+  1206→==================================================
+  1207→
+  1208→Route:
+  1209→
+  1210→/portal
+  1211→
+  1212→Simple, trustworthy, mobile-first.
+  1213→
+  1214→Required:
+  1215→
+  1216→Dashboard
+  1217→Loan
+  1218→Repayment Schedule
+  1219→Calendar
+  1220→Pay
+  1221→Payment History
+  1222→Outstanding / Overdue
+  1223→Receipts
+  1224→Notifications
+  1225→WhatsApp
+  1226→Support
+  1227→Profile
+  1228→
+  1229→Candidate must never see another candidate's data.
+  1230→
+  1231→==================================================
+  1232→33. CANDIDATE DASHBOARD
+  1233→==================================================
+  1234→
+  1235→Show:
+  1236→
+  1237→active loan
+  1238→outstanding amount
+  1239→next installment
+  1240→next due date
+  1241→payment status
+  1242→recent payment
+  1243→overdue amount if any
+  1244→
+  1245→All values from backend.
+  1246→
+  1247→No mock financial values.
+  1248→
+  1249→==================================================
+  1250→34. SUPPORT / COMPLAINTS
+  1251→==================================================
+  1252→
+  1253→Candidate can create support request.
+  1254→
+  1255→Fields:
+  1256→
+  1257→category
+  1258→description
+  1259→attachments where supported
+  1260→
+  1261→States:
+  1262→
+  1263→OPEN
+  1264→IN_REVIEW
+  1265→RESOLVED
+  1266→CLOSED
+  1267→
+  1268→Owner manages support.
+  1269→
+  1270→All changes audited.
+  1271→
+  1272→==================================================
+  1273→35. NOTIFICATIONS
+  1274→==================================================
+  1275→
+  1276→Build event-driven notifications.
+  1277→
+  1278→Examples:
+  1279→
+  1280→application submitted
+  1281→application approved
+  1282→application rejected
+  1283→information requested
+  1284→loan disbursed
+  1285→payment captured
+  1286→cash verified
+  1287→payment failed
+  1288→installment due
+  1289→installment overdue
+  1290→PTP reminder
+  1291→collection task
+  1292→support update
+  1293→
+  1294→Existing queue system may use BullMQ + Redis.
+  1295→
+  1296→Do not make Redis the source of truth.
+  1297→
+  1298→Database stores notification records.
+  1299→
+  1300→==================================================
+  1301→36. REMINDERS
+  1302→==================================================
+  1303→
+  1304→Implement reminders based on authoritative schedule data.
+  1305→
+  1306→Examples:
+  1307→
+  1308→T-3
+  1309→T-2
+  1310→T-1
+  1311→Due date
+  1312→Post-due
+  1313→
+  1314→Never create reminders based on frontend displayed dates.
+  1315→
+  1316→Use backend schedule.
+  1317→
+  1318→Make jobs idempotent.
+  1319→
+  1320→Avoid duplicate notifications.
+  1321→
+  1322→==================================================
+  1323→37. AI INSIGHTS
+  1324→==================================================
+  1325→
+  1326→AI is ADVISORY ONLY.
+  1327→
+  1328→AI may:
+  1329→
+  1330→prioritize collection attention
+  1331→summarize collection history
+  1332→explain risk signals
+  1333→suggest follow-up timing
+  1334→surface overdue patterns
+  1335→generate communication suggestions
+  1336→
+  1337→AI MUST NOT:
+  1338→
+  1339→approve loans
+  1340→reject loans
+  1341→change interest
+  1342→change principal
+  1343→modify repayment schedule
+  1344→mark payment successful
+  1345→move money
+  1346→create ledger entries
+  1347→bypass permissions
+  1348→verify cash automatically
+  1349→override owner decisions
+  1350→
+  1351→Required signals may include:
+  1352→
+  1353→PAYMENT_DELAY
+  1354→REPEATED_MISSED_INSTALLMENTS
+  1355→RECENT_PAYMENT_FAILURE
+  1356→BROKEN_PROMISE_TO_PAY
+  1357→COLLECTION_ESCALATION
+  1358→
+  1359→Use deterministic backend signals first.
+  1360→
+  1361→Any AI-generated explanation must be traceable to underlying data.
+  1362→
+  1363→==================================================
+  1364→38. REPORTS
+  1365→==================================================
+  1366→
+  1367→Owner reports:
+  1368→
+  1369→Portfolio
+  1370→Loans
+  1371→Applications
+  1372→Payments
+  1373→Collections
+  1374→Overdue
+  1375→PTP
+  1376→Agent Performance
+  1377→Disbursements
+  1378→Reconciliation
+  1379→Audit
+  1380→
+  1381→Filters:
+  1382→
+  1383→date range
+  1384→agent
+  1385→status
+  1386→frequency
+  1387→loan
+  1388→candidate
+  1389→
+  1390→Exports:
+  1391→
+  1392→CSV/XLSX where existing architecture supports them.
+  1393→
+  1394→Do not load unlimited records into memory.
+  1395→
+  1396→Use pagination and controlled export limits.
+  1397→
+  1398→==================================================
+  1399→39. ANALYTICS
+  1400→==================================================
+  1401→
+  1402→Charts must be based on actual database aggregation.
+  1403→
+  1404→Metrics:
+  1405→
+  1406→disbursement trend
+  1407→collection trend
+  1408→outstanding trend
+  1409→overdue trend
+  1410→repayment frequency
+  1411→collection aging
+  1412→PTP performance
+  1413→agent workload
+  1414→payment success/failure
+  1415→
+  1416→Never fabricate analytics.
+  1417→
+  1418→==================================================
+  1419→40. RECONCILIATION
+  1420→==================================================
+  1421→
+  1422→Build reconciliation chain:
+  1423→
+  1424→Expected
+  1425→↓
+  1426→Provider
+  1427→↓
+  1428→Payment
+  1429→↓
+  1430→Allocation
+  1431→↓
+  1432→Ledger
+  1433→
+  1434→Also include:
+  1435→
+  1436→Cash Collection
+  1437→↓
+  1438→Verification
+  1439→↓
+  1440→Payment
+  1441→↓
+  1442→Allocation
+  1443→↓
+  1444→Ledger
+  1445→
+  1446→Detect:
+  1447→
+  1448→duplicate provider event
+  1449→missing payment
+  1450→provider mismatch
+  1451→missing ledger
+  1452→allocation mismatch
+  1453→amount mismatch
+  1454→unmatched transaction
+  1455→
+  1456→Exceptions should be explicit records.
+  1457→
+  1458→Do not silently repair financial anomalies.
+  1459→
+  1460→==================================================
+  1461→41. REFUNDS
+  1462→==================================================
+  1463→
+  1464→Refund lifecycle:
+  1465→
+  1466→REQUESTED
+  1467→PROCESSING
+  1468→COMPLETED
+  1469→FAILED
+  1470→CANCELLED
+  1471→
+  1472→Refund must reference original payment.
+  1473→
+  1474→Refund accounting must reverse appropriate original allocations according to existing accounting rules.
+  1475→
+  1476→Do not simply subtract from loan balance.
+  1477→
+  1478→Use reversal transactions.
+  1479→
+  1480→Audit everything.
+  1481→
+  1482→==================================================
+  1483→42. FINANCIAL CORRECTIONS
+  1484→==================================================
+  1485→
+  1486→Never allow direct balance editing.
+  1487→
+  1488→Correction flow:
+  1489→
+  1490→REQUEST
+  1491→↓
+  1492→REVIEW
+  1493→↓
+  1494→APPROVE
+  1495→↓
+  1496→REVERSAL / CORRECTION TRANSACTION
+  1497→↓
+  1498→AUDIT
+  1499→
+  1500→Use separation of duties where required.
+  1501→
+  1502→Loan can enter:
+  1503→
+  1504→NEEDS_REVIEW
+  1505→
+  1506→after material correction/refund scenarios.
+  1507→
+  1508→==================================================
+  1509→43. AUDIT LOG
+  1510→==================================================
+  1511→
+  1512→Audit:
+  1513→
+  1514→login
+  1515→logout
+  1516→application creation
+  1517→application submission
+  1518→approval
+  1519→rejection
+  1520→agreement acceptance
+  1521→loan creation
+  1522→disbursement
+  1523→payment creation
+  1524→payment capture
+  1525→cash collection
+  1526→verification
+  1527→allocation
+  1528→refund
+  1529→financial correction
+  1530→PTP
+  1531→escalation
+  1532→permission change
+  1533→role change
+  1534→document actions
+  1535→support actions
+  1536→settings changes
+  1537→
+  1538→Audit record:
+  1539→
+  1540→actor
+  1541→organization
+  1542→action
+  1543→entity
+  1544→entityId
+  1545→timestamp
+  1546→metadata
+  1547→IP/device metadata where appropriate
+  1548→
+  1549→Never log:
+  1550→
+  1551→passwords
+  1552→payment secrets
+  1553→API keys
+  1554→raw sensitive credentials
+  1555→unnecessary KYC data
+  1556→
+  1557→==================================================
+  1558→44. SECURITY
+  1559→==================================================
+  1560→
+  1561→Perform a full security audit.
+  1562→
+  1563→Check:
+  1564→
+  1565→authentication
+  1566→authorization
+  1567→RBAC
+  1568→tenant isolation
+  1569→IDOR
+  1570→CSRF
+  1571→XSS
+  1572→SQL injection
+  1573→Prisma query safety
+  1574→file upload attacks
+  1575→path traversal
+  1576→session fixation
+  1577→cookie security
+  1578→rate limiting
+  1579→webhook replay
+  1580→webhook signature
+  1581→secret leakage
+  1582→PII exposure
+  1583→API error leakage
+  1584→logging leakage
+  1585→mass assignment
+  1586→unsafe redirects
+  1587→broken access control
+  1588→
+  1589→Never weaken security just to make a UI test pass.
+  1590→
+  1591→==================================================
+  1592→45. ERROR HANDLING
+  1593→==================================================
+  1594→
+  1595→Frontend must distinguish:
+  1596→
+  1597→401
+  1598→403
+  1599→404
+  1600→422
+  1601→429
+  1602→500
+  1603→network failure
+  1604→
+  1605→Do NOT display misleading messages.
+  1606→
+  1607→Example:
+  1608→
+  1609→Do not show:
+  1610→
+  1611→"Not a Borrower Account"
+  1612→
+  1613→for every API failure.
+  1614→
+  1615→Show the actual appropriate state:
+  1616→
+  1617→Unauthorized
+  1618→Forbidden
+  1619→Not Found
+  1620→Validation Error
+  1621→Server Error
+  1622→Network Error
+  1623→
+  1624→Provide retry where appropriate.
+  1625→
+  1626→==================================================
+  1627→46. API DESIGN
+  1628→==================================================
+  1629→
+  1630→All business operations go through backend APIs.
+  1631→
+  1632→Use DTO validation.
+  1633→
+  1634→Use consistent responses.
+  1635→
+  1636→Use:
+  1637→
+  1638→pagination
+  1639→filtering
+  1640→sorting
+  1641→search
+  1642→validation
+  1643→authorization
+  1644→
+  1645→Never trust client-provided:
+  1646→
+  1647→organizationId
+  1648→userId
+  1649→role
+  1650→loan balance
+  1651→payment status
+  1652→ledger balance
+  1653→approval status
+  1654→
+  1655→Derive sensitive identity from authenticated session.
+  1656→
+  1657→==================================================
+  1658→47. TRANSACTIONS / CONCURRENCY
+  1659→==================================================
+  1660→
+  1661→Use database transactions for:
+  1662→
+  1663→loan approval/origination
+  1664→schedule creation
+  1665→disbursement
+  1666→payment capture
+  1667→allocation
+  1668→ledger posting
+  1669→refund
+  1670→financial correction
+  1671→cash verification
+  1672→
+  1673→Handle concurrent requests safely.
+  1674→
+  1675→Use:
+  1676→
+  1677→unique constraints
+  1678→idempotency keys
+  1679→database locking where required
+  1680→transaction isolation appropriate to operation
+  1681→
+  1682→==================================================
+  1683→48. IDEMPOTENCY
+  1684→==================================================
+  1685→
+  1686→Implement idempotency for financial operations.
+  1687→
+  1688→Especially:
+  1689→
+  1690→payment intent
+  1691→webhook processing
+  1692→payment capture
+  1693→allocation
+  1694→receipt creation
+  1695→disbursement
+  1696→refund
+  1697→
+  1698→Repeated request must not duplicate money movement.
+  1699→
+  1700→==================================================
+  1701→49. FRONTEND
+  1702→==================================================
+  1703→
+  1704→DO NOT redesign working premium UI unnecessarily.
+  1705→
+  1706→Preserve:
+  1707→
+  1708→emerald/teal fintech visual language
+  1709→responsive layouts
+  1710→existing components
+  1711→Framer Motion
+  1712→mobile navigation
+  1713→desktop sidebar
+  1714→cards
+  1715→tables
+  1716→drawers
+  1717→modals
+  1718→status badges
+  1719→loading states
+  1720→
+  1721→But replace mock values with API data.
+  1722→
+  1723→Use:
+  1724→
+  1725→skeleton loading
+  1726→empty states
+  1727→error states
+  1728→retry
+  1729→confirmation dialogs
+  1730→success/error toasts
+  1731→
+  1732→Financial numbers should be clearly formatted.
+  1733→
+  1734→==================================================
+  1735→50. RESPONSIVE DESIGN
+  1736→==================================================
+  1737→
+  1738→Verify:
+  1739→
+  1740→mobile
+  1741→tablet
+  1742→desktop
+  1743→
+  1744→Minimum conceptual test sizes:
+  1745→
+  1746→iPhone-class width
+  1747→tablet width
+  1748→1920 desktop
+  1749→
+  1750→Owner:
+  1751→analytics-heavy desktop, usable mobile
+  1752→
+  1753→Agent:
+  1754→mobile-first
+  1755→
+  1756→Candidate:
+  1757→mobile-first/simple
+  1758→
+  1759→Do not allow tables to destroy mobile layout.
+  1760→
+  1761→Use responsive cards or horizontal scrolling where appropriate.
+  1762→
+  1763→==================================================
+  1764→51. REMOVE MOCK DATA
+  1765→==================================================
+  1766→
+  1767→Find all:
+  1768→
+  1769→mockData
+  1770→demoData
+  1771→fakeData
+  1772→hardcoded financial numbers
+  1773→static loan balances
+  1774→static payment statuses
+  1775→fake notifications
+  1776→fake analytics
+  1777→fake candidates
+  1778→fake applications
+  1779→
+  1780→Replace them with real API/database calls.
+  1781→
+  1782→EXCEPTION:
+  1783→
+  1784→Demo seed data may remain ONLY if explicitly implemented as a database seed.
+  1785→
+  1786→Never mix fake frontend state with real financial backend state.
+  1787→
+  1788→==================================================
+  1789→52. SEED DATA
+  1790→==================================================
+  1791→
+  1792→Create an idempotent development seed.
+  1793→
+  1794→Use clearly marked demo organization and demo users.
+  1795→
+  1796→Example conceptual users:
+  1797→
+  1798→owner
+  1799→agent
+  1800→candidate
+  1801→
+  1802→Do NOT use real credentials.
+  1803→
+  1804→Use environment-controlled seed passwords.
+  1805→
+  1806→Seed:
+  1807→
+  1808→organization
+  1809→users
+  1810→roles
+  1811→candidate
+  1812→application
+  1813→loan
+  1814→schedule
+  1815→collection task
+  1816→notifications
+  1817→
+  1818→Do NOT seed fake CAPTURED payments or fake ledger transactions unless they are deliberately created through the real financial workflow.
+  1819→
+  1820→==================================================
+  1821→53. ENVIRONMENT
+  1822→==================================================
+  1823→
+  1824→Audit environment variables.
+  1825→
+  1826→Required conceptual variables:
+  1827→
+  1828→DATABASE_URL
+  1829→SESSION_SECRET
+  1830→CSRF configuration if applicable
+  1831→REDIS_URL
+  1832→OBJECT_STORAGE configuration
+  1833→PAYMENT_PROVIDER configuration
+  1834→WHATSAPP configuration if actual API is used
+  1835→EMAIL configuration if existing implementation requires it
+  1836→
+  1837→Never commit secrets.
+  1838→
+  1839→Create/update:
+  1840→
+  1841→.env.example
+  1842→
+  1843→with placeholders only.
+  1844→
+  1845→==================================================
+  1846→54. OBSERVABILITY
+  1847→==================================================
+  1848→
+  1849→Add structured logging.
+  1850→
+  1851→Logs must include:
+  1852→
+  1853→request ID
+  1854→user ID where safe
+  1855→organization ID where safe
+  1856→operation
+  1857→duration
+  1858→result
+  1859→
+  1860→Never log secrets or unnecessary PII.
+  1861→
+  1862→Health checks:
+  1863→
+  1864→API health
+  1865→database health
+  1866→Redis health where applicable
+  1867→
+  1868→Do not expose sensitive infrastructure details publicly.
+  1869→
+  1870→==================================================
+  1871→55. TESTING
+  1872→==================================================
+  1873→
+  1874→Write/repair tests.
+  1875→
+  1876→Unit tests:
+  1877→
+  1878→money arithmetic
+  1879→interest
+  1880→schedule generation
+  1881→rounding
+  1882→allocation
+  1883→loan completion
+  1884→refund reversal
+  1885→
+  1886→Integration tests:
+  1887→
+  1888→authentication
+  1889→RBAC
+  1890→tenant isolation
+  1891→application
+  1892→approval
+  1893→loan origination
+  1894→disbursement
+  1895→payment
+  1896→webhook
+  1897→cash verification
+  1898→ledger
+  1899→refund
+  1900→correction
+  1901→
+  1902→Security tests:
+  1903→
+  1904→IDOR
+  1905→cross-tenant access
+  1906→role escalation
+  1907→CSRF
+  1908→unauthorized payment modification
+  1909→unauthorized ledger modification
+  1910→
+  1911→E2E:
+  1912→
+  1913→Owner creates application
+  1914→Candidate completes application
+  1915→Owner approves
+  1916→Loan created
+  1917→Schedule generated
+  1918→Owner disburses
+  1919→Candidate pays
+  1920→Webhook arrives
+  1921→Payment captured
+  1922→Allocation occurs
+  1923→Ledger posted
+  1924→Receipt generated
+  1925→Candidate sees receipt
+  1926→Overdue generated
+  1927→Agent sees task
+  1928→Agent records cash
+  1929→Owner verifies
+  1930→Allocation/ledger occurs
+  1931→
+  1932→==================================================
+  1933→56. CRITICAL FINANCIAL TEST
+  1934→==================================================
+  1935→
+  1936→Create deterministic test:
+  1937→
+  1938→Loan:
+  1939→₹100,000
+  1940→
+  1941→Interest:
+  1942→18%
+  1943→
+  1944→Frequency:
+  1945→weekly
+  1946→
+  1947→Installments:
+  1948→20
+  1949→
+  1950→Verify:
+  1951→
+  1952→schedule generated
+  1953→totals reconcile
+  1954→principal closes to zero
+  1955→allocation works
+  1956→payment history matches
+  1957→outstanding matches
+  1958→ledger balances
+  1959→receipt matches payment
+  1960→
+  1961→Do not assume exact total if the existing financial specification defines a different calculation method.
+  1962→
+  1963→Use the project's actual configured calculation engine.
+  1964→
+  1965→==================================================
+  1966→57. UI/API CONTRACT
+  1967→==================================================
+  1968→
+  1969→For every portal page:
+  1970→
+  1971→UI
+  1972→↓
+  1973→API
+  1974→↓
+  1975→authorization
+  1976→↓
+  1977→service
+  1978→↓
+  1979→Prisma
+  1980→↓
+  1981→Neon
+  1982→
+  1983→No direct frontend database access.
+  1984→
+  1985→No fake local mutation pretending to be server state.
+  1986→
+  1987→After mutation:
+  1988→
+  1989→invalidate/refetch authoritative data.
+  1990→
+  1991→==================================================
+  1992→58. LOADING / EMPTY / ERROR
+  1993→==================================================
+  1994→
+  1995→Every major screen needs:
+  1996→
+  1997→loading
+  1998→empty
+  1999→error
+  2000→retry
+
+[showing lines 1-2000 of 2435; use offset=2001 with limit to continue reading]

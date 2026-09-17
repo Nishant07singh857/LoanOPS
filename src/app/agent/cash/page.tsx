@@ -1,11 +1,11 @@
 'use client'
 
 import * as React from 'react'
-import Link from 'next/link'
 import {
   Banknote, CheckCircle2, XCircle, Clock, Plus, ShieldCheck,
-  Filter, X, Calendar, ChevronRight, AlertCircle,
+  Filter, X, AlertCircle,
 } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { KPICard } from '@/components/ui/kpi-card'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
 import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
@@ -25,7 +26,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import { toast } from 'sonner'
-import { cashCollections, agentCandidates } from '@/lib/mock-data'
+import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
@@ -39,24 +40,58 @@ const CHIPS: { key: ChipKey; label: string }[] = [
   { key: 'REJECTED', label: 'Rejected' },
 ]
 
-// Synthesize additional cash collections for richer UI
-const extraCash = [
-  { id: 'cc6', candidateName: 'Sneha Bhat', loanNumber: 'LON-2024-0915', amount: 696000, collectionDate: '12 Sep', collectionTime: '2:00 PM', status: 'VERIFIED' as const, reference: 'CASH-2024-4462', notes: 'Verified by supervisor' },
-  { id: 'cc7', candidateName: 'Imran Khan', loanNumber: 'LON-2024-0884', amount: 285000, collectionDate: '10 Sep', collectionTime: '11:00 AM', status: 'ALLOCATED' as const, reference: 'CASH-2024-4459' },
-  { id: 'cc8', candidateName: 'Meena Desai', loanNumber: 'LON-2024-0834', amount: 270000, collectionDate: '08 Sep', collectionTime: '5:30 PM', status: 'REJECTED' as const, reference: 'CASH-2024-4455', notes: 'Receipt unclear' },
-]
-const allCash = [...cashCollections, ...extraCash]
+interface CashRow {
+  id: string
+  amount: string
+  collectionDate: string
+  collectionTime: string
+  installmentNumber?: number | null
+  reference?: string | null
+  notes?: string | null
+  status: 'RECORDED' | 'PENDING_VERIFICATION' | 'VERIFIED' | 'ALLOCATED' | 'REJECTED'
+  rejectionReason?: string | null
+  recordedBy: string
+  verifiedBy?: string | null
+  candidate: { fullName: string; mobile: string }
+  loan: { loanNumber: string }
+  createdAt: string
+  verifiedAt?: string | null
+}
+
+interface CandidateRow {
+  id: string
+  fullName: string
+  mobile: string
+  activeLoanNumbers: string[]
+}
+
+function isToday(d: Date) {
+  const n = new Date()
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate()
+}
+
+function fmtDate(d?: string | null) {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+}
 
 export default function AgentCashPage() {
+  const queryClient = useQueryClient()
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [newOpen, setNewOpen] = React.useState(false)
 
-  const filtered = React.useMemo(() => {
-    if (chip === 'ALL') return allCash
-    return allCash.filter((c) => c.status === chip)
-  }, [chip])
+  const { data, isLoading } = useQuery({
+    queryKey: ['agent-cash-collections', chip],
+    queryFn: () => api.get<{ items: CashRow[]; total: number }>(
+      `/api/agent/cash-collections?pageSize=100${chip !== 'ALL' ? `&status=${chip}` : ''}`
+    ),
+  })
 
-  const todaysCash = allCash.filter((c) => c.collectionDate === 'Today').reduce((s, c) => s + c.amount, 0)
+  const allCash = data?.items ?? []
+
+  const todaysCash = allCash
+    .filter((c) => isToday(new Date(c.collectionDate)))
+    .reduce((s, c) => s + Number(c.amount), 0)
   const pendingCount = allCash.filter((c) => c.status === 'PENDING_VERIFICATION').length
   const verifiedToday = allCash.filter((c) => c.status === 'VERIFIED' || c.status === 'ALLOCATED').length
   const rejectedCount = allCash.filter((c) => c.status === 'REJECTED').length
@@ -123,14 +158,18 @@ export default function AgentCashPage() {
         </Card>
       </FadeIn>
 
-      {filtered.length === 0 ? (
-        <EmptyState icon={<Banknote className="h-6 w-6" />} title="No cash collections in this view" />
+      {isLoading ? (
+        <Card className="shadow-premium"><CardContent className="p-4 space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+        </CardContent></Card>
+      ) : allCash.length === 0 ? (
+        <EmptyState icon={<Banknote className="h-6 w-6" />} title="No cash collections" description="Record your first cash pickup." />
       ) : (
         <FadeIn>
           <Card className="shadow-premium">
             <CardHeader className="pb-2">
               <CardTitle className="text-base">Cash Collections</CardTitle>
-              <CardDescription>{filtered.length} shown · all amounts in INR</CardDescription>
+              <CardDescription>{allCash.length} shown · all amounts in INR</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="hidden md:block">
@@ -147,13 +186,13 @@ export default function AgentCashPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtered.map((c) => (
+                    {allCash.map((c) => (
                       <TableRow key={c.id}>
-                        <TableCell className="pl-6 font-mono text-xs">{c.reference}</TableCell>
-                        <TableCell className="font-medium">{c.candidateName}</TableCell>
-                        <TableCell className="font-mono text-xs">{c.loanNumber}</TableCell>
-                        <TableCell className="text-sm">{c.collectionDate} · {c.collectionTime}</TableCell>
-                        <TableCell className="text-right tabular-nums font-semibold">{formatPaiseToINR(c.amount)}</TableCell>
+                        <TableCell className="pl-6 font-mono text-xs">{c.reference ?? '—'}</TableCell>
+                        <TableCell className="font-medium">{c.candidate.fullName}</TableCell>
+                        <TableCell className="font-mono text-xs">{c.loan.loanNumber}</TableCell>
+                        <TableCell className="text-sm">{fmtDate(c.collectionDate)} · {c.collectionTime}</TableCell>
+                        <TableCell className="text-right tabular-nums font-semibold">{formatPaiseToINR(Number(c.amount))}</TableCell>
                         <TableCell><StatusBadge variant={c.status}>{formatStatus(c.status)}</StatusBadge></TableCell>
                         <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{c.notes || '—'}</TableCell>
                       </TableRow>
@@ -162,20 +201,20 @@ export default function AgentCashPage() {
                 </Table>
               </div>
               <StaggerContainer className="md:hidden space-y-3">
-                {filtered.map((c) => (
+                {allCash.map((c) => (
                   <StaggerItem key={c.id}>
                     <div className="rounded-xl border border-border p-4">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <p className="font-mono text-xs text-muted-foreground">{c.reference}</p>
-                          <p className="text-sm font-medium mt-0.5">{c.candidateName}</p>
-                          <p className="text-xs text-muted-foreground">{c.loanNumber}</p>
+                          <p className="font-mono text-xs text-muted-foreground">{c.reference ?? '—'}</p>
+                          <p className="text-sm font-medium mt-0.5">{c.candidate.fullName}</p>
+                          <p className="text-xs text-muted-foreground">{c.loan.loanNumber}</p>
                         </div>
                         <StatusBadge variant={c.status}>{formatStatus(c.status)}</StatusBadge>
                       </div>
                       <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-border">
-                        <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Amount</p><p className="text-sm font-semibold tabular-nums">{formatPaiseToINR(c.amount)}</p></div>
-                        <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Collected</p><p className="text-sm">{c.collectionDate} · {c.collectionTime}</p></div>
+                        <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Amount</p><p className="text-sm font-semibold tabular-nums">{formatPaiseToINR(Number(c.amount))}</p></div>
+                        <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Collected</p><p className="text-sm">{fmtDate(c.collectionDate)} · {c.collectionTime}</p></div>
                       </div>
                       {c.notes && <p className="text-xs text-muted-foreground mt-2 pt-2 border-t border-border">{c.notes}</p>}
                     </div>
@@ -193,23 +232,62 @@ export default function AgentCashPage() {
 }
 
 function NewCashDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const [candidate, setCandidate] = React.useState('')
-  const [loan, setLoan] = React.useState('')
+  const queryClient = useQueryClient()
+  const { data: candidatesData } = useQuery({
+    queryKey: ['agent-candidates-for-cash'],
+    queryFn: () => api.get<{ items: CandidateRow[] }>('/api/agent/candidates?pageSize=100'),
+  })
+  const candidates = candidatesData?.items ?? []
+
+  const [candidateId, setCandidateId] = React.useState('')
+  const [loanNumber, setLoanNumber] = React.useState('')
+  const [loanId, setLoanId] = React.useState('')
   const [amount, setAmount] = React.useState('')
   const [date, setDate] = React.useState('')
   const [time, setTime] = React.useState('')
   const [installment, setInstallment] = React.useState('')
   const [notes, setNotes] = React.useState('')
-  const ref = React.useMemo(() => `CASH-2024-${Math.floor(1000 + Math.random() * 9000)}`, [open])
 
-  const selectedCand = agentCandidates.find((c) => c.name === candidate)
+  const createMutation = useMutation({
+    mutationFn: () => {
+      if (!loanId) throw new Error('Select a candidate with an active loan')
+      return api.post('/api/agent/cash-collections', {
+        loanId,
+        candidateId,
+        amount,
+        collectionDate: date,
+        collectionTime: time,
+        installmentNumber: installment ? Number(installment) : null,
+        notes: notes || null,
+      })
+    },
+    onSuccess: (res: any) => {
+      toast.success('Cash recorded, pending verification', {
+        description: `${res.loanNumber} · ${candidates.find((c) => c.id === candidateId)?.fullName ?? ''} · ${amount}`,
+      })
+      queryClient.invalidateQueries({ queryKey: ['agent-cash-collections'] })
+      queryClient.invalidateQueries({ queryKey: ['agent-dashboard'] })
+      setCandidateId(''); setLoanId(''); setLoanNumber(''); setAmount(''); setDate(''); setTime(''); setInstallment(''); setNotes('')
+      onOpenChange(false)
+    },
+    onError: (e: Error) => toast.error('Failed to record cash', { description: e.message }),
+  })
+
+  const onCandidateChange = (v: string) => {
+    setCandidateId(v)
+    const c = candidates.find((c) => c.id === v)
+    if (c) {
+      setLoanNumber(c.activeLoanNumbers[0] ?? '')
+      api.get<any>(`/api/agent/candidates/${v}`).then((res) => {
+        const loan = res.loans?.find((l: any) => l.status === 'ACTIVE')
+        if (loan) setLoanId(loan.id)
+      }).catch(() => {})
+    }
+  }
 
   const submit = () => {
-    toast.success('Cash recorded, pending verification', {
-      description: `${ref} · ${candidate || 'Candidate'} · ${amount || '—'} pending supervisor review.`,
-    })
-    setCandidate(''); setLoan(''); setAmount(''); setDate(''); setTime(''); setInstallment(''); setNotes('')
-    onOpenChange(false)
+    if (!candidateId || !amount || !date || !time) { toast.error('Candidate, amount, date and time are required'); return }
+    createMutation.mutate()
   }
 
   return (
@@ -222,30 +300,27 @@ function NewCashDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label>Candidate</Label>
-            <Select
-              value={candidate}
-              onValueChange={(v) => { setCandidate(v); setLoan(agentCandidates.find((c) => c.name === v)?.loanNumber || '') }}
-            >
+            <Select value={candidateId} onValueChange={onCandidateChange}>
               <SelectTrigger className="w-full"><SelectValue placeholder="Select candidate" /></SelectTrigger>
               <SelectContent>
-                {agentCandidates.map((c) => (
-                  <SelectItem key={c.id} value={c.name}>{c.name} · {c.loanNumber}</SelectItem>
+                {candidates.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.fullName} · {c.mobile}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
             <Label>Loan (auto-selected)</Label>
-            <Input value={loan || (selectedCand?.loanNumber || '')} readOnly className="bg-muted/30 font-mono text-xs" />
+            <Input value={loanNumber || '—'} readOnly className="bg-muted/30 font-mono text-xs" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Amount (₹)</Label>
-              <Input placeholder="e.g. 7,425" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <Input placeholder="e.g. 5000" value={amount} onChange={(e) => setAmount(e.target.value)} type="text" inputMode="decimal" />
             </div>
             <div className="space-y-1.5">
               <Label>Installment # (optional)</Label>
-              <Input placeholder="e.g. 2" value={installment} onChange={(e) => setInstallment(e.target.value)} />
+              <Input placeholder="e.g. 2" value={installment} onChange={(e) => setInstallment(e.target.value)} type="number" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -257,10 +332,6 @@ function NewCashDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
               <Label>Collection Time</Label>
               <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
             </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Reference (auto-generated)</Label>
-            <Input value={ref} readOnly className="bg-muted/30 font-mono text-xs" />
           </div>
           <div className="space-y-1.5">
             <Label>Proof Upload (placeholder)</Label>
@@ -279,7 +350,7 @@ function NewCashDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit}>Record Cash</Button>
+          <Button onClick={submit} disabled={createMutation.isPending}>Record Cash</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

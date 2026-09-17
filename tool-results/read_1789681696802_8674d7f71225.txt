@@ -1,0 +1,593 @@
+     1→'use client'
+     2→
+     3→import * as React from 'react'
+     4→import Link from 'next/link'
+     5→import {
+     6→  Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer,
+     7→  Tooltip, XAxis, YAxis, Legend, Cell,
+     8→} from 'recharts'
+     9→import { motion } from 'framer-motion'
+    10→import {
+    11→  Banknote, TrendingUp, Wallet, AlertTriangle, Landmark, Activity,
+    12→  FileText, Clock, ArrowRight, Sparkles, Plus, QrCode, FileCheck,
+    13→} from 'lucide-react'
+    14→import { useQuery } from '@tanstack/react-query'
+    15→import { SectionHeading } from '@/components/ui/section-heading'
+    16→import { KPICard } from '@/components/ui/kpi-card'
+    17→import { StatusBadge, formatStatus, statusToVariant } from '@/components/ui/status-badge'
+    18→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+    19→import { Button } from '@/components/ui/button'
+    20→import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+    21→import { Skeleton } from '@/components/ui/skeleton'
+    22→import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+    23→import { toast } from 'sonner'
+    24→import { api } from '@/lib/api-client'
+    25→import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
+    26→import { cn } from '@/lib/utils'
+    27→
+    28→interface DashboardKPIs {
+    29→  totalDisbursed: string
+    30→  outstandingPrincipal: string
+    31→  totalCollected: string
+    32→  totalOverdue: string
+    33→  activeLoans: number
+    34→  completedLoans: number
+    35→  pendingApplications: number
+    36→  overdueLoans: number
+    37→  collectionRate: number
+    38→  appsWaitingReview: number
+    39→  loansReadyForDisbursement: number
+    40→  paymentsDueToday: number
+    41→  paymentsOverdue: number
+    42→  ptpDueToday: number
+    43→  brokenPtp: number
+    44→  pendingCashVerification: number
+    45→  totalLoans: number
+    46→  overdueInstallmentsCount: number
+    47→  dueTodayAmount: string
+    48→}
+    49→
+    50→interface AIInsight {
+    51→  id: string
+    52→  signalType: string
+    53→  level: 'HIGH' | 'MEDIUM' | 'LOW'
+    54→  title: string
+    55→  candidateId?: string
+    56→  candidateName?: string
+    57→  loanId?: string
+    58→  loanNumber?: string
+    59→  reasons: string[]
+    60→  suggestedAction?: string
+    61→}
+    62→
+    63→interface AnalyticsData {
+    64→  disbursementTrend: { label: string; value: number }[]
+    65→  collectionTrend: { label: string; value: number }[]
+    66→  outstandingTrend: { label: string; value: number }[]
+    67→  overdueTrend: { label: string; value: number }[]
+    68→}
+    69→
+    70→interface AuditItem {
+    71→  id: string
+    72→  action: string
+    73→  entityType: string
+    74→  entityId?: string
+    75→  description: string
+    76→  user?: { name: string; email: string } | null
+    77→  createdAt: string
+    78→}
+    79→
+    80→const alertColor: Record<string, string> = {
+    81→  HIGH: 'text-destructive',
+    82→  MEDIUM: 'text-warning',
+    83→  LOW: 'text-info',
+    84→}
+    85→
+    86→const activityIcon: Record<string, React.ReactNode> = {
+    87→  Application: <FileText className="h-3.5 w-3.5" />,
+    88→  Loan: <Landmark className="h-3.5 w-3.5" />,
+    89→  Payment: <Wallet className="h-3.5 w-3.5" />,
+    90→  Ptp: <Clock className="h-3.5 w-3.5" />,
+    91→  Escalation: <AlertTriangle className="h-3.5 w-3.5" />,
+    92→  CashCollection: <Banknote className="h-3.5 w-3.5" />,
+    93→  Disbursement: <Banknote className="h-3.5 w-3.5" />,
+    94→  User: <Activity className="h-3.5 w-3.5" />,
+    95→}
+    96→
+    97→const activityTint: Record<string, string> = {
+    98→  Application: 'bg-info/15 text-info',
+    99→  Loan: 'bg-primary/15 text-primary',
+   100→  Payment: 'bg-success/15 text-success',
+   101→  Ptp: 'bg-warning/15 text-warning',
+   102→  Escalation: 'bg-destructive/15 text-destructive',
+   103→  CashCollection: 'bg-warning/15 text-warning',
+   104→  Disbursement: 'bg-success/15 text-success',
+   105→  User: 'bg-muted text-muted-foreground',
+   106→  CREATE: 'bg-info/15 text-info',
+   107→  APPROVE: 'bg-success/15 text-success',
+   108→  REJECT: 'bg-destructive/15 text-destructive',
+   109→  DISBURSE: 'bg-success/15 text-success',
+   110→  ALLOCATE: 'bg-primary/15 text-primary',
+   111→  LOGIN: 'bg-muted text-muted-foreground',
+   112→  REFUND: 'bg-warning/15 text-warning',
+   113→  CORRECT: 'bg-warning/15 text-warning',
+   114→  PTP_CREATE: 'bg-warning/15 text-warning',
+   115→  PTP_UPDATE: 'bg-warning/15 text-warning',
+   116→  ESCALATE: 'bg-destructive/15 text-destructive',
+   117→  REVOKE: 'bg-warning/15 text-warning',
+   118→  CREATE: 'bg-info/15 text-info',
+   119→  SUBMIT: 'bg-info/15 text-info',
+   120→  VERIFY: 'bg-success/15 text-success',
+   121→}
+   122→
+   123→function timeAgo(dateStr: string): string {
+   124→  const d = new Date(dateStr)
+   125→  const diff = Date.now() - d.getTime()
+   126→  const sec = Math.floor(diff / 1000)
+   127→  if (sec < 60) return `${sec}s ago`
+   128→  const min = Math.floor(sec / 60)
+   129→  if (min < 60) return `${min}m ago`
+   130→  const hr = Math.floor(min / 60)
+   131→  if (hr < 24) return `${hr}h ago`
+   132→  const day = Math.floor(hr / 24)
+   133→  if (day < 7) return `${day}d ago`
+   134→  return d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
+   135→}
+   136→
+   137→export default function AdminDashboardPage() {
+   138→  const spark = (arr: number[]) => arr
+   139→
+   140→  const { data: kpis, isLoading: kpiLoading } = useQuery({
+   141→    queryKey: ['owner-dashboard'],
+   142→    queryFn: () => api.get<{ data: DashboardKPIs }>('/api/owner/dashboard').then((r) => r.data),
+   143→  })
+   144→
+   145→  const { data: aiData } = useQuery({
+   146→    queryKey: ['owner-ai-insights'],
+   147→    queryFn: () => api.get<{ data: { items: AIInsight[]; total: number } }>('/api/owner/ai-insights').then((r) => r.data),
+   148→  })
+   149→
+   150→  const { data: analyticsData } = useQuery({
+   151→    queryKey: ['owner-analytics'],
+   152→    queryFn: () => api.get<{ data: AnalyticsData }>('/api/owner/analytics').then((r) => r.data),
+   153→  })
+   154→
+   155→  const { data: auditData } = useQuery({
+   156→    queryKey: ['owner-audit-recent'],
+   157→    queryFn: () => api.get<{ data: { items: AuditItem[]; total: number } }>('/api/owner/audit?page=1&pageSize=8').then((r) => r.data),
+   158→  })
+   159→
+   160→  const aiAlerts = aiData?.items ?? []
+   161→  const recentActivity = (auditData?.items ?? []).slice(0, 8).map((a) => ({
+   162→    id: a.id,
+   163→    type: a.entityType,
+   164→    title: a.description.split(' ').slice(0, 6).join(' '),
+   165→    description: a.description,
+   166→    actor: a.user?.name ?? 'System',
+   167→    timestamp: timeAgo(a.createdAt),
+   168→  }))
+   169→
+   170→  // Portfolio trend chart data (combine three trends)
+   171→  const portfolioTrend = (analyticsData?.disbursementTrend ?? []).map((d, i) => ({
+   172→    label: d.label,
+   173→    disbursed: d.value,
+   174→    collected: analyticsData?.collectionTrend[i]?.value ?? 0,
+   175→    outstanding: analyticsData?.outstandingTrend[i]?.value ?? 0,
+   176→  }))
+   177→
+   178→  // Overdue aging (compute from overdue trend if available; otherwise show empty)
+   179→  const overdueAging = [
+   180→    { bucket: '1-7 days', count: 0, amount: 0 },
+   181→    { bucket: '8-15 days', count: 0, amount: 0 },
+   182→    { bucket: '16-30 days', count: 0, amount: 0 },
+   183→    { bucket: '31-60 days', count: 0, amount: 0 },
+   184→    { bucket: '60+ days', count: 0, amount: 0 },
+   185→  ]
+   186→
+   187→  const onAssign = (name?: string) => toast.success(`Agent assignment queued for ${name ?? 'candidate'}`, {
+   188→    description: 'A collection follow-up task has been created.',
+   189→  })
+   190→
+   191→  return (
+   192→    <div className="space-y-6 sm:space-y-8">
+   193→      <SectionHeading
+   194→        title="Owner Dashboard"
+   195→        description="Portfolio pulse, disbursement & collections health, AI signals and recent activity."
+   196→        icon={<Activity className="h-5 w-5" />}
+   197→        action={
+   198→          <>
+   199→            <Button asChild variant="outline" size="sm">
+   200→              <Link href="/admin/reports"><FileCheck className="h-4 w-4" /> Reports</Link>
+   201→            </Button>
+   202→            <Button asChild size="sm">
+   203→              <Link href="/admin/create-loan"><Plus className="h-4 w-4" /> Create Loan</Link>
+   204→            </Button>
+   205→          </>
+   206→        }
+   207→      />
+   208→
+   209→      {/* Quick actions strip */}
+   210→      <FadeIn>
+   211→        <Card className="overflow-hidden border-success/15 bg-gradient-to-br from-success/5 via-primary/5 to-transparent">
+   212→          <CardContent className="p-4 sm:p-5">
+   213→            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+   214→              <div className="flex items-start gap-3">
+   215→                <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+   216→                  <Sparkles className="h-5 w-5" />
+   217→                </div>
+   218→                <div>
+   219→                  <p className="font-semibold text-sm sm:text-base">Quick actions</p>
+   220→                  <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+   221→                    Originate a loan, share an application link, or review pending applications.
+   222→                  </p>
+   223→                </div>
+   224→              </div>
+   225→              <div className="flex flex-wrap gap-2">
+   226→                <Button asChild size="sm">
+   227→                  <Link href="/admin/create-loan"><Plus className="h-4 w-4" /> Create Loan</Link>
+   228→                </Button>
+   229→                <Button asChild variant="outline" size="sm">
+   230→                  <Link href="/admin/qr-links"><QrCode className="h-4 w-4" /> Generate QR Link</Link>
+   231→                </Button>
+   232→                <Button asChild variant="outline" size="sm">
+   233→                  <Link href="/admin/applications"><FileText className="h-4 w-4" /> Review Applications</Link>
+   234→                </Button>
+   235→              </div>
+   236→            </div>
+   237→          </CardContent>
+   238→        </Card>
+   239→      </FadeIn>
+   240→
+   241→      {/* KPI grid */}
+   242→      <StaggerContainer className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+   243→        {kpiLoading || !kpis ? (
+   244→          Array.from({ length: 8 }).map((_, i) => (
+   245→            <StaggerItem key={i}>
+   246→              <Card className="shadow-premium"><CardContent className="p-4 space-y-2"><Skeleton className="h-4 w-24" /><Skeleton className="h-7 w-20" /><Skeleton className="h-3 w-16" /></CardContent></Card>
+   247→            </StaggerItem>
+   248→          ))
+   249→        ) : (
+   250→          <>
+   251→            <StaggerItem>
+   252→              <KPICard
+   253→                label="Total Disbursed"
+   254→                value={formatPaiseToINRShort(Number(kpis.totalDisbursed))}
+   255→                delta={{ value: 'live', positive: true }}
+   256→                icon={<Banknote className="h-5 w-5" />}
+   257→                variant="default"
+   258→                spark={spark([300, 340, 380, 410, 420, 460, 500, 560])}
+   259→              />
+   260→            </StaggerItem>
+   261→            <StaggerItem>
+   262→              <KPICard
+   263→                label="Outstanding Principal"
+   264→                value={formatPaiseToINRShort(Number(kpis.outstandingPrincipal))}
+   265→                delta={{ value: 'live', positive: false }}
+   266→                icon={<Wallet className="h-5 w-5" />}
+   267→                variant="info"
+   268→                spark={spark([980, 1020, 1060, 1100, 1150, 1190, 1210, 1240])}
+   269→              />
+   270→            </StaggerItem>
+   271→            <StaggerItem>
+   272→              <KPICard
+   273→                label="Total Collected"
+   274→                value={formatPaiseToINRShort(Number(kpis.totalCollected))}
+   275→                delta={{ value: 'live', positive: true }}
+   276→                icon={<TrendingUp className="h-5 w-5" />}
+   277→                variant="success"
+   278→                spark={spark([310, 340, 360, 390, 420, 460, 480, 502])}
+   279→              />
+   280→            </StaggerItem>
+   281→            <StaggerItem>
+   282→              <KPICard
+   283→                label="Total Overdue"
+   284→                value={formatPaiseToINRShort(Number(kpis.totalOverdue))}
+   285→                delta={{ value: 'live', positive: false }}
+   286→                icon={<AlertTriangle className="h-5 w-5" />}
+   287→                variant="destructive"
+   288→                spark={spark([60, 72, 78, 82, 80, 84, 86, 84])}
+   289→              />
+   290→            </StaggerItem>
+   291→            <StaggerItem>
+   292→              <KPICard
+   293→                label="Active Loans"
+   294→                value={String(kpis.activeLoans)}
+   295→                delta={{ value: 'live', positive: true }}
+   296→                icon={<Landmark className="h-5 w-5" />}
+   297→                variant="default"
+   298→                spark={spark([560, 580, 590, 600, 605, 608, 610, 612])}
+   299→              />
+   300→            </StaggerItem>
+   301→            <StaggerItem>
+   302→              <KPICard
+   303→                label="Collection Rate"
+   304→                value={`${kpis.collectionRate.toFixed(1)}%`}
+   305→                delta={{ value: 'live', positive: true }}
+   306→                icon={<Activity className="h-5 w-5" />}
+   307→                variant="success"
+   308→                spark={spark([88, 90, 91, 92, 93, 93.5, 94, 94.2])}
+   309→              />
+   310→            </StaggerItem>
+   311→            <StaggerItem>
+   312→              <KPICard
+   313→                label="Pending Applications"
+   314→                value={String(kpis.pendingApplications)}
+   315→                delta={{ value: 'live', positive: false }}
+   316→                icon={<FileText className="h-5 w-5" />}
+   317→                variant="warning"
+   318→                spark={spark([20, 24, 26, 30, 28, 25, 27, 27])}
+   319→              />
+   320→            </StaggerItem>
+   321→            <StaggerItem>
+   322→              <KPICard
+   323→                label="Overdue Loans"
+   324→                value={String(kpis.overdueLoans)}
+   325→                delta={{ value: 'live', positive: false }}
+   326→                icon={<AlertTriangle className="h-5 w-5" />}
+   327→                variant="destructive"
+   328→                spark={spark([28, 32, 35, 40, 38, 36, 38, 38])}
+   329→              />
+   330→            </StaggerItem>
+   331→          </>
+   332→        )}
+   333→      </StaggerContainer>
+   334→
+   335→      {/* Charts row */}
+   336→      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+   337→        <FadeIn className="lg:col-span-2">
+   338→          <Card className="border-border shadow-premium">
+   339→            <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-2">
+   340→              <div>
+   341→                <CardTitle className="text-base sm:text-lg">Portfolio Trend</CardTitle>
+   342→                <CardDescription className="text-xs sm:text-sm">Disbursed vs Collected vs Outstanding (₹)</CardDescription>
+   343→              </div>
+   344→              <div className="flex items-center gap-3 text-[10px] sm:text-xs">
+   345→                <Legend4 color="var(--chart-1)" label="Disbursed" />
+   346→                <Legend4 color="var(--chart-2)" label="Collected" />
+   347→                <Legend4 color="var(--chart-3)" label="Outstanding" />
+   348→              </div>
+   349→            </CardHeader>
+   350→            <CardContent>
+   351→              <div className="h-[260px] sm:h-[300px]">
+   352→                {portfolioTrend.length === 0 ? (
+   353→                  <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Loading chart…</div>
+   354→                ) : (
+   355→                  <ResponsiveContainer width="100%" height="100%">
+   356→                    <AreaChart data={portfolioTrend} margin={{ top: 10, right: 8, left: -10, bottom: 0 }}>
+   357→                      <defs>
+   358→                        <linearGradient id="dG" x1="0" y1="0" x2="0" y2="1">
+   359→                          <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.35} />
+   360→                          <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0} />
+   361→                        </linearGradient>
+   362→                        <linearGradient id="cG" x1="0" y1="0" x2="0" y2="1">
+   363→                          <stop offset="0%" stopColor="var(--chart-2)" stopOpacity={0.35} />
+   364→                          <stop offset="100%" stopColor="var(--chart-2)" stopOpacity={0} />
+   365→                        </linearGradient>
+   366→                        <linearGradient id="oG" x1="0" y1="0" x2="0" y2="1">
+   367→                          <stop offset="0%" stopColor="var(--chart-3)" stopOpacity={0.35} />
+   368→                          <stop offset="100%" stopColor="var(--chart-3)" stopOpacity={0} />
+   369→                        </linearGradient>
+   370→                      </defs>
+   371→                      <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+   372→                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+   373→                      <YAxis
+   374→                        tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
+   375→                        axisLine={false} tickLine={false} width={50}
+   376→                        tickFormatter={(v: number) => formatPaiseToINRShort(v as number)}
+   377→                      />
+   378→                      <Tooltip
+   379→                        contentStyle={{
+   380→                          background: 'var(--popover)', border: '1px solid var(--border)', borderRadius: 12,
+   381→                          color: 'var(--popover-foreground)', fontSize: 12, padding: '8px 12px',
+   382→                        }}
+   383→                        formatter={(v: number, n: string) => [formatPaiseToINR(v as number), n]}
+   384→                      />
+   385→                      <Area type="monotone" dataKey="disbursed" stroke="var(--chart-1)" strokeWidth={2} fill="url(#dG)" />
+   386→                      <Area type="monotone" dataKey="collected" stroke="var(--chart-2)" strokeWidth={2} fill="url(#cG)" />
+   387→                      <Area type="monotone" dataKey="outstanding" stroke="var(--chart-3)" strokeWidth={2} fill="url(#oG)" />
+   388→                    </AreaChart>
+   389→                  </ResponsiveContainer>
+   390→                )}
+   391→              </div>
+   392→            </CardContent>
+   393→          </Card>
+   394→        </FadeIn>
+   395→
+   396→        <FadeIn delay={0.1}>
+   397→          <Card className="border-border shadow-premium h-full">
+   398→            <CardHeader className="pb-2">
+   399→              <CardTitle className="text-base sm:text-lg">Overdue Aging</CardTitle>
+   400→              <CardDescription className="text-xs sm:text-sm">Buckets by days past due</CardDescription>
+   401→            </CardHeader>
+   402→            <CardContent>
+   403→              <div className="h-[260px] sm:h-[300px]">
+   404→                <ResponsiveContainer width="100%" height="100%">
+   405→                  <BarChart data={overdueAging} margin={{ top: 10, right: 8, left: -10, bottom: 0 }}>
+   406→                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+   407→                    <XAxis dataKey="bucket" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+   408→                    <YAxis tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={32} />
+   409→                    <Tooltip
+   410→                      contentStyle={{
+   411→                        background: 'var(--popover)', border: '1px solid var(--border)', borderRadius: 12,
+   412→                        color: 'var(--popover-foreground)', fontSize: 12, padding: '8px 12px',
+   413→                      }}
+   414→                      formatter={(v: number, n: string) => [n === 'amount' ? formatPaiseToINR(v as number) : v, n === 'amount' ? 'Amount' : 'Count']}
+   415→                    />
+   416→                    <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+   417→                      {overdueAging.map((_, i) => (
+   418→                        <Cell key={i} fill={`oklch(${60 - i * 8}% 0.18 ${30 + i * 4})`} />
+   419→                      ))}
+   420→                    </Bar>
+   421→                  </BarChart>
+   422→                </ResponsiveContainer>
+   423→              </div>
+   424→            </CardContent>
+   425→          </Card>
+   426→        </FadeIn>
+   427→      </div>
+   428→
+   429→      {/* AI alerts + Recent activity */}
+   430→      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+   431→        <FadeIn>
+   432→          <Card className="border-border shadow-premium h-full">
+   433→            <CardHeader className="pb-3">
+   434→              <div className="flex items-center justify-between gap-3">
+   435→                <div className="flex items-center gap-2.5">
+   436→                  <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+   437→                    <Sparkles className="h-5 w-5" />
+   438→                  </div>
+   439→                  <div>
+   440→                    <CardTitle className="text-base sm:text-lg">AI Alerts</CardTitle>
+   441→                    <CardDescription className="text-xs">Risk signals requiring attention</CardDescription>
+   442→                  </div>
+   443→                </div>
+   444→                <StatusBadge variant="AI_HIGH">{aiAlerts.length} active</StatusBadge>
+   445→              </div>
+   446→            </CardHeader>
+   447→            <CardContent className="space-y-3 max-h-[440px] overflow-y-auto no-scrollbar">
+   448→              {aiAlerts.length === 0 ? (
+   449→                <EmptyState
+   450→                  icon={<Sparkles className="h-6 w-6" />}
+   451→                  title="No AI alerts"
+   452→                  description="All loans are healthy. Insights appear when overdue loans, broken PTPs, or repeated missed installments are detected."
+   453→                />
+   454→              ) : (
+   455→                aiAlerts.map((a) => (
+   456→                  <motion.div
+   457→                    key={a.id}
+   458→                    initial={{ opacity: 0, y: 6 }}
+   459→                    animate={{ opacity: 1, y: 0 }}
+   460→                    className="rounded-2xl border border-border bg-card p-4 hover:border-primary/40 hover:shadow-premium transition-all"
+   461→                  >
+   462→                    <div className="flex items-start justify-between gap-3">
+   463→                      <div className="min-w-0 flex-1">
+   464→                        <div className="flex items-center gap-2 mb-1.5">
+   465→                          <StatusBadge variant={statusToVariant(a.level) as any} dot={false}>{a.level}</StatusBadge>
+   466→                          <p className="text-sm font-semibold truncate">{a.title}</p>
+   467→                        </div>
+   468→                        {(a.candidateName || a.loanNumber) && (
+   469→                          <p className="text-xs text-muted-foreground mb-2">
+   470→                            {a.candidateName && <span className="font-medium text-foreground">{a.candidateName}</span>}
+   471→                            {a.candidateName && a.loanNumber && ' · '}
+   472→                            {a.loanNumber}
+   473→                          </p>
+   474→                        )}
+   475→                        <ul className="space-y-1 mb-3">
+   476→                          {a.reasons.map((r, i) => (
+   477→                            <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+   478→                              <span className={cn('mt-1 h-1 w-1 rounded-full flex-shrink-0', alertColor[a.level] || 'bg-muted-foreground')} />
+   479→                              <span>{r}</span>
+   480→                            </li>
+   481→                          ))}
+   482→                        </ul>
+   483→                        {a.suggestedAction && (
+   484→                          <div className="rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs">
+   485→                            <span className="text-muted-foreground">Suggested: </span>
+   486→                            <span className="font-medium text-foreground">{a.suggestedAction}</span>
+   487→                          </div>
+   488→                        )}
+   489→                      </div>
+   490→                    </div>
+   491→                    <div className="mt-3 flex justify-end gap-2">
+   492→                      {a.loanId && (
+   493→                        <Button size="sm" variant="outline" asChild>
+   494→                          <Link href={`/admin/loans/${a.loanId}`}>View loan</Link>
+   495→                        </Button>
+   496→                      )}
+   497→                      <Button size="sm" onClick={() => onAssign(a.candidateName)}>Assign agent</Button>
+   498→                    </div>
+   499→                  </motion.div>
+   500→                ))
+   501→              )}
+   502→            </CardContent>
+   503→          </Card>
+   504→        </FadeIn>
+   505→
+   506→        <FadeIn delay={0.05}>
+   507→          <Card className="border-border shadow-premium h-full">
+   508→            <CardHeader className="pb-3">
+   509→              <CardTitle className="text-base sm:text-lg">Recent Activity</CardTitle>
+   510→              <CardDescription className="text-xs sm:text-sm">Live audit log across the platform</CardDescription>
+   511→            </CardHeader>
+   512→            <CardContent className="max-h-[440px] overflow-y-auto no-scrollbar">
+   513→              {recentActivity.length === 0 ? (
+   514→                <EmptyState icon={<Activity className="h-6 w-6" />} title="No activity yet" description="Audit log events will appear here as actions occur." />
+   515→              ) : (
+   516→                <div className="relative">
+   517→                  <div className="absolute left-[18px] top-2 bottom-2 w-px bg-border" />
+   518→                  <ul className="space-y-4">
+   519→                    {recentActivity.map((a) => (
+   520→                      <li key={a.id} className="flex items-start gap-3">
+   521→                        <div className={cn('relative z-10 h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0 ring-4 ring-background', activityTint[a.type] || 'bg-muted text-muted-foreground')}>
+   522→                          {activityIcon[a.type] || <Activity className="h-3.5 w-3.5" />}
+   523→                        </div>
+   524→                        <div className="min-w-0 flex-1 pt-0.5">
+   525→                          <div className="flex items-center gap-2 flex-wrap">
+   526→                            <p className="text-sm font-medium truncate">{a.title}</p>
+   527→                          </div>
+   528→                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{a.description}</p>
+   529→                          <div className="flex items-center gap-2 mt-1.5 text-[11px] text-muted-foreground">
+   530→                            <Avatar className="h-4 w-4">
+   531→                              <AvatarFallback className="text-[8px] bg-muted">{a.actor.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()}</AvatarFallback>
+   532→                            </Avatar>
+   533→                            <span className="truncate">{a.actor}</span>
+   534→                            <span>·</span>
+   535→                            <span className="whitespace-nowrap">{a.timestamp}</span>
+   536→                          </div>
+   537→                        </div>
+   538→                      </li>
+   539→                    ))}
+   540→                  </ul>
+   541→                </div>
+   542→              )}
+   543→            </CardContent>
+   544→          </Card>
+   545→        </FadeIn>
+   546→      </div>
+   547→
+   548→      {/* Operational summary */}
+   549→      <FadeIn>
+   550→        <Card className="border-border shadow-premium">
+   551→          <CardHeader className="pb-3">
+   552→            <CardTitle className="text-base sm:text-lg">Operational Snapshot</CardTitle>
+   553→            <CardDescription className="text-xs sm:text-sm">Workflow counters across teams</CardDescription>
+   554→          </CardHeader>
+   555→          <CardContent>
+   556→            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+   557→              {[
+   558→                { label: 'Apps awaiting review', value: kpis?.appsWaitingReview ?? 0, href: '/admin/applications', tint: 'text-warning' },
+   559→                { label: 'Loans ready for disb.', value: kpis?.loansReadyForDisbursement ?? 0, href: '/admin/disbursements', tint: 'text-info' },
+   560→                { label: 'Payments due today', value: kpis?.paymentsDueToday ?? 0, href: '/admin/payments', tint: 'text-info' },
+   561→                { label: 'PTP due today', value: kpis?.ptpDueToday ?? 0, href: '/admin/collections', tint: 'text-warning' },
+   562→                { label: 'Broken PTPs', value: kpis?.brokenPtp ?? 0, href: '/admin/collections', tint: 'text-destructive' },
+   563→                { label: 'Pending cash verify', value: kpis?.pendingCashVerification ?? 0, href: '/admin/collections', tint: 'text-warning' },
+   564→              ].map((s) => (
+   565→                <Link
+   566→                  key={s.label}
+   567→                  href={s.href}
+   568→                  className="rounded-2xl border border-border bg-card p-4 hover:border-primary/40 hover:shadow-premium transition-all group"
+   569→                >
+   570→                  <p className="text-xs text-muted-foreground">{s.label}</p>
+   571→                  <p className={cn('text-2xl font-bold tabular-nums mt-1', s.tint)}>{s.value}</p>
+   572→                  <div className="flex items-center gap-1 mt-2 text-[11px] text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+   573→                    View <ArrowRight className="h-3 w-3" />
+   574→                  </div>
+   575→                </Link>
+   576→              ))}
+   577→            </div>
+   578→          </CardContent>
+   579→        </Card>
+   580→      </FadeIn>
+   581→    </div>
+   582→  )
+   583→}
+   584→
+   585→function Legend4({ color, label }: { color: string; label: string }) {
+   586→  return (
+   587→    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+   588→      <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+   589→      {label}
+   590→    </span>
+   591→  )
+   592→}
+   593→

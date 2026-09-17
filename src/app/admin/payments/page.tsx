@@ -1,8 +1,9 @@
 'use client'
 
 import * as React from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
-  Receipt, Building2, Banknote, CreditCard, Search, Eye, CheckCircle2, XCircle, Clock,
+  Receipt, Building2, Banknote, CreditCard, Search, Eye, XCircle, Clock,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { KPICard } from '@/components/ui/kpi-card'
@@ -10,7 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
-import { FadeIn, StaggerContainer, StaggerItem } from '@/components/ui/motion'
+import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
@@ -18,20 +20,22 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { candidatePayments, cashCollections } from '@/lib/mock-data'
+import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
-import { cn } from '@/lib/utils'
 
 interface PaymentRow {
   id: string
   paymentNumber: string
-  candidate: string
-  loan: string
-  amount: number
-  method: 'ONLINE_UPI' | 'ONLINE_NETBANKING' | 'ONLINE_CARD' | 'CASH' | 'BANK_TRANSFER'
-  date: string
+  loanNumber: string
+  candidateName: string
+  candidateMobile: string
+  amount: string
+  method: string
   status: string
-  receipt: string
+  receiptNumber?: string | null
+  reference?: string | null
+  createdAt: string
+  allocatedAt?: string | null
 }
 
 const methodIcon: Record<string, React.ReactNode> = {
@@ -42,36 +46,32 @@ const methodIcon: Record<string, React.ReactNode> = {
   BANK_TRANSFER: <Building2 className="h-3.5 w-3.5" />,
 }
 
+function fmtDate(d?: string | null) {
+  if (!d) return '—'
+  const date = new Date(d)
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
 export default function PaymentsPage() {
   const [method, setMethod] = React.useState<string>('all')
   const [status, setStatus] = React.useState<string>('all')
   const [search, setSearch] = React.useState('')
 
-  // Build a unified payments list
-  const rows: PaymentRow[] = [
-    ...candidatePayments.map((p) => ({
-      id: p.id, paymentNumber: p.paymentNumber, candidate: 'Rahul Verma', loan: 'LON-2024-0892',
-      amount: p.amount, method: p.method, date: p.date, status: p.status, receipt: p.receiptNumber || '',
-    })),
-    ...cashCollections.map((c, i) => ({
-      id: `cc-${i}`, paymentNumber: c.reference || `PAY-${i}`, candidate: c.candidateName, loan: c.loanNumber,
-      amount: c.amount, method: 'CASH' as const, date: `${c.collectionDate} ${c.collectionTime}`, status: c.status, receipt: c.reference || '',
-    })),
-  ]
-
-  const filtered = rows.filter((r) => {
-    if (method !== 'all' && r.method !== method) return false
-    if (status !== 'all' && r.status !== status) return false
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      return r.paymentNumber.toLowerCase().includes(q) || r.candidate.toLowerCase().includes(q) || r.loan.toLowerCase().includes(q)
-    }
-    return true
+  const { data, isLoading } = useQuery({
+    queryKey: ['owner-payments', method, status, search],
+    queryFn: () => {
+      const params = new URLSearchParams({ pageSize: '100' })
+      if (method !== 'all') params.set('method', method)
+      if (status !== 'all') params.set('status', status)
+      if (search) params.set('search', search)
+      return api.get<{ items: PaymentRow[]; total: number }>(`/api/owner/payments?${params.toString()}`)
+    },
   })
 
-  const totalToday = rows.reduce((s, r) => s + r.amount, 0)
-  const onlineTotal = rows.filter((r) => r.method !== 'CASH').reduce((s, r) => s + r.amount, 0)
-  const cashTotal = rows.filter((r) => r.method === 'CASH').reduce((s, r) => s + r.amount, 0)
+  const rows = data?.items ?? []
+  const totalToday = rows.reduce((s, r) => s + Number(r.amount), 0)
+  const onlineTotal = rows.filter((r) => r.method !== 'CASH').reduce((s, r) => s + Number(r.amount), 0)
+  const cashTotal = rows.filter((r) => r.method === 'CASH').reduce((s, r) => s + Number(r.amount), 0)
   const pendingVerify = rows.filter((r) => r.status === 'PENDING_VERIFICATION').length
   const failed = rows.filter((r) => r.status === 'FAILED' || r.status === 'REJECTED').length
 
@@ -83,13 +83,12 @@ export default function PaymentsPage() {
         icon={<Receipt className="h-5 w-5" />}
       />
 
-      {/* KPI strip */}
       <StaggerContainer className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         <StaggerItem>
           <KPICard label="Total Collected" value={formatPaiseToINRShort(totalToday)} icon={<Receipt className="h-5 w-5" />} variant="success" spark={[200, 240, 280, 300, 320, 360, 380]} />
         </StaggerItem>
         <StaggerItem>
-          <KPICard label="Online vs Cash" value={`${Math.round(onlineTotal / (onlineTotal + cashTotal) * 100)}% / ${Math.round(cashTotal / (onlineTotal + cashTotal) * 100)}%`} icon={<Building2 className="h-5 w-5" />} variant="info" />
+          <KPICard label="Online vs Cash" value={onlineTotal + cashTotal > 0 ? `${Math.round(onlineTotal / (onlineTotal + cashTotal) * 100)}% / ${Math.round(cashTotal / (onlineTotal + cashTotal) * 100)}%` : '—'} icon={<Building2 className="h-5 w-5" />} variant="info" />
         </StaggerItem>
         <StaggerItem>
           <KPICard label="Pending Verification" value={String(pendingVerify)} icon={<Clock className="h-5 w-5" />} variant="warning" spark={[3, 4, 5, 6, 7, 8, 9]} />
@@ -99,7 +98,6 @@ export default function PaymentsPage() {
         </StaggerItem>
       </StaggerContainer>
 
-      {/* Filter bar */}
       <FadeIn>
         <Card className="shadow-premium">
           <CardContent className="p-4">
@@ -136,74 +134,83 @@ export default function PaymentsPage() {
         </Card>
       </FadeIn>
 
-      {/* Payments table */}
       <FadeIn>
         <Card className="shadow-premium">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">All Payments</CardTitle>
-            <CardDescription>{filtered.length} of {rows.length} payments</CardDescription>
+            <CardDescription>{rows.length} payments</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="hidden md:block">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/40">
-                    <TableHead className="pl-6">Payment #</TableHead>
-                    <TableHead>Candidate</TableHead>
-                    <TableHead>Loan</TableHead>
-                    <TableHead>Method</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right pr-6">Receipt</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell className="pl-6 font-mono text-xs font-semibold text-primary">{r.paymentNumber}</TableCell>
-                      <TableCell className="font-medium">{r.candidate}</TableCell>
-                      <TableCell className="font-mono text-xs">{r.loan}</TableCell>
-                      <TableCell>
-                        <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 text-xs font-medium">
-                          {methodIcon[r.method]}{r.method.replace(/_/g, ' ')}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-sm">{r.date}</TableCell>
-                      <TableCell className="text-right tabular-nums font-medium">{formatPaiseToINR(r.amount)}</TableCell>
-                      <TableCell><StatusBadge variant={r.status}>{formatStatus(r.status)}</StatusBadge></TableCell>
-                      <TableCell className="text-right pr-6">
-                        <Button variant="ghost" size="sm" onClick={() => toast.info(`Opening receipt ${r.receipt}`)}>
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            <StaggerContainer className="md:hidden space-y-3">
-              {filtered.map((r) => (
-                <StaggerItem key={r.id}>
-                  <div className="rounded-xl border border-border p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="font-mono text-xs text-primary font-semibold">{r.paymentNumber}</p>
-                        <p className="text-sm font-medium mt-0.5">{r.candidate}</p>
-                        <p className="font-mono text-xs text-muted-foreground">{r.loan}</p>
+            {isLoading ? (
+              <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+            ) : rows.length === 0 ? (
+              <EmptyState icon={<Receipt className="h-6 w-6" />} title="No payments found" description="Payments will appear here once candidates pay or agents record cash." />
+            ) : (
+              <>
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/40">
+                        <TableHead className="pl-6">Payment #</TableHead>
+                        <TableHead>Candidate</TableHead>
+                        <TableHead>Loan</TableHead>
+                        <TableHead>Method</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right pr-6">Receipt</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rows.map((r) => (
+                        <TableRow key={r.id}>
+                          <TableCell className="pl-6 font-mono text-xs font-semibold text-primary">{r.paymentNumber}</TableCell>
+                          <TableCell className="font-medium">{r.candidateName}</TableCell>
+                          <TableCell className="font-mono text-xs">{r.loanNumber}</TableCell>
+                          <TableCell>
+                            <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 text-xs font-medium">
+                              {methodIcon[r.method]}{r.method.replace(/_/g, ' ')}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-sm">{fmtDate(r.createdAt)}</TableCell>
+                          <TableCell className="text-right tabular-nums font-medium">{formatPaiseToINR(Number(r.amount))}</TableCell>
+                          <TableCell><StatusBadge variant={r.status}>{formatStatus(r.status)}</StatusBadge></TableCell>
+                          <TableCell className="text-right pr-6">
+                            {r.receiptNumber ? (
+                              <Button variant="ghost" size="sm" onClick={() => toast.info(`Opening receipt ${r.receiptNumber}`)}>
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            ) : '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <StaggerContainer className="md:hidden space-y-3">
+                  {rows.map((r) => (
+                    <StaggerItem key={r.id}>
+                      <div className="rounded-xl border border-border p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-mono text-xs text-primary font-semibold">{r.paymentNumber}</p>
+                            <p className="text-sm font-medium mt-0.5">{r.candidateName}</p>
+                            <p className="font-mono text-xs text-muted-foreground">{r.loanNumber}</p>
+                          </div>
+                          <StatusBadge variant={r.status}>{formatStatus(r.status)}</StatusBadge>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-border">
+                          <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Amount</p><p className="text-sm font-semibold tabular-nums">{formatPaiseToINR(Number(r.amount))}</p></div>
+                          <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Method</p><p className="text-sm inline-flex items-center gap-1.5">{methodIcon[r.method]}{r.method.replace(/_/g, ' ')}</p></div>
+                          <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Date</p><p className="text-sm">{fmtDate(r.createdAt)}</p></div>
+                          {r.receiptNumber && <Button variant="outline" size="sm" className="h-7 mt-3" onClick={() => toast.info(`Opening receipt ${r.receiptNumber}`)}><Eye className="h-3.5 w-3.5" /> Receipt</Button>}
+                        </div>
                       </div>
-                      <StatusBadge variant={r.status}>{formatStatus(r.status)}</StatusBadge>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-border">
-                      <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Amount</p><p className="text-sm font-semibold tabular-nums">{formatPaiseToINR(r.amount)}</p></div>
-                      <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Method</p><p className="text-sm inline-flex items-center gap-1.5">{methodIcon[r.method]}{r.method.replace(/_/g, ' ')}</p></div>
-                      <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Date</p><p className="text-sm">{r.date}</p></div>
-                      <Button variant="outline" size="sm" className="h-7 mt-3" onClick={() => toast.info(`Opening receipt ${r.receipt}`)}><Eye className="h-3.5 w-3.5" /> Receipt</Button>
-                    </div>
-                  </div>
-                </StaggerItem>
-              ))}
-            </StaggerContainer>
+                    </StaggerItem>
+                  ))}
+                </StaggerContainer>
+              </>
+            )}
           </CardContent>
         </Card>
       </FadeIn>

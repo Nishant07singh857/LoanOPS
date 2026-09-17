@@ -2,19 +2,21 @@
 
 import * as React from 'react'
 import Link from 'next/link'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, Plus, Filter, X, ChevronRight, MessageCircle,
   CheckCircle2, Eye, Clock, ShieldAlert,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { KPICard } from '@/components/ui/kpi-card'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
 import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
@@ -22,8 +24,9 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { escalations, agentCandidates, type EscalationRow } from '@/lib/mock-data'
+import { api } from '@/lib/api-client'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
+import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
 type ChipKey = 'ALL' | 'OPEN' | 'IN_REVIEW' | 'RESOLVED' | 'CLOSED'
@@ -54,46 +57,96 @@ const reasonVariant: Record<string, string> = {
   OTHER: 'AI_LOW',
 }
 
-// Synthesize extra escalations
-const extraEsc: EscalationRow[] = [
-  { id: 'e4', candidateName: 'Sahil Khan', loanNumber: 'LON-2024-0712', reason: 'FAILED_CONTACT', description: 'No response on WhatsApp or call for 5 days', status: 'IN_REVIEW', createdAt: '6 hours ago' },
-  { id: 'e5', candidateName: 'Karthik Iyer', loanNumber: 'LON-2024-0812', reason: 'HIGH_OUTSTANDING', description: 'Outstanding > ₹2,80,000 — risk threshold exceeded', status: 'RESOLVED', createdAt: '1 week ago' },
-  { id: 'e6', candidateName: 'Suresh Patel', loanNumber: 'LON-2024-0698', reason: 'LONG_OVERDUE', description: 'Resolved after field visit & payment plan', status: 'CLOSED', createdAt: '2 weeks ago' },
-]
-const allEsc = [...escalations, ...extraEsc]
+interface EscalationRow {
+  id: string
+  reason: string
+  description?: string | null
+  status: 'OPEN' | 'IN_REVIEW' | 'RESOLVED' | 'CLOSED'
+  resolvedAt?: string | null
+  resolutionNotes?: string | null
+  candidate: { id: string; fullName: string; mobile: string }
+  loan: { loanNumber: string }
+  createdAt: string
+}
+
+interface CandidateRow {
+  id: string
+  fullName: string
+  mobile: string
+  activeLoanNumbers: string[]
+}
+
+function fmtTimestamp(d: string) {
+  const date = new Date(d)
+  const now = new Date()
+  const diff = (now.getTime() - date.getTime()) / 1000
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+}
 
 export default function AgentEscalationsPage() {
+  const { user } = useSession()
+  const queryClient = useQueryClient()
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [newOpen, setNewOpen] = React.useState(false)
-  const [resolveOpen, setResolveOpen] = React.useState<string | null>(null)
+  const [resolveTarget, setResolveTarget] = React.useState<EscalationRow | null>(null)
   const [resolution, setResolution] = React.useState('')
 
-  const filtered = React.useMemo(() => {
-    if (chip === 'ALL') return allEsc
-    return allEsc.filter((e) => e.status === chip)
-  }, [chip])
+  const { data, isLoading } = useQuery({
+    queryKey: ['agent-escalations', chip],
+    queryFn: () => api.get<{ items: EscalationRow[]; total: number }>(
+      `/api/agent/escalations?pageSize=100${chip !== 'ALL' ? `&status=${chip}` : ''}`
+    ),
+  })
+
+  const allEsc = data?.items ?? []
 
   const openCount = allEsc.filter((e) => e.status === 'OPEN').length
   const inReviewCount = allEsc.filter((e) => e.status === 'IN_REVIEW').length
   const resolvedCount = allEsc.filter((e) => e.status === 'RESOLVED').length
   const closedCount = allEsc.filter((e) => e.status === 'CLOSED').length
 
-  const onInReview = (id: string) => toast.info('Marked IN_REVIEW', { description: `Escalation ${id} is now under review.` })
-  const onResolve = () => {
-    if (!resolveOpen) return
-    toast.success('Escalation resolved', { description: `Resolution recorded for ${resolveOpen}.` })
-    setResolveOpen(null); setResolution('')
+  const updateMutation = useMutation({
+    mutationFn: ({ id, status, resolutionNotes }: { id: string; status: string; resolutionNotes?: string }) =>
+      api.patch(`/api/agent/escalations/${id}`, { status, resolutionNotes: resolutionNotes ?? null }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent-escalations'] })
+      queryClient.invalidateQueries({ queryKey: ['agent-dashboard'] })
+    },
+    onError: (e: Error) => toast.error('Failed to update', { description: e.message }),
+  })
+
+  const onInReview = (id: string) => {
+    updateMutation.mutate({ id, status: 'IN_REVIEW' })
+    toast.info('Marked IN_REVIEW')
   }
-  const onClose = (id: string) => toast.success('Escalation closed', { description: `${id} has been closed.` })
-  const onWhatsApp = (e: typeof allEsc[number]) => {
-    const cand = agentCandidates.find((c) => c.name === e.candidateName)
+  const onResolve = () => {
+    if (!resolveTarget) return
+    updateMutation.mutate(
+      { id: resolveTarget.id, status: 'RESOLVED', resolutionNotes: resolution },
+      {
+        onSuccess: () => {
+          toast.success('Escalation resolved')
+          setResolveTarget(null); setResolution('')
+        },
+      }
+    )
+  }
+  const onClose = (id: string) => {
+    updateMutation.mutate({ id, status: 'CLOSED' })
+    toast.success('Escalation closed')
+  }
+  const onWhatsApp = (e: EscalationRow) => {
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.GENERAL_FOLLOW_UP, {
-      candidateName: e.candidateName,
-      loanNumber: e.loanNumber,
-      agentName: 'Arjun Nair',
+      candidateName: e.candidate.fullName,
+      loanNumber: e.loan.loanNumber,
+      agentName: user?.name ?? 'Agent',
     })
-    openWhatsApp(cand?.mobile || '', msg)
-    toast.success('WhatsApp sent', { description: `Follow-up sent to ${e.candidateName}` })
+    openWhatsApp(e.candidate.mobile, msg)
+    toast.success('WhatsApp sent')
   }
 
   return (
@@ -144,72 +197,72 @@ export default function AgentEscalationsPage() {
         </Card>
       </FadeIn>
 
-      {filtered.length === 0 ? (
-        <EmptyState icon={<AlertTriangle className="h-6 w-6" />} title="No escalations in this view" />
+      {isLoading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+        </div>
+      ) : allEsc.length === 0 ? (
+        <EmptyState icon={<AlertTriangle className="h-6 w-6" />} title="No escalations in this view" description="Escalate a candidate to see them here." />
       ) : (
         <StaggerContainer className="space-y-3">
-          {filtered.map((e) => {
-            const cand = agentCandidates.find((c) => c.name === e.candidateName)
-            return (
-              <StaggerItem key={e.id}>
-                <Card className="shadow-premium hover:border-primary/40 hover:shadow-glow transition-all">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-3 flex-wrap">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Link href={`/agent/candidates/${cand?.id || 'c1'}`} className="text-sm font-semibold hover:text-primary">
-                            {e.candidateName}
-                          </Link>
-                          <span className="font-mono text-[11px] text-muted-foreground">{e.loanNumber}</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1">{e.description}</p>
-                        <div className="flex items-center gap-2 mt-2 flex-wrap">
-                          <StatusBadge variant={reasonVariant[e.reason]}>{reasonLabel[e.reason]}</StatusBadge>
-                          <StatusBadge variant={e.status}>{formatStatus(e.status)}</StatusBadge>
-                          <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
-                            <Clock className="h-3 w-3" /> {e.createdAt}
-                          </span>
-                        </div>
+          {allEsc.map((e) => (
+            <StaggerItem key={e.id}>
+              <Card className="shadow-premium hover:border-primary/40 hover:shadow-glow transition-all">
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Link href={`/agent/candidates/${e.candidate.id}`} className="text-sm font-semibold hover:text-primary">
+                          {e.candidate.fullName}
+                        </Link>
+                        <span className="font-mono text-[11px] text-muted-foreground">{e.loan.loanNumber}</span>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="outline" className="h-8 text-info border-info/40 hover:bg-info/10" onClick={() => onWhatsApp(e)}>
-                          <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
-                        </Button>
-                        {(e.status === 'OPEN' || e.status === 'IN_REVIEW') && (
-                          <>
-                            {e.status === 'OPEN' && (
-                              <Button size="sm" variant="outline" className="h-8" onClick={() => onInReview(e.id)}>
-                                <Eye className="h-3.5 w-3.5" /> In Review
-                              </Button>
-                            )}
-                            <Button size="sm" variant="outline" className="h-8 text-success border-success/40 hover:bg-success/10" onClick={() => setResolveOpen(e.id)}>
-                              <CheckCircle2 className="h-3.5 w-3.5" /> Resolve
-                            </Button>
-                          </>
-                        )}
-                        {e.status === 'RESOLVED' && (
-                          <Button size="sm" variant="outline" className="h-8" onClick={() => onClose(e.id)}>
-                            Close
-                          </Button>
-                        )}
+                      <p className="text-xs text-muted-foreground mt-1">{e.description ?? '—'}</p>
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        <StatusBadge variant={reasonVariant[e.reason] as any}>{reasonLabel[e.reason]}</StatusBadge>
+                        <StatusBadge variant={e.status}>{formatStatus(e.status)}</StatusBadge>
+                        <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
+                          <Clock className="h-3 w-3" /> {fmtTimestamp(e.createdAt)}
+                        </span>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              </StaggerItem>
-            )
-          })}
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" className="h-8 text-info border-info/40 hover:bg-info/10" onClick={() => onWhatsApp(e)}>
+                        <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+                      </Button>
+                      {(e.status === 'OPEN' || e.status === 'IN_REVIEW') && (
+                        <>
+                          {e.status === 'OPEN' && (
+                            <Button size="sm" variant="outline" className="h-8" disabled={updateMutation.isPending} onClick={() => onInReview(e.id)}>
+                              <Eye className="h-3.5 w-3.5" /> In Review
+                            </Button>
+                          )}
+                          <Button size="sm" variant="outline" className="h-8 text-success border-success/40 hover:bg-success/10" onClick={() => { setResolveTarget(e); setResolution(e.resolutionNotes ?? '') }}>
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Resolve
+                          </Button>
+                        </>
+                      )}
+                      {e.status === 'RESOLVED' && (
+                        <Button size="sm" variant="outline" className="h-8" disabled={updateMutation.isPending} onClick={() => onClose(e.id)}>
+                          Close
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </StaggerItem>
+          ))}
         </StaggerContainer>
       )}
 
       <NewEscalationDialog open={newOpen} onOpenChange={setNewOpen} />
 
-      {/* Resolve dialog */}
-      <Dialog open={!!resolveOpen} onOpenChange={(v) => !v && setResolveOpen(null)}>
+      <Dialog open={!!resolveTarget} onOpenChange={(v) => !v && setResolveTarget(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Resolve Escalation</DialogTitle>
-            <DialogDescription>Record the resolution for {resolveOpen}.</DialogDescription>
+            <DialogDescription>Record the resolution for {resolveTarget?.candidate.fullName ?? ''}.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
@@ -222,8 +275,10 @@ export default function AgentEscalationsPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setResolveOpen(null)}>Cancel</Button>
-            <Button onClick={onResolve}><CheckCircle2 className="h-4 w-4" /> Resolve</Button>
+            <Button variant="outline" onClick={() => setResolveTarget(null)}>Cancel</Button>
+            <Button onClick={onResolve} disabled={updateMutation.isPending}>
+              <CheckCircle2 className="h-4 w-4" /> Resolve
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -232,17 +287,54 @@ export default function AgentEscalationsPage() {
 }
 
 function NewEscalationDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const [candidate, setCandidate] = React.useState('')
-  const [loan, setLoan] = React.useState('')
+  const queryClient = useQueryClient()
+  const { data: candidatesData } = useQuery({
+    queryKey: ['agent-candidates-for-escalation'],
+    queryFn: () => api.get<{ items: CandidateRow[] }>('/api/agent/candidates?pageSize=100'),
+  })
+  const candidates = candidatesData?.items ?? []
+
+  const [candidateId, setCandidateId] = React.useState('')
+  const [loanNumber, setLoanNumber] = React.useState('')
+  const [loanId, setLoanId] = React.useState('')
   const [reason, setReason] = React.useState('LONG_OVERDUE')
   const [description, setDescription] = React.useState('')
 
-  const selectedCand = agentCandidates.find((c) => c.name === candidate)
+  const createMutation = useMutation({
+    mutationFn: () => {
+      if (!loanId) throw new Error('Select a candidate with an active loan')
+      return api.post('/api/agent/escalations', {
+        candidateId,
+        loanId,
+        reason,
+        description,
+      })
+    },
+    onSuccess: () => {
+      toast.success('Escalation created', { description: `${candidates.find((c) => c.id === candidateId)?.fullName ?? ''} · ${reasonLabel[reason]}` })
+      queryClient.invalidateQueries({ queryKey: ['agent-escalations'] })
+      queryClient.invalidateQueries({ queryKey: ['agent-dashboard'] })
+      setCandidateId(''); setLoanId(''); setLoanNumber(''); setReason('LONG_OVERDUE'); setDescription('')
+      onOpenChange(false)
+    },
+    onError: (e: Error) => toast.error('Failed to escalate', { description: e.message }),
+  })
+
+  const onCandidateChange = (v: string) => {
+    setCandidateId(v)
+    const c = candidates.find((c) => c.id === v)
+    if (c) {
+      setLoanNumber(c.activeLoanNumbers[0] ?? '')
+      api.get<any>(`/api/agent/candidates/${v}`).then((res) => {
+        const loan = res.loans?.find((l: any) => l.status === 'ACTIVE')
+        if (loan) setLoanId(loan.id)
+      }).catch(() => {})
+    }
+  }
 
   const submit = () => {
-    toast.success('Escalation created', { description: `${candidate || 'Candidate'} · ${reasonLabel[reason]}` })
-    setCandidate(''); setLoan(''); setReason('LONG_OVERDUE'); setDescription('')
-    onOpenChange(false)
+    if (!candidateId || !description) { toast.error('Candidate and description are required'); return }
+    createMutation.mutate()
   }
 
   return (
@@ -255,21 +347,18 @@ function NewEscalationDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label>Candidate</Label>
-            <Select
-              value={candidate}
-              onValueChange={(v) => { setCandidate(v); setLoan(agentCandidates.find((c) => c.name === v)?.loanNumber || '') }}
-            >
+            <Select value={candidateId} onValueChange={onCandidateChange}>
               <SelectTrigger className="w-full"><SelectValue placeholder="Select candidate" /></SelectTrigger>
               <SelectContent>
-                {agentCandidates.map((c) => (
-                  <SelectItem key={c.id} value={c.name}>{c.name} · {c.loanNumber}</SelectItem>
+                {candidates.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.fullName} · {c.mobile}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
             <Label>Loan</Label>
-            <Input value={loan || (selectedCand?.loanNumber || '')} readOnly className="bg-muted/30 font-mono text-xs" />
+            <Input value={loanNumber || '—'} readOnly className="bg-muted/30 font-mono text-xs" />
           </div>
           <div className="space-y-1.5">
             <Label>Reason</Label>
@@ -292,7 +381,7 @@ function NewEscalationDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="destructive" onClick={submit}>Create Escalation</Button>
+          <Button variant="destructive" onClick={submit} disabled={createMutation.isPending}>Create Escalation</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -1,7 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import { Undo2, Plus, Search, CheckCircle2, XCircle, Clock } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Undo2, Plus, CheckCircle2 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,7 +10,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
-import { FadeIn, StaggerContainer, StaggerItem } from '@/components/ui/motion'
+import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
@@ -20,54 +22,91 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { loans } from '@/lib/mock-data'
+import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
 
 interface RefundRow {
   id: string
-  refundNumber: string
-  loan: string
-  candidate: string
-  amount: number
+  loanId: string
+  loanNumber: string
+  candidateName: string
+  candidateMobile: string
+  amount: string
   reason: string
-  status: 'OPEN' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED' | 'COMPLETED'
+  status: 'REQUESTED' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+  notes?: string | null
+  processedAt?: string | null
+  initiatedBy: string
   createdAt: string
 }
 
-const seedRefunds: RefundRow[] = [
-  { id: 'r1', refundNumber: 'RFD-2024-014', loan: 'LON-2024-0521', candidate: 'Anita Pawar', amount: 35000, reason: 'Excess payment on closed loan', status: 'OPEN', createdAt: '2 hours ago' },
-  { id: 'r2', refundNumber: 'RFD-2024-013', loan: 'LON-2024-0892', candidate: 'Rahul Verma', amount: 5000, reason: 'Double charge reversal', status: 'IN_REVIEW', createdAt: '1 day ago' },
-  { id: 'r3', refundNumber: 'RFD-2024-012', loan: 'LON-2024-0712', candidate: 'Sahil Khan', amount: 125000, reason: 'Foreclosure surplus', status: 'APPROVED', createdAt: '2 days ago' },
-  { id: 'r4', refundNumber: 'RFD-2024-011', loan: 'LON-2024-0884', candidate: 'Imran Khan', amount: 2500, reason: 'Fee overcharge', status: 'COMPLETED', createdAt: '5 days ago' },
-  { id: 'r5', refundNumber: 'RFD-2024-010', loan: 'LON-2024-0698', candidate: 'Suresh Patel', amount: 18000, reason: 'Wrong account debit', status: 'REJECTED', createdAt: '1 week ago' },
-]
+interface LoanRow {
+  id: string
+  loanNumber: string
+  candidateName: string
+}
+
+function fmtTimestamp(d: string) {
+  const date = new Date(d)
+  const now = new Date()
+  const diff = (now.getTime() - date.getTime()) / 1000
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
 
 export default function RefundsPage() {
+  const queryClient = useQueryClient()
   const [open, setOpen] = React.useState(false)
-  const [refunds, setRefunds] = React.useState<RefundRow[]>(seedRefunds)
-  const [loan, setLoan] = React.useState('')
+  const [loanId, setLoanId] = React.useState('')
   const [amount, setAmount] = React.useState('')
   const [reason, setReason] = React.useState('')
 
-  const total = refunds.reduce((s, r) => s + r.amount, 0)
-  const pending = refunds.filter((r) => r.status === 'OPEN' || r.status === 'IN_REVIEW').length
+  const { data, isLoading } = useQuery({
+    queryKey: ['owner-refunds'],
+    queryFn: () => api.get<{ items: RefundRow[]; total: number }>('/api/owner/refunds?pageSize=100'),
+  })
+
+  const { data: loansData } = useQuery({
+    queryKey: ['owner-loans-for-refund'],
+    queryFn: () => api.get<{ items: LoanRow[] }>('/api/owner/loans?pageSize=100'),
+  })
+
+  const refunds = data?.items ?? []
+  const loans = loansData?.items ?? []
+
+  const total = refunds.reduce((s, r) => s + Number(r.amount), 0)
+  const pending = refunds.filter((r) => r.status === 'REQUESTED' || r.status === 'PROCESSING').length
+
+  const createMutation = useMutation({
+    mutationFn: () => api.post<{ id: string; refundNumber?: string }>('/api/owner/refunds', {
+      loanId, amount, reason,
+    }),
+    onSuccess: (res) => {
+      toast.success('Refund initiated', { description: `Created for ${loans.find((l) => l.id === loanId)?.loanNumber ?? ''}` })
+      queryClient.invalidateQueries({ queryKey: ['owner-refunds'] })
+      setOpen(false); setLoanId(''); setAmount(''); setReason('')
+    },
+    onError: (e: Error) => toast.error('Failed to create refund', { description: e.message }),
+  })
+
+  const completeMutation = useMutation({
+    mutationFn: (id: string) => api.post<{ id: string; status: string }>(`/api/owner/refunds/${id}/complete`),
+    onSuccess: () => {
+      toast.success('Refund processed', { description: 'Refund marked as COMPLETED.' })
+      queryClient.invalidateQueries({ queryKey: ['owner-refunds'] })
+    },
+    onError: (e: Error) => toast.error('Failed to complete refund', { description: e.message }),
+  })
 
   const submit = () => {
-    if (!loan || !amount || !reason) {
+    if (!loanId || !amount || !reason) {
       toast.error('All fields required')
       return
     }
-    const candidateName = loans.find((l) => l.loanNumber === loan)?.candidateName || '—'
-    const newRefund: RefundRow = {
-      id: `r${refunds.length + 1}`,
-      refundNumber: `RFD-2024-${String(15 + refunds.length).padStart(3, '0')}`,
-      loan, candidate: candidateName,
-      amount: Number(amount) * 100,
-      reason, status: 'OPEN', createdAt: 'Just now',
-    }
-    setRefunds([newRefund, ...refunds])
-    toast.success('Refund initiated', { description: `${newRefund.refundNumber} created for ${loan}` })
-    setOpen(false); setLoan(''); setAmount(''); setReason('')
+    createMutation.mutate()
   }
 
   return (
@@ -94,68 +133,83 @@ export default function RefundsPage() {
         <Card className="shadow-premium">
           <CardHeader className="pb-2"><CardTitle className="text-base">Refund Requests</CardTitle><CardDescription>{refunds.length} total</CardDescription></CardHeader>
           <CardContent>
-            <div className="hidden md:block">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/40">
-                    <TableHead className="pl-6">Refund #</TableHead>
-                    <TableHead>Loan</TableHead>
-                    <TableHead>Candidate</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>Reason</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right pr-6">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+            {isLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+              </div>
+            ) : refunds.length === 0 ? (
+              <EmptyState icon={<Undo2 className="h-6 w-6" />} title="No refund requests" description="Initiate a refund to see it here." />
+            ) : (
+              <>
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/40">
+                        <TableHead className="pl-6">Loan</TableHead>
+                        <TableHead>Candidate</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead>Reason</TableHead>
+                        <TableHead>Created</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right pr-6">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {refunds.map((r) => (
+                        <TableRow key={r.id}>
+                          <TableCell className="pl-6 font-mono text-xs">{r.loanNumber}</TableCell>
+                          <TableCell>
+                            <p className="font-medium">{r.candidateName}</p>
+                            <p className="text-xs text-muted-foreground">{r.candidateMobile}</p>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(r.amount))}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground max-w-[260px] truncate">{r.reason}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{fmtTimestamp(r.createdAt)}</TableCell>
+                          <TableCell><StatusBadge variant={r.status}>{formatStatus(r.status)}</StatusBadge></TableCell>
+                          <TableCell className="text-right pr-6">
+                            {(r.status === 'REQUESTED' || r.status === 'PROCESSING') && (
+                              <Button
+                                size="sm"
+                                disabled={completeMutation.isPending}
+                                onClick={() => completeMutation.mutate(r.id)}
+                              >
+                                <CheckCircle2 className="h-4 w-4" /> Process
+                              </Button>
+                            )}
+                            {(r.status === 'COMPLETED' || r.status === 'FAILED' || r.status === 'CANCELLED') && (
+                              <Button variant="ghost" size="sm">View</Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <StaggerContainer className="md:hidden space-y-3">
                   {refunds.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell className="pl-6 font-mono text-xs font-semibold text-primary">{r.refundNumber}</TableCell>
-                      <TableCell className="font-mono text-xs">{r.loan}</TableCell>
-                      <TableCell className="font-medium">{r.candidate}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatPaiseToINR(r.amount)}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground max-w-[260px] truncate">{r.reason}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{r.createdAt}</TableCell>
-                      <TableCell><StatusBadge variant={r.status}>{formatStatus(r.status)}</StatusBadge></TableCell>
-                      <TableCell className="text-right pr-6">
-                        {(r.status === 'OPEN' || r.status === 'IN_REVIEW') && (
-                          <Button size="sm" onClick={() => toast.success('Refund approved', { description: `${r.refundNumber} marked APPROVED.` })}>Approve</Button>
+                    <StaggerItem key={r.id}>
+                      <div className="rounded-xl border border-border p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-medium mt-0.5">{r.candidateName}</p>
+                            <p className="font-mono text-xs text-muted-foreground">{r.loanNumber}</p>
+                          </div>
+                          <StatusBadge variant={r.status}>{formatStatus(r.status)}</StatusBadge>
+                        </div>
+                        <p className="text-lg font-bold mt-2 tabular-nums">{formatPaiseToINR(Number(r.amount))}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{r.reason}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1">{fmtTimestamp(r.createdAt)}</p>
+                        {(r.status === 'REQUESTED' || r.status === 'PROCESSING') && (
+                          <Button size="sm" className="w-full mt-3" disabled={completeMutation.isPending} onClick={() => completeMutation.mutate(r.id)}>
+                            <CheckCircle2 className="h-4 w-4" /> Process Refund
+                          </Button>
                         )}
-                        {r.status === 'APPROVED' && (
-                          <Button size="sm" onClick={() => toast.success('Refund processed', { description: `${r.refundNumber} marked COMPLETED.` })}>Process</Button>
-                        )}
-                        {(r.status === 'COMPLETED' || r.status === 'REJECTED') && (
-                          <Button variant="ghost" size="sm">View</Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            <StaggerContainer className="md:hidden space-y-3">
-              {refunds.map((r) => (
-                <StaggerItem key={r.id}>
-                  <div className="rounded-xl border border-border p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="font-mono text-xs text-primary font-semibold">{r.refundNumber}</p>
-                        <p className="text-sm font-medium mt-0.5">{r.candidate}</p>
-                        <p className="font-mono text-xs text-muted-foreground">{r.loan}</p>
                       </div>
-                      <StatusBadge variant={r.status}>{formatStatus(r.status)}</StatusBadge>
-                    </div>
-                    <p className="text-lg font-bold mt-2 tabular-nums">{formatPaiseToINR(r.amount)}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{r.reason}</p>
-                    <p className="text-[11px] text-muted-foreground mt-1">{r.createdAt}</p>
-                    {(r.status === 'OPEN' || r.status === 'IN_REVIEW') && (
-                      <Button size="sm" className="w-full mt-3" onClick={() => toast.success('Refund approved')}>Approve</Button>
-                    )}
-                  </div>
-                </StaggerItem>
-              ))}
-            </StaggerContainer>
+                    </StaggerItem>
+                  ))}
+                </StaggerContainer>
+              </>
+            )}
           </CardContent>
         </Card>
       </FadeIn>
@@ -168,12 +222,12 @@ export default function RefundsPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="loan">Loan Number</Label>
-              <Select value={loan} onValueChange={setLoan}>
+              <Label htmlFor="loan">Loan</Label>
+              <Select value={loanId} onValueChange={setLoanId}>
                 <SelectTrigger className="w-full"><SelectValue placeholder="Select loan" /></SelectTrigger>
                 <SelectContent>
                   {loans.map((l) => (
-                    <SelectItem key={l.id} value={l.loanNumber}>{l.loanNumber} · {l.candidateName}</SelectItem>
+                    <SelectItem key={l.id} value={l.id}>{l.loanNumber} · {l.candidateName}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -192,7 +246,7 @@ export default function RefundsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={submit}>Submit Refund</Button>
+            <Button onClick={submit} disabled={createMutation.isPending}>Submit Refund</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

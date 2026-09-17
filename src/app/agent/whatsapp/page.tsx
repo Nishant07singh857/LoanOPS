@@ -1,9 +1,10 @@
 'use client'
 
 import * as React from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   MessageCircle, Send, Radio, Clock, CheckCircle2, FileText,
-  AlertTriangle, BellRing, Calendar, ChevronRight,
+  AlertTriangle, BellRing, Calendar,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -13,13 +14,15 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { agentCandidates } from '@/lib/mock-data'
+import { api } from '@/lib/api-client'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES, type WhatsAppContext } from '@/lib/whatsapp'
+import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
 type TemplateKey = keyof typeof WHATSAPP_TEMPLATES
@@ -34,27 +37,20 @@ const TEMPLATES: { key: TemplateKey; label: string; description: string; icon: R
   { key: 'GENERAL_FOLLOW_UP', label: 'General Follow-up', description: 'Agent calling card', icon: <MessageCircle className="h-5 w-5" />, tint: 'bg-muted text-muted-foreground' },
 ]
 
-const recentActivity = [
-  { id: 'wa1', candidate: 'Karthik Iyer', template: 'PAYMENT_REMINDER', ts: '12 minutes ago', status: 'DELIVERED' },
-  { id: 'wa2', candidate: 'Sahil Khan', template: 'OVERDUE', ts: '1 hour ago', status: 'DELIVERED' },
-  { id: 'wa3', candidate: 'Suresh Patel', template: 'PTP_REMINDER', ts: '3 hours ago', status: 'READ' },
-  { id: 'wa4', candidate: 'Rahul Verma', template: 'DUE_TODAY', ts: '5 hours ago', status: 'DELIVERED' },
-  { id: 'wa5', candidate: 'Meena Desai', template: 'PAYMENT_REMINDER', ts: 'Yesterday', status: 'READ' },
-  { id: 'wa6', candidate: 'Imran Khan', template: 'GENERAL_FOLLOW_UP', ts: 'Yesterday', status: 'FAILED' },
-]
-
 const initials = (n: string) => n.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
 
+interface CandidateRow {
+  id: string
+  fullName: string
+  mobile: string
+  activeLoanNumbers: string[]
+  outstanding: string
+}
+
 export default function AgentWhatsAppPage() {
+  const { user } = useSession()
   const [useTemplate, setUseTemplate] = React.useState<TemplateKey | null>(null)
   const [broadcastOpen, setBroadcastOpen] = React.useState(false)
-
-  const onUse = (key: TemplateKey) => setUseTemplate(key)
-
-  const onBroadcast = () => {
-    setBroadcastOpen(false)
-    toast.success('Broadcast queued', { description: 'WhatsApp broadcast added to queue.' })
-  }
 
   return (
     <div className="space-y-6">
@@ -95,9 +91,9 @@ export default function AgentWhatsAppPage() {
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground mt-3 line-clamp-3 bg-muted/30 rounded-lg p-2.5">
-                  {WHATSAPP_TEMPLATES[t.key].replace(/\{candidateName\}/g, 'Rahul').replace(/\{loanNumber\}/g, 'LON-2024-0892').replace(/\{amount\}/g, '7,425').replace(/\{dueDate\}/g, '20 Sep 2024').replace(/\{orgName\}/g, 'Sterling Lending').replace(/\{agentName\}/g, 'Arjun Nair')}
+                  {WHATSAPP_TEMPLATES[t.key].replace(/\{candidateName\}/g, 'Rahul').replace(/\{loanNumber\}/g, 'LON-2024-0892').replace(/\{amount\}/g, '7,425').replace(/\{dueDate\}/g, '20 Sep 2024').replace(/\{orgName\}/g, 'Sterling Lending').replace(/\{agentName\}/g, user?.name ?? 'Agent')}
                 </p>
-                <Button variant="outline" size="sm" className="w-full mt-3" onClick={() => onUse(t.key)}>
+                <Button variant="outline" size="sm" className="w-full mt-3" onClick={() => setUseTemplate(t.key)}>
                   <Send className="h-3.5 w-3.5" /> Use Template
                 </Button>
               </CardContent>
@@ -106,60 +102,15 @@ export default function AgentWhatsAppPage() {
         ))}
       </StaggerContainer>
 
-      {/* Recent activity */}
-      <FadeIn>
-        <Card className="shadow-premium">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2"><MessageCircle className="h-4 w-4" /> Recent WhatsApp Activity</CardTitle>
-            <CardDescription className="text-xs">{recentActivity.length} recent sends</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <StaggerContainer className="space-y-2.5">
-              {recentActivity.map((a) => {
-                const cand = agentCandidates.find((c) => c.name === a.candidate)
-                return (
-                  <StaggerItem key={a.id}>
-                    <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 hover:border-primary/40 hover:shadow-premium transition-all">
-                      <Avatar className="h-9 w-9 flex-shrink-0">
-                        <AvatarFallback className="bg-info/10 text-info text-xs font-semibold">
-                          {initials(a.candidate)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{a.candidate}</p>
-                        <p className="text-[11px] text-muted-foreground">
-                          {a.template.replace(/_/g, ' ')} · {a.ts}
-                        </p>
-                      </div>
-                      <StatusBadge variant={
-                        a.status === 'DELIVERED' ? 'VERIFIED' :
-                        a.status === 'READ' ? 'ALLOCATED' :
-                        a.status === 'FAILED' ? 'REJECTED' : 'PASSIVE'
-                      }>
-                        {a.status === 'DELIVERED' && 'Delivered'}
-                        {a.status === 'READ' && 'Read'}
-                        {a.status === 'FAILED' && 'Failed'}
-                      </StatusBadge>
-                    </div>
-                  </StaggerItem>
-                )
-              })}
-            </StaggerContainer>
-          </CardContent>
-        </Card>
-      </FadeIn>
-
-      {/* Use Template Dialog */}
       <UseTemplateDialog template={useTemplate} onClose={() => setUseTemplate(null)} />
 
-      {/* Broadcast Dialog */}
       <Dialog open={broadcastOpen} onOpenChange={setBroadcastOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Broadcast WhatsApp</DialogTitle>
             <DialogDescription>Send the same template to multiple candidates at once.</DialogDescription>
           </DialogHeader>
-          <BroadcastForm onSubmit={onBroadcast} />
+          <BroadcastForm onSubmit={() => { setBroadcastOpen(false); toast.success('Broadcast queued', { description: 'WhatsApp broadcast added to queue.' }) }} />
         </DialogContent>
       </Dialog>
     </div>
@@ -167,7 +118,15 @@ export default function AgentWhatsAppPage() {
 }
 
 function UseTemplateDialog({ template, onClose }: { template: TemplateKey | null; onClose: () => void }) {
+  const { user } = useSession()
   const [selected, setSelected] = React.useState('')
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['agent-candidates-for-whatsapp'],
+    queryFn: () => api.get<{ items: CandidateRow[] }>('/api/agent/candidates?pageSize=100'),
+    enabled: !!template,
+  })
+  const candidates = data?.items ?? []
 
   React.useEffect(() => {
     if (template) setSelected('')
@@ -176,21 +135,21 @@ function UseTemplateDialog({ template, onClose }: { template: TemplateKey | null
   if (!template) return null
 
   const submit = () => {
-    const cand = agentCandidates.find((c) => c.name === selected)
+    const cand = candidates.find((c) => c.id === selected)
     if (!cand) {
       toast.error('Please pick a candidate')
       return
     }
     const ctx: WhatsAppContext = {
-      candidateName: cand.name,
-      loanNumber: cand.loanNumber,
-      amount: (cand.outstanding / 100).toLocaleString('en-IN'),
-      dueDate: cand.nextPayment,
-      agentName: 'Arjun Nair',
+      candidateName: cand.fullName,
+      loanNumber: cand.activeLoanNumbers[0] ?? '',
+      amount: (Number(cand.outstanding) / 100).toLocaleString('en-IN'),
+      dueDate: 'soon',
+      agentName: user?.name ?? 'Agent',
     }
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES[template], ctx)
     openWhatsApp(cand.mobile, msg)
-    toast.success('WhatsApp draft opened', { description: `${template.replace(/_/g, ' ')} → ${cand.name}` })
+    toast.success('WhatsApp draft opened', { description: `${template.replace(/_/g, ' ')} → ${cand.fullName}` })
     onClose()
   }
 
@@ -202,26 +161,34 @@ function UseTemplateDialog({ template, onClose }: { template: TemplateKey | null
           <DialogDescription>Pick a candidate — placeholders will auto-fill.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div className="space-y-2 max-h-[260px] overflow-y-auto no-scrollbar">
-            {agentCandidates.map((c) => (
-              <label
-                key={c.id}
-                className={cn(
-                  'flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-all',
-                  selected === c.name ? 'border-primary bg-primary/5 shadow-glow' : 'border-border hover:bg-muted/50'
-                )}
-              >
-                <Checkbox checked={selected === c.name} onCheckedChange={() => setSelected(c.name)} />
-                <Avatar className="h-8 w-8">
-                  <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-semibold">{initials(c.name)}</AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate">{c.name}</p>
-                  <p className="text-[11px] text-muted-foreground">{c.loanNumber} · {c.mobile}</p>
-                </div>
-              </label>
-            ))}
-          </div>
+          {isLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+            </div>
+          ) : candidates.length === 0 ? (
+            <EmptyState icon={<MessageCircle className="h-6 w-6" />} title="No candidates available" />
+          ) : (
+            <div className="space-y-2 max-h-[260px] overflow-y-auto no-scrollbar">
+              {candidates.map((c) => (
+                <label
+                  key={c.id}
+                  className={cn(
+                    'flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-all',
+                    selected === c.id ? 'border-primary bg-primary/5 shadow-glow' : 'border-border hover:bg-muted/50'
+                  )}
+                >
+                  <Checkbox checked={selected === c.id} onCheckedChange={() => setSelected(c.id)} />
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-semibold">{initials(c.fullName)}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{c.fullName}</p>
+                    <p className="text-[11px] text-muted-foreground">{c.activeLoanNumbers[0] ?? '—'} · {c.mobile}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -236,8 +203,14 @@ function BroadcastForm({ onSubmit }: { onSubmit: () => void }) {
   const [template, setTemplate] = React.useState<TemplateKey>('PAYMENT_REMINDER')
   const [selected, setSelected] = React.useState<string[]>([])
 
-  const toggle = (name: string) => {
-    setSelected((s) => s.includes(name) ? s.filter((n) => n !== name) : [...s, name])
+  const { data } = useQuery({
+    queryKey: ['agent-candidates-for-broadcast'],
+    queryFn: () => api.get<{ items: CandidateRow[] }>('/api/agent/candidates?pageSize=100'),
+  })
+  const candidates = data?.items ?? []
+
+  const toggle = (id: string) => {
+    setSelected((s) => s.includes(id) ? s.filter((n) => n !== id) : [...s, id])
   }
 
   const handleBroadcast = () => {
@@ -245,7 +218,6 @@ function BroadcastForm({ onSubmit }: { onSubmit: () => void }) {
       toast.error('Pick at least one candidate')
       return
     }
-    // Simulate: open WhatsApp for first recipient (real broadcast is server-side)
     onSubmit()
   }
 
@@ -267,21 +239,21 @@ function BroadcastForm({ onSubmit }: { onSubmit: () => void }) {
         <Label>Candidates ({selected.length} selected)</Label>
         <ScrollArea className="h-[220px] rounded-xl border border-border p-2">
           <div className="space-y-1.5 pr-2">
-            {agentCandidates.map((c) => (
+            {candidates.map((c) => (
               <label
                 key={c.id}
                 className={cn(
                   'flex items-center gap-3 rounded-lg border p-2.5 cursor-pointer transition-all',
-                  selected.includes(c.name) ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
+                  selected.includes(c.id) ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
                 )}
               >
-                <Checkbox checked={selected.includes(c.name)} onCheckedChange={() => toggle(c.name)} />
+                <Checkbox checked={selected.includes(c.id)} onCheckedChange={() => toggle(c.id)} />
                 <Avatar className="h-8 w-8">
-                  <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-semibold">{initials(c.name)}</AvatarFallback>
+                  <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-semibold">{initials(c.fullName)}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate">{c.name}</p>
-                  <p className="text-[11px] text-muted-foreground">{c.loanNumber}</p>
+                  <p className="text-sm font-medium truncate">{c.fullName}</p>
+                  <p className="text-[11px] text-muted-foreground">{c.activeLoanNumbers[0] ?? '—'}</p>
                 </div>
               </label>
             ))}

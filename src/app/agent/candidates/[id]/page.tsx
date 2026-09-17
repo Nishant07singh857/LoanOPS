@@ -3,11 +3,11 @@
 import * as React from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, User, Phone, Mail, MapPin, Building2, MessageCircle,
-  Banknote, Handshake, AlertTriangle, Calendar, Clock, ClipboardList,
-  ScrollText, FileText, ChevronRight, Send, Plus, CheckCircle2,
-  StickyNote, History,
+  Banknote, Handshake, AlertTriangle, Calendar, Clock,
+  ScrollText, ChevronRight, Send, Plus, CheckCircle2, XCircle, History,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -18,6 +18,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
 import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -29,709 +30,649 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import {
-  agentCandidates, agentPtps, candidateInstallments, candidatePayments,
-  candidateLoan, loans, escalations,
-} from '@/lib/mock-data'
-import { formatPaiseToINR, formatPaiseToINRShort, formatBpsToPercent } from '@/lib/money'
-import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES, type WhatsAppContext } from '@/lib/whatsapp'
-import { useSession } from '@/lib/session'
+import { api } from '@/lib/api-client'
+import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
+import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
 import { cn } from '@/lib/utils'
+
+interface CandidateDetail {
+  id: string
+  fullName: string
+  mobile: string
+  email?: string | null
+  dob?: string | null
+  address?: string | null
+  occupation?: string | null
+  employer?: string | null
+  monthlyIncome?: number | null
+  bankName?: string | null
+  bankAccount?: string | null
+  bankIfsc?: string | null
+  upiId?: string | null
+  aadhaarMasked?: string | null
+  panMasked?: string | null
+  status: string
+  assignedAgent: { id: string; name: string; phone?: string | null } | null
+  loans: Array<{
+    id: string
+    loanNumber: string
+    principalAmount: string
+    installmentAmount: string
+    totalRepayable: string
+    outstandingPrincipal: string
+    outstandingInterest: string
+    status: string
+    frequency: string
+    installments: number
+    firstDueDate: string
+    overdueInstallmentsCount: number
+    schedule: Array<{
+      installmentNumber: number
+      dueDate: string
+      totalDue: string
+      paidAmount: string
+      status: string
+    }>
+  }>
+  ptps: Array<{
+    id: string
+    promisedAmount: string
+    promiseDate: string
+    status: string
+    notes?: string | null
+    createdAt: string
+  }>
+  followUps: Array<{
+    id: string
+    contactDate: string
+    contactMethod: string
+    outcome?: string | null
+    notes?: string | null
+    nextFollowUp?: string | null
+    loanNumber?: string | null
+  }>
+  escalations: Array<{
+    id: string
+    reason: string
+    description?: string | null
+    status: string
+    createdAt: string
+  }>
+  cashCollections: Array<{
+    id: string
+    amount: string
+    collectionDate: string
+    status: string
+    reference?: string | null
+  }>
+  kyc: any | null
+  createdAt: string
+}
 
 const initials = (n: string) => n.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
 
-const collectionHistory = [
-  { date: '15 Sep 2024 · 4:00 PM', method: 'PHONE', outcome: 'PTP created', next: '22 Sep', note: 'Candidate promised to pay after shop revenue comes in' },
-  { date: '10 Sep 2024 · 11:30 AM', method: 'FIELD_VISIT', outcome: 'No payment', next: '15 Sep', note: 'Met at shop; asked for extension' },
-  { date: '02 Sep 2024 · 6:00 PM', method: 'WHATSAPP', outcome: 'Reminder sent', next: '10 Sep', note: 'No reply yet' },
-  { date: '28 Aug 2024 · 5:00 PM', method: 'PHONE', outcome: 'No answer', next: '02 Sep', note: 'Will retry tomorrow' },
-  { date: '20 Aug 2024 · 12:00 PM', method: 'IN_APP', outcome: 'Payment partial', next: '28 Aug', note: 'Paid ₹3,000 of ₹7,425' },
-]
+function fmtDate(d?: string | null) {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
 
-const sampleNotes = [
-  { id: 'n1', ts: '2 hours ago', text: 'Spoke to candidate. Will pay after shop closes today.', tag: 'PTP' },
-  { id: 'n2', ts: '1 day ago', text: 'Visited shop — shut. Asked neighbor, will return tomorrow.', tag: 'Field' },
-  { id: 'n3', ts: '3 days ago', text: 'Wife said candidate out of town. Will return 20 Sep.', tag: 'Follow-up' },
-]
+const reasonLabel: Record<string, string> = {
+  REPEATED_MISSED_PAYMENT: 'Repeated Missed Payment',
+  BROKEN_PTP: 'Broken PTP',
+  LONG_OVERDUE: 'Long Overdue',
+  FAILED_CONTACT: 'Failed Contact',
+  HIGH_OUTSTANDING: 'High Outstanding',
+  OTHER: 'Other',
+}
 
-export default function CandidateDetailPage() {
+export default function AgentCandidateDetailPage() {
   const params = useParams<{ id: string }>()
-  const { user } = useSession()
-  const cand = agentCandidates.find((c) => c.id === params.id) || agentCandidates[0]
-  // Find matching loan from loans (by loanNumber)
-  const loan = loans.find((l) => l.loanNumber === cand.loanNumber) || loans[0]
-  // Use shared candidateLoan detail for the schedule/payments, paired with this candidate's loan number
-  const loanDetail = { ...candidateLoan, loanNumber: cand.loanNumber }
-  const ptps = agentPtps.filter((p) => p.loanNumber === cand.loanNumber)
-  const escs = escalations.filter((e) => e.loanNumber === cand.loanNumber)
-  const [notes, setNotes] = React.useState(sampleNotes)
-  const [newNote, setNewNote] = React.useState('')
-  const [templateKey, setTemplateKey] = React.useState<keyof typeof WHATSAPP_TEMPLATES>('PAYMENT_REMINDER')
-  const [ptpOpen, setPtpOpen] = React.useState(false)
-  const [cashOpen, setCashOpen] = React.useState(false)
-  const [escOpen, setEscOpen] = React.useState(false)
+  const candidateId = params.id
+  const queryClient = useQueryClient()
 
-  const onWhatsApp = (template: keyof typeof WHATSAPP_TEMPLATES) => {
-    const ctx: WhatsAppContext = {
-      candidateName: cand.name,
-      loanNumber: cand.loanNumber,
-      amount: (cand.outstanding / 100).toLocaleString('en-IN'),
-      dueDate: cand.nextPayment,
-      agentName: user?.name || 'Arjun Nair',
-    }
-    const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES[template], ctx)
-    openWhatsApp(cand.mobile, msg)
-    toast.success('WhatsApp draft opened', { description: `${template.replace(/_/g, ' ')} → ${cand.name}` })
-  }
+  const { data: c, isLoading } = useQuery({
+    queryKey: ['agent-candidate', candidateId],
+    queryFn: () => api.get<CandidateDetail>(`/api/agent/candidates/${candidateId}`),
+    enabled: !!candidateId,
+  })
 
-  const onAddNote = () => {
-    if (!newNote.trim()) return
-    setNotes([{ id: `n${notes.length + 1}`, ts: 'Just now', text: newNote.trim(), tag: 'Note' }, ...notes])
-    setNewNote('')
-    toast.success('Note saved (private to you)')
+  const loan = c?.loans[0]
+  const ptps = c?.ptps ?? []
+  const escs = c?.escalations ?? []
+  const followUps = c?.followUps ?? []
+
+  const onWhatsApp = () => {
+    if (!c) return
+    const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.PAYMENT_REMINDER, {
+      candidateName: c.fullName,
+      loanNumber: loan?.loanNumber ?? '',
+      amount: loan ? (Number(loan.outstandingPrincipal) / 100).toLocaleString('en-IN') : '0',
+      dueDate: loan ? fmtDate(loan.firstDueDate) : '',
+    })
+    openWhatsApp(c.mobile, msg)
+    toast.success('WhatsApp draft opened')
   }
 
   return (
     <div className="space-y-6 pb-24 sm:pb-6">
-      {/* Back link */}
-      <Link href="/agent/candidates" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors">
-        <ArrowLeft className="h-3.5 w-3.5" /> Back to candidates
-      </Link>
+      <div>
+        <Link href="/agent/candidates" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowLeft className="h-4 w-4" /> Back to candidates
+        </Link>
+      </div>
 
-      {/* Header */}
-      <FadeIn>
-        <Card className="shadow-premium overflow-hidden">
-          <CardContent className="p-4 sm:p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-              <Avatar className="h-16 w-16 sm:h-20 sm:w-20 flex-shrink-0">
-                <AvatarFallback className="bg-primary/10 text-primary text-xl font-semibold">
-                  {initials(cand.name)}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-xl sm:text-2xl font-bold tracking-tight">{cand.name}</h1>
-                  {cand.daysOverdue > 0 ? (
-                    <StatusBadge variant="OVERDUE">{cand.daysOverdue}d overdue</StatusBadge>
-                  ) : (
-                    <StatusBadge variant="ACTIVE">Current</StatusBadge>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-2 text-xs text-muted-foreground">
-                  <p className="inline-flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" /> {cand.mobile}</p>
-                  <p className="inline-flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> Mumbai South, Maharashtra</p>
-                  <p className="inline-flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" /> Self-employed (Shop owner)</p>
-                  <p className="inline-flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" /> {cand.name.toLowerCase().replace(' ', '.')}@email.com</p>
-                </div>
-              </div>
-              <div className="flex sm:flex-col gap-2 sm:items-end">
-                <div className="text-right">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Outstanding</p>
-                  <p className="text-lg font-bold tabular-nums">{formatPaiseToINR(cand.outstanding)}</p>
-                </div>
-                {cand.overdue > 0 && (
-                  <div className="text-right">
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Overdue</p>
-                    <p className="text-sm font-semibold tabular-nums text-destructive">{formatPaiseToINR(cand.overdue)}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </FadeIn>
-
-      {/* Tabs */}
-      <Tabs defaultValue="overview">
-        <div className="overflow-x-auto no-scrollbar -mx-1 px-1">
-          <TabsList className="w-auto inline-flex">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="loan">Loan</TabsTrigger>
-            <TabsTrigger value="schedule">Schedule</TabsTrigger>
-            <TabsTrigger value="payments">Payments</TabsTrigger>
-            <TabsTrigger value="history">History</TabsTrigger>
-            <TabsTrigger value="ptp">PTP</TabsTrigger>
-            <TabsTrigger value="notes">Notes</TabsTrigger>
-            <TabsTrigger value="comm">Communication</TabsTrigger>
-          </TabsList>
+      {isLoading || !c ? (
+        <div className="space-y-4">
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-64 w-full" />
         </div>
-
-        {/* Overview */}
-        <TabsContent value="overview" className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Outstanding</p><p className="text-lg font-bold tabular-nums mt-1">{formatPaiseToINRShort(cand.outstanding)}</p></CardContent></Card>
-            <Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Overdue</p><p className="text-lg font-bold tabular-nums mt-1 text-destructive">{formatPaiseToINRShort(cand.overdue)}</p></CardContent></Card>
-            <Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Next Payment</p><p className="text-sm font-semibold mt-1 inline-flex items-center gap-1"><Calendar className="h-3 w-3" /> {cand.nextPayment}</p></CardContent></Card>
-            <Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">PTP Status</p><p className="text-sm font-semibold mt-1">{cand.ptp || 'None'}</p></CardContent></Card>
-          </div>
-          <Card className="shadow-premium">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2"><FileText className="h-4 w-4" /> Assigned Loan</CardTitle>
-              <CardDescription className="text-xs">Primary loan for this candidate</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Loan Number</p>
-                  <p className="font-mono text-sm font-semibold text-primary">{cand.loanNumber}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Principal</p>
-                  <p className="text-sm font-semibold tabular-nums">{formatPaiseToINR(loan.principalAmount)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Frequency</p>
-                  <p className="text-sm">{loan.frequency}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Installments</p>
-                  <p className="text-sm">{loan.installments}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Installment Amt</p>
-                  <p className="text-sm tabular-nums">{formatPaiseToINR(loan.installmentAmount)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Next Due</p>
-                  <p className="text-sm">{loan.nextDueDate || '—'}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Loan */}
-        <TabsContent value="loan" className="space-y-4">
-          <Card className="shadow-premium">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2"><FileText className="h-4 w-4" /> Loan Terms</CardTitle>
-              <CardDescription className="text-xs">{loanDetail.loanNumber}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Principal</p><p className="text-sm font-semibold tabular-nums">{formatPaiseToINR(loanDetail.principalAmount)}</p></div>
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Interest Type</p><p className="text-sm">{loanDetail.interestType}</p></div>
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Interest Rate</p><p className="text-sm">{loanDetail.interestType === 'PERCENTAGE' ? formatBpsToPercent(loanDetail.interestRate || 0) : loanDetail.interestType === 'FIXED' ? formatPaiseToINR(loanDetail.fixedInterest || 0) : 'None'}</p></div>
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Frequency</p><p className="text-sm">{loanDetail.frequency}</p></div>
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Installments</p><p className="text-sm">{loanDetail.installments}</p></div>
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Installment Amt</p><p className="text-sm tabular-nums">{formatPaiseToINR(loanDetail.installmentAmount)}</p></div>
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Total Repayable</p><p className="text-sm font-semibold tabular-nums">{formatPaiseToINR(loanDetail.totalRepayable)}</p></div>
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Outstanding Principal</p><p className="text-sm tabular-nums">{formatPaiseToINR(loanDetail.outstandingPrincipal)}</p></div>
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Outstanding Interest</p><p className="text-sm tabular-nums">{formatPaiseToINR(loanDetail.outstandingInterest)}</p></div>
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Total Collected</p><p className="text-sm tabular-nums">{formatPaiseToINR(loanDetail.totalCollected)}</p></div>
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Next Due</p><p className="text-sm">{loanDetail.nextDueDate}</p></div>
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Disbursed At</p><p className="text-sm">{loanDetail.disbursedAt}</p></div>
-              </div>
-              <div className="mt-4 pt-4 border-t border-border">
-                <StatusBadge variant={loanDetail.status}>{formatStatus(loanDetail.status)}</StatusBadge>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Schedule */}
-        <TabsContent value="schedule" className="space-y-4">
-          <Card className="shadow-premium">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2"><Calendar className="h-4 w-4" /> Installment Schedule</CardTitle>
-              <CardDescription className="text-xs">{candidateInstallments.length} installments</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="hidden md:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/40">
-                      <TableHead className="pl-6">#</TableHead>
-                      <TableHead>Due Date</TableHead>
-                      <TableHead className="text-right">Principal</TableHead>
-                      <TableHead className="text-right">Interest</TableHead>
-                      <TableHead className="text-right">Fees</TableHead>
-                      <TableHead className="text-right">Total Due</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Paid At</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {candidateInstallments.map((i) => (
-                      <TableRow key={i.number}>
-                        <TableCell className="pl-6 font-mono">{i.number}</TableCell>
-                        <TableCell>{i.dueDate}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(i.principal)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(i.interest)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(i.fees)}</TableCell>
-                        <TableCell className="text-right tabular-nums font-semibold">{formatPaiseToINR(i.totalDue)}</TableCell>
-                        <TableCell><StatusBadge variant={i.status}>{formatStatus(i.status)}</StatusBadge></TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{i.paidAt || '—'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <StaggerContainer className="md:hidden space-y-3">
-                {candidateInstallments.map((i) => (
-                  <StaggerItem key={i.number}>
-                    <div className="rounded-xl border border-border p-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-semibold">Installment #{i.number}</p>
-                          <p className="text-xs text-muted-foreground">{i.dueDate}</p>
-                        </div>
-                        <StatusBadge variant={i.status}>{formatStatus(i.status)}</StatusBadge>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-border text-xs">
-                        <div><p className="text-[10px] uppercase text-muted-foreground">Total Due</p><p className="font-semibold tabular-nums">{formatPaiseToINR(i.totalDue)}</p></div>
-                        <div><p className="text-[10px] uppercase text-muted-foreground">Paid At</p><p>{i.paidAt || '—'}</p></div>
+      ) : (
+        <>
+          {/* Header */}
+          <FadeIn>
+            <Card className="shadow-premium overflow-hidden">
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div className="flex items-start gap-4 min-w-0 flex-1">
+                    <Avatar className="h-16 w-16 flex-shrink-0">
+                      <AvatarFallback className="bg-primary/10 text-primary text-lg font-semibold">
+                        {initials(c.fullName)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <h1 className="text-lg sm:text-2xl font-bold tracking-tight">{c.fullName}</h1>
+                      <p className="text-xs sm:text-sm text-muted-foreground">{c.mobile}{c.email ? ` · ${c.email}` : ''}</p>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        <StatusBadge variant={c.status}>{formatStatus(c.status)}</StatusBadge>
+                        {c.assignedAgent && (
+                          <span className="inline-flex items-center rounded-md bg-info/15 px-2 py-0.5 text-xs font-medium text-info">
+                            <User className="h-3 w-3 mr-1" /> {c.assignedAgent.name}
+                          </span>
+                        )}
                       </div>
                     </div>
-                  </StaggerItem>
-                ))}
-              </StaggerContainer>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Payments */}
-        <TabsContent value="payments" className="space-y-4">
-          <Card className="shadow-premium">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2"><Banknote className="h-4 w-4" /> Payment History</CardTitle>
-              <CardDescription className="text-xs">{candidatePayments.length} payments</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="hidden md:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/40">
-                      <TableHead className="pl-6">Payment #</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Receipt</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {candidatePayments.map((p) => (
-                      <TableRow key={p.id}>
-                        <TableCell className="pl-6 font-mono text-xs">{p.paymentNumber}</TableCell>
-                        <TableCell>{p.method.replace(/_/g, ' ')}</TableCell>
-                        <TableCell className="text-sm">{p.date}</TableCell>
-                        <TableCell className="text-right tabular-nums font-semibold">{formatPaiseToINR(p.amount)}</TableCell>
-                        <TableCell><StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge></TableCell>
-                        <TableCell className="font-mono text-xs">{p.receiptNumber || '—'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <StaggerContainer className="md:hidden space-y-3">
-                {candidatePayments.map((p) => (
-                  <StaggerItem key={p.id}>
-                    <div className="rounded-xl border border-border p-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="font-mono text-xs text-primary">{p.paymentNumber}</p>
-                          <p className="text-sm font-medium mt-1">{p.method.replace(/_/g, ' ')}</p>
-                          <p className="text-xs text-muted-foreground">{p.date}</p>
-                        </div>
-                        <StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge>
-                      </div>
-                      <p className="text-sm font-bold tabular-nums mt-3 pt-3 border-t border-border">{formatPaiseToINR(p.amount)}</p>
-                    </div>
-                  </StaggerItem>
-                ))}
-              </StaggerContainer>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Collection History */}
-        <TabsContent value="history" className="space-y-4">
-          <Card className="shadow-premium">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2"><History className="h-4 w-4" /> Collection History</CardTitle>
-              <CardDescription className="text-xs">{collectionHistory.length} past follow-ups</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="relative pl-6">
-                <div className="absolute left-2 top-2 bottom-2 w-px bg-border" />
-                <ul className="space-y-4">
-                  {collectionHistory.map((h, i) => (
-                    <li key={i} className="relative">
-                      <span className="absolute -left-[18px] top-1.5 h-3 w-3 rounded-full bg-primary ring-4 ring-background" />
-                      <div className="rounded-xl border border-border bg-card p-3.5">
-                        <div className="flex items-start justify-between gap-2 flex-wrap">
-                          <div>
-                            <p className="text-sm font-medium">{h.outcome}</p>
-                            <p className="text-[11px] text-muted-foreground">{h.date}</p>
-                          </div>
-                          <StatusBadge variant={h.method === 'FIELD_VISIT' ? 'AI_MEDIUM' : 'AI_LOW'}>{h.method.replace(/_/g, ' ')}</StatusBadge>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-2">{h.note}</p>
-                        <p className="text-[11px] text-muted-foreground mt-1.5 inline-flex items-center gap-1">
-                          <ChevronRight className="h-3 w-3" /> Next: {h.next}
-                        </p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* PTP */}
-        <TabsContent value="ptp" className="space-y-4">
-          <Card className="shadow-premium">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-base flex items-center gap-2"><Handshake className="h-4 w-4" /> Promise to Pay</CardTitle>
-                  <CardDescription className="text-xs">{ptps.length} PTPs for this candidate</CardDescription>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" onClick={onWhatsApp} className="text-info border-info/40 hover:bg-info/10">
+                      <MessageCircle className="h-4 w-4" /> WhatsApp
+                    </Button>
+                    <a href={`tel:${c.mobile.replace(/\s/g, '')}`} onClick={(e) => e.preventDefault()}>
+                      <Button variant="outline" size="sm">
+                        <Phone className="h-4 w-4" /> Call
+                      </Button>
+                    </a>
+                  </div>
                 </div>
-                <Button size="sm" onClick={() => setPtpOpen(true)}><Plus className="h-3.5 w-3.5" /> New PTP</Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {ptps.length === 0 ? (
-                <EmptyState icon={<Handshake className="h-6 w-6" />} title="No PTPs yet" description="Create a promise to pay record for this candidate." />
+              </CardContent>
+            </Card>
+          </FadeIn>
+
+          {/* Summary cards */}
+          {loan && (
+            <StaggerContainer className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+              <StaggerItem><Card className="shadow-premium"><CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">Outstanding</p>
+                <p className="text-xl font-bold tabular-nums">{formatPaiseToINRShort(Number(loan.outstandingPrincipal))}</p>
+              </CardContent></Card></StaggerItem>
+              <StaggerItem><Card className="shadow-premium"><CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">Installment</p>
+                <p className="text-xl font-bold tabular-nums">{formatPaiseToINRShort(Number(loan.installmentAmount))}</p>
+              </CardContent></Card></StaggerItem>
+              <StaggerItem><Card className="shadow-premium"><CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">Overdue Inst.</p>
+                <p className="text-xl font-bold tabular-nums text-destructive">{loan.overdueInstallmentsCount}</p>
+              </CardContent></Card></StaggerItem>
+              <StaggerItem><Card className="shadow-premium"><CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">Loan #</p>
+                <p className="text-sm font-mono font-semibold truncate">{loan.loanNumber}</p>
+              </CardContent></Card></StaggerItem>
+            </StaggerContainer>
+          )}
+
+          {/* Tabs */}
+          <Tabs defaultValue="overview">
+            <TabsList className="w-full overflow-x-auto no-scrollbar">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="loan">Loan</TabsTrigger>
+              <TabsTrigger value="ptp">PTP</TabsTrigger>
+              <TabsTrigger value="history">History</TabsTrigger>
+              <TabsTrigger value="escalations">Escalations</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="overview" className="space-y-4">
+              <Card className="shadow-premium">
+                <CardHeader className="pb-2"><CardTitle className="text-base">Personal Details</CardTitle></CardHeader>
+                <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                  <DetailRow icon={<User className="h-4 w-4" />} label="Name" value={c.fullName} />
+                  <DetailRow icon={<Phone className="h-4 w-4" />} label="Mobile" value={c.mobile} />
+                  <DetailRow icon={<Mail className="h-4 w-4" />} label="Email" value={c.email ?? '—'} />
+                  <DetailRow icon={<Calendar className="h-4 w-4" />} label="DOB" value={fmtDate(c.dob)} />
+                  <DetailRow icon={<MapPin className="h-4 w-4" />} label="Address" value={c.address ?? '—'} />
+                  <DetailRow icon={<Building2 className="h-4 w-4" />} label="Employer" value={c.employer ?? '—'} />
+                  <DetailRow icon={<Banknote className="h-4 w-4" />} label="Monthly Income" value={c.monthlyIncome ? formatPaiseToINR(c.monthlyIncome) : '—'} />
+                  <DetailRow icon={<ScrollText className="h-4 w-4" />} label="Aadhaar" value={c.aadhaarMasked ?? '—'} />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="loan" className="space-y-4">
+              {!loan ? (
+                <EmptyState icon={<Banknote className="h-6 w-6" />} title="No active loans" description="This candidate has no loan records." />
               ) : (
-                <StaggerContainer className="space-y-3">
-                  {ptps.map((p) => (
-                    <StaggerItem key={p.id}>
-                      <div className="rounded-xl border border-border p-4">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="text-sm font-semibold tabular-nums">{formatPaiseToINR(p.promisedAmount)}</p>
-                            <p className="text-xs text-muted-foreground inline-flex items-center gap-1 mt-1">
-                              <Calendar className="h-3 w-3" /> {p.promiseDate}
-                            </p>
-                          </div>
-                          <StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge>
-                        </div>
-                        {p.notes && <p className="text-xs text-muted-foreground mt-2 pt-2 border-t border-border">{p.notes}</p>}
-                      </div>
-                    </StaggerItem>
-                  ))}
-                </StaggerContainer>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Notes */}
-        <TabsContent value="notes" className="space-y-4">
-          <Card className="shadow-premium">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2"><StickyNote className="h-4 w-4" /> Agent Notes</CardTitle>
-              <CardDescription className="text-xs">Private to you — not visible to the candidate or owner.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="rounded-xl border border-border p-3 bg-muted/30">
-                <Textarea
-                  placeholder="Add a private note..."
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
-                  className="bg-background min-h-[80px]"
-                />
-                <div className="flex justify-end mt-2">
-                  <Button size="sm" onClick={onAddNote} disabled={!newNote.trim()}>
-                    <StickyNote className="h-3.5 w-3.5" /> Save Note
-                  </Button>
-                </div>
-              </div>
-              <StaggerContainer className="space-y-2.5">
-                {notes.map((n) => (
-                  <StaggerItem key={n.id}>
-                    <div className="rounded-xl border border-border bg-card p-3.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm">{n.text}</p>
-                        <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-[10px] font-medium">{n.tag}</span>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground mt-2">{n.ts}</p>
+                <Card className="shadow-premium">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">{loan.loanNumber}</CardTitle>
+                    <CardDescription>{loan.frequency} · {loan.installments} installments · {formatPaiseToINR(Number(loan.principalAmount))}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Schedule</p>
+                    <div className="rounded-lg border border-border overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/40">
+                            <TableHead className="pl-4">#</TableHead>
+                            <TableHead>Due Date</TableHead>
+                            <TableHead className="text-right">Total Due</TableHead>
+                            <TableHead className="text-right">Paid</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {loan.schedule.map((s) => (
+                            <TableRow key={s.installmentNumber}>
+                              <TableCell className="pl-4 font-mono text-xs">{s.installmentNumber}</TableCell>
+                              <TableCell className="text-xs">{fmtDate(s.dueDate)}</TableCell>
+                              <TableCell className="text-right tabular-nums text-xs">{formatPaiseToINR(Number(s.totalDue))}</TableCell>
+                              <TableCell className="text-right tabular-nums text-xs">{formatPaiseToINR(Number(s.paidAmount))}</TableCell>
+                              <TableCell><StatusBadge variant={s.status}>{formatStatus(s.status)}</StatusBadge></TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
                     </div>
-                  </StaggerItem>
-                ))}
-              </StaggerContainer>
-            </CardContent>
-          </Card>
-        </TabsContent>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
 
-        {/* Communication */}
-        <TabsContent value="comm" className="space-y-4">
-          <Card className="shadow-premium">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2"><MessageCircle className="h-4 w-4" /> Communication</CardTitle>
-              <CardDescription className="text-xs">Send WhatsApp with pre-approved templates</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-1.5">
-                <Label>Template</Label>
-                <Select value={templateKey} onValueChange={(v: string) => setTemplateKey(v as keyof typeof WHATSAPP_TEMPLATES)}>
-                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Object.keys(WHATSAPP_TEMPLATES).filter((k) => !k.startsWith('CANDIDATE_')).map((k) => (
-                      <SelectItem key={k} value={k}>{k.replace(/_/g, ' ')}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="rounded-xl border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-                {WHATSAPP_TEMPLATES[templateKey].replace(/\{candidateName\}/g, cand.name).replace(/\{loanNumber\}/g, cand.loanNumber).replace(/\{amount\}/g, (cand.outstanding / 100).toLocaleString('en-IN')).replace(/\{dueDate\}/g, cand.nextPayment)}
-              </div>
-              <Button onClick={() => onWhatsApp(templateKey)} className="w-full">
-                <Send className="h-4 w-4" /> Send WhatsApp to {cand.name.split(' ')[0]}
-              </Button>
-              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-border">
-                <Button asChild variant="outline">
-                  <a href={`tel:${cand.mobile.replace(/\s/g, '')}`}><Phone className="h-4 w-4" /> Call</a>
-                </Button>
-                <Button variant="outline" onClick={() => toast.info('Email composer opened')}>
-                  <Mail className="h-4 w-4" /> Email
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            <TabsContent value="ptp" className="space-y-4">
+              <PTPSection candidateId={c.id} loanId={loan?.id} ptps={ptps} />
+            </TabsContent>
+
+            <TabsContent value="history" className="space-y-4">
+              <FollowUpSection candidateId={c.id} loanId={loan?.id} followUps={followUps} />
+            </TabsContent>
+
+            <TabsContent value="escalations" className="space-y-4">
+              <EscalationSection candidateId={c.id} loanId={loan?.id} escalations={escs} />
+            </TabsContent>
+          </Tabs>
+        </>
+      )}
 
       {/* Sticky action bar (mobile) */}
-      <div className="fixed bottom-0 inset-x-0 z-20 sm:hidden bg-background/95 backdrop-blur-xl border-t border-border pb-safe">
-        <div className="grid grid-cols-6 gap-1 px-2 py-2">
-          <Button size="sm" variant="ghost" className="h-11 flex-col gap-0.5 text-info" onClick={() => onWhatsApp(templateKey)}>
-            <MessageCircle className="h-4 w-4" /><span className="text-[9px]">WhatsApp</span>
-          </Button>
-          <Button size="sm" variant="ghost" className="h-11 flex-col gap-0.5" asChild>
-            <a href={`tel:${cand.mobile.replace(/\s/g, '')}`}><Phone className="h-4 w-4" /><span className="text-[9px]">Call</span></a>
-          </Button>
-          <Button size="sm" variant="ghost" className="h-11 flex-col gap-0.5" onClick={() => toast.info('Email composer opened')}>
-            <Mail className="h-4 w-4" /><span className="text-[9px]">Email</span>
-          </Button>
-          <Button size="sm" variant="ghost" className="h-11 flex-col gap-0.5 text-warning" onClick={() => setPtpOpen(true)}>
-            <Handshake className="h-4 w-4" /><span className="text-[9px]">PTP</span>
-          </Button>
-          <Button size="sm" variant="ghost" className="h-11 flex-col gap-0.5 text-success" onClick={() => setCashOpen(true)}>
-            <Banknote className="h-4 w-4" /><span className="text-[9px]">Cash</span>
-          </Button>
-          <Button size="sm" variant="ghost" className="h-11 flex-col gap-0.5 text-destructive" onClick={() => setEscOpen(true)}>
-            <AlertTriangle className="h-4 w-4" /><span className="text-[9px]">Escalate</span>
-          </Button>
+      {c && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 sm:hidden border-t border-border bg-background/95 backdrop-blur px-4 py-3">
+          <div className="flex gap-2">
+            <Button className="flex-1" size="sm" onClick={onWhatsApp}>
+              <MessageCircle className="h-4 w-4" /> WhatsApp
+            </Button>
+            <a href={`tel:${c.mobile.replace(/\s/g, '')}`} className="flex-1">
+              <Button variant="outline" size="sm" className="w-full">
+                <Phone className="h-4 w-4" /> Call
+              </Button>
+            </a>
+          </div>
         </div>
-      </div>
-
-      {/* Desktop action bar (below tabs) */}
-      <div className="hidden sm:block">
-        <Card className="shadow-premium">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button variant="outline" onClick={() => onWhatsApp(templateKey)} className="text-info border-info/40 hover:bg-info/10">
-                <MessageCircle className="h-4 w-4" /> WhatsApp
-              </Button>
-              <Button asChild variant="outline">
-                <a href={`tel:${cand.mobile.replace(/\s/g, '')}`}><Phone className="h-4 w-4" /> Call</a>
-              </Button>
-              <Button variant="outline" onClick={() => toast.info('Email composer opened')}>
-                <Mail className="h-4 w-4" /> Email
-              </Button>
-              <Button variant="outline" onClick={() => setPtpOpen(true)}>
-                <Handshake className="h-4 w-4" /> New PTP
-              </Button>
-              <Button variant="outline" onClick={() => setCashOpen(true)}>
-                <Banknote className="h-4 w-4" /> Record Cash
-              </Button>
-              <Button variant="outline" className="text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => setEscOpen(true)}>
-                <AlertTriangle className="h-4 w-4" /> Escalate
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* New PTP Dialog */}
-      <NewPtpDialog open={ptpOpen} onOpenChange={setPtpOpen} candidateName={cand.name} loanNumber={cand.loanNumber} />
-
-      {/* Record Cash Dialog */}
-      <RecordCashDialog open={cashOpen} onOpenChange={setCashOpen} candidateName={cand.name} loanNumber={cand.loanNumber} mobile={cand.mobile} />
-
-      {/* Escalate Dialog */}
-      <EscalateDialog open={escOpen} onOpenChange={setEscOpen} candidateName={cand.name} loanNumber={cand.loanNumber} />
+      )}
     </div>
   )
 }
 
-export function NewPtpDialog({ open, onOpenChange, candidateName, loanNumber }: {
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  candidateName: string
-  loanNumber: string
+function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-2">
+      <span className="text-muted-foreground mt-0.5">{icon}</span>
+      <div className="min-w-0">
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
+        <p className="text-sm font-medium">{value}</p>
+      </div>
+    </div>
+  )
+}
+
+function PTPSection({ candidateId, loanId, ptps }: {
+  candidateId: string
+  loanId?: string
+  ptps: CandidateDetail['ptps']
 }) {
+  const queryClient = useQueryClient()
+  const [open, setOpen] = React.useState(false)
   const [amount, setAmount] = React.useState('')
   const [promiseDate, setPromiseDate] = React.useState('')
   const [notes, setNotes] = React.useState('')
-  const submit = () => {
-    toast.success('PTP created', { description: `${candidateName} promised ${amount || '—'} by ${promiseDate || '—'}.` })
-    setAmount(''); setPromiseDate(''); setNotes('')
-    onOpenChange(false)
-  }
+
+  const createMutation = useMutation({
+    mutationFn: () => {
+      if (!loanId) throw new Error('No active loan for this candidate')
+      return api.post('/api/agent/ptp', {
+        candidateId,
+        loanId,
+        promisedAmount: amount,
+        promiseDate,
+        notes,
+      })
+    },
+    onSuccess: () => {
+      toast.success('PTP created', { description: `Promise for ${formatPaiseToINR(Number(amount) * 100)}` })
+      queryClient.invalidateQueries({ queryKey: ['agent-candidate', candidateId] })
+      queryClient.invalidateQueries({ queryKey: ['agent-ptp'] })
+      queryClient.invalidateQueries({ queryKey: ['agent-dashboard'] })
+      setOpen(false); setAmount(''); setPromiseDate(''); setNotes('')
+    },
+    onError: (e: Error) => toast.error('Failed to create PTP', { description: e.message }),
+  })
+
+  const fulfillMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/api/agent/ptp/${id}/fulfill`),
+    onSuccess: () => {
+      toast.success('PTP fulfilled')
+      queryClient.invalidateQueries({ queryKey: ['agent-candidate', candidateId] })
+      queryClient.invalidateQueries({ queryKey: ['agent-ptp'] })
+    },
+    onError: (e: Error) => toast.error('Failed', { description: e.message }),
+  })
+
+  const breakMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/api/agent/ptp/${id}/break`),
+    onSuccess: () => {
+      toast.success('PTP marked broken')
+      queryClient.invalidateQueries({ queryKey: ['agent-candidate', candidateId] })
+      queryClient.invalidateQueries({ queryKey: ['agent-ptp'] })
+    },
+    onError: (e: Error) => toast.error('Failed', { description: e.message }),
+  })
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>New Promise to Pay</DialogTitle>
-          <DialogDescription>{candidateName} · {loanNumber}</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label>Loan</Label>
-            <Input value={loanNumber} readOnly className="bg-muted/30 font-mono text-xs" />
+    <Card className="shadow-premium">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2"><Handshake className="h-4 w-4" /> Promise to Pay</CardTitle>
+            <CardDescription className="text-xs">{ptps.length} total</CardDescription>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Amount (₹)</Label>
-              <Input placeholder="e.g. 14,300" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <Button size="sm" onClick={() => setOpen(true)} disabled={!loanId}>
+            <Plus className="h-4 w-4" /> New PTP
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {ptps.length === 0 ? (
+          <EmptyState icon={<Handshake className="h-6 w-6" />} title="No PTPs yet" description="Create a promise-to-pay record." />
+        ) : (
+          ptps.map((p) => (
+            <div key={p.id} className="rounded-xl border border-border p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-bold tabular-nums">{formatPaiseToINR(Number(p.promisedAmount))}</p>
+                  <p className="text-xs text-muted-foreground">Promise: {fmtDate(p.promiseDate)}</p>
+                  {p.notes && <p className="text-xs text-muted-foreground mt-1">{p.notes}</p>}
+                </div>
+                <StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge>
+              </div>
+              {p.status === 'ACTIVE' && (
+                <div className="flex gap-2 mt-3 pt-3 border-t border-border">
+                  <Button size="sm" className="flex-1" disabled={fulfillMutation.isPending} onClick={() => fulfillMutation.mutate(p.id)}>
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Mark Fulfilled
+                  </Button>
+                  <Button size="sm" variant="outline" className="flex-1 text-destructive border-destructive/40 hover:bg-destructive/10" disabled={breakMutation.isPending} onClick={() => breakMutation.mutate(p.id)}>
+                    <XCircle className="h-3.5 w-3.5" /> Mark Broken
+                  </Button>
+                </div>
+              )}
             </div>
-            <div className="space-y-1.5">
+          ))
+        )}
+      </CardContent>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New Promise to Pay</DialogTitle>
+            <DialogDescription>Record a payment promise from this candidate.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Amount (₹)</Label>
+              <Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 5000" type="text" inputMode="decimal" />
+            </div>
+            <div>
               <Label>Promise Date</Label>
               <Input type="date" value={promiseDate} onChange={(e) => setPromiseDate(e.target.value)} />
             </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Will pay after shop revenue comes in" />
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label>Notes</Label>
-            <Textarea placeholder="e.g. will pay after shop revenue comes in" value={notes} onChange={(e) => setNotes(e.target.value)} />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit}>Create PTP</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !amount || !promiseDate}>Create PTP</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
   )
 }
 
-export function RecordCashDialog({ open, onOpenChange, candidateName, loanNumber, mobile }: {
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  candidateName: string
-  loanNumber: string
-  mobile: string
+function FollowUpSection({ candidateId, loanId, followUps }: {
+  candidateId: string
+  loanId?: string
+  followUps: CandidateDetail['followUps']
 }) {
-  const [amount, setAmount] = React.useState('')
-  const [date, setDate] = React.useState('')
-  const [time, setTime] = React.useState('')
-  const [installment, setInstallment] = React.useState('')
+  const queryClient = useQueryClient()
+  const [open, setOpen] = React.useState(false)
+  const [contactMethod, setContactMethod] = React.useState('PHONE')
+  const [outcome, setOutcome] = React.useState('')
   const [notes, setNotes] = React.useState('')
-  const ref = React.useMemo(() => `CASH-2024-${Math.floor(1000 + Math.random() * 9000)}`, [open])
-  const submit = () => {
-    toast.success('Cash recorded, pending verification', { description: `${ref} · ${candidateName} · ${amount || '—'}` })
-    setAmount(''); setDate(''); setTime(''); setInstallment(''); setNotes('')
-    onOpenChange(false)
-  }
+  const [nextFollowUp, setNextFollowUp] = React.useState('')
+
+  const createMutation = useMutation({
+    mutationFn: () => api.post('/api/agent/follow-ups', {
+      candidateId,
+      loanId: loanId ?? null,
+      contactDate: new Date().toISOString(),
+      contactMethod,
+      outcome: outcome || null,
+      notes: notes || null,
+      nextFollowUp: nextFollowUp ? new Date(nextFollowUp).toISOString() : null,
+    }),
+    onSuccess: () => {
+      toast.success('Follow-up recorded')
+      queryClient.invalidateQueries({ queryKey: ['agent-candidate', candidateId] })
+      queryClient.invalidateQueries({ queryKey: ['agent-follow-ups'] })
+      setOpen(false); setOutcome(''); setNotes(''); setNextFollowUp('')
+    },
+    onError: (e: Error) => toast.error('Failed to record follow-up', { description: e.message }),
+  })
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Record Cash Collection</DialogTitle>
-          <DialogDescription>{candidateName} · {loanNumber}</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label>Loan</Label>
-            <Input value={loanNumber} readOnly className="bg-muted/30 font-mono text-xs" />
+    <Card className="shadow-premium">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2"><History className="h-4 w-4" /> Contact History</CardTitle>
+            <CardDescription className="text-xs">{followUps.length} entries</CardDescription>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Amount (₹)</Label>
-              <Input placeholder="e.g. 7,425" value={amount} onChange={(e) => setAmount(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Installment #</Label>
-              <Input placeholder="e.g. 2 (optional)" value={installment} onChange={(e) => setInstallment(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Date</Label>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Time</Label>
-              <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Reference</Label>
-            <Input value={ref} readOnly className="bg-muted/30 font-mono text-xs" />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Proof Upload (placeholder)</Label>
-            <div className="rounded-xl border-2 border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-              <Banknote className="h-6 w-6 mx-auto mb-2 opacity-50" />
-              Tap to upload receipt photo (JPG/PDF)
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Notes</Label>
-            <Textarea placeholder="e.g. collected from shop" value={notes} onChange={(e) => setNotes(e.target.value)} />
-          </div>
-          <div className="rounded-lg bg-warning/5 border border-warning/20 p-2.5 text-[11px] text-warning">
-            All cash collections require supervisor verification before ledger allocation.
-          </div>
+          <Button size="sm" onClick={() => setOpen(true)}>
+            <Plus className="h-4 w-4" /> Log Contact
+          </Button>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit}>Record Cash</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {followUps.length === 0 ? (
+          <EmptyState icon={<History className="h-6 w-6" />} title="No contact history" description="Log your first follow-up." />
+        ) : (
+          followUps.map((f) => (
+            <div key={f.id} className="rounded-xl border border-border p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold inline-flex items-center gap-1.5">
+                    <StatusBadge variant={f.contactMethod}>{f.contactMethod}</StatusBadge>
+                    <span className="text-muted-foreground">{fmtDate(f.contactDate)}</span>
+                  </p>
+                  {f.outcome && <p className="text-sm mt-1">Outcome: {f.outcome}</p>}
+                  {f.notes && <p className="text-xs text-muted-foreground mt-1">{f.notes}</p>}
+                  {f.nextFollowUp && (
+                    <p className="text-[11px] text-info mt-1 inline-flex items-center gap-1">
+                      <Clock className="h-3 w-3" /> Next: {fmtDate(f.nextFollowUp)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </CardContent>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Log Contact</DialogTitle>
+            <DialogDescription>Record a follow-up interaction.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Contact Method</Label>
+              <Select value={contactMethod} onValueChange={setContactMethod}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PHONE">Phone</SelectItem>
+                  <SelectItem value="WHATSAPP">WhatsApp</SelectItem>
+                  <SelectItem value="IN_APP">In-App</SelectItem>
+                  <SelectItem value="FIELD_VISIT">Field Visit</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Outcome</Label>
+              <Input value={outcome} onChange={(e) => setOutcome(e.target.value)} placeholder="e.g. Reminded, PTP given, no answer" />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes from the call" />
+            </div>
+            <div>
+              <Label>Next Follow-up Date</Label>
+              <Input type="date" value={nextFollowUp} onChange={(e) => setNextFollowUp(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
   )
 }
 
-export function EscalateDialog({ open, onOpenChange, candidateName, loanNumber }: {
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  candidateName: string
-  loanNumber: string
+function EscalationSection({ candidateId, loanId, escalations }: {
+  candidateId: string
+  loanId?: string
+  escalations: CandidateDetail['escalations']
 }) {
-  const [reason, setReason] = React.useState('LONG_OVERDUE')
+  const queryClient = useQueryClient()
+  const [open, setOpen] = React.useState(false)
+  const [reason, setReason] = React.useState('REPEATED_MISSED_PAYMENT')
   const [description, setDescription] = React.useState('')
-  const submit = () => {
-    toast.success('Escalation created', { description: `${candidateName} · ${reason.replace(/_/g, ' ')}` })
-    setDescription('')
-    onOpenChange(false)
-  }
+
+  const createMutation = useMutation({
+    mutationFn: () => {
+      if (!loanId) throw new Error('No active loan for this candidate')
+      return api.post('/api/agent/escalations', {
+        candidateId,
+        loanId,
+        reason,
+        description,
+      })
+    },
+    onSuccess: () => {
+      toast.success('Escalation created')
+      queryClient.invalidateQueries({ queryKey: ['agent-candidate', candidateId] })
+      queryClient.invalidateQueries({ queryKey: ['agent-escalations'] })
+      setOpen(false); setDescription('')
+    },
+    onError: (e: Error) => toast.error('Failed to escalate', { description: e.message }),
+  })
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Escalate Candidate</DialogTitle>
-          <DialogDescription>{candidateName} · {loanNumber}</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label>Reason</Label>
-            <Select value={reason} onValueChange={setReason}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="REPEATED_MISSED_PAYMENT">Repeated Missed Payment</SelectItem>
-                <SelectItem value="BROKEN_PTP">Broken PTP</SelectItem>
-                <SelectItem value="LONG_OVERDUE">Long Overdue</SelectItem>
-                <SelectItem value="FAILED_CONTACT">Failed Contact</SelectItem>
-                <SelectItem value="HIGH_OUTSTANDING">High Outstanding</SelectItem>
-                <SelectItem value="OTHER">Other</SelectItem>
-              </SelectContent>
-            </Select>
+    <Card className="shadow-premium">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Escalations</CardTitle>
+            <CardDescription className="text-xs">{escalations.length} total</CardDescription>
           </div>
-          <div className="space-y-1.5">
-            <Label>Description</Label>
-            <Textarea placeholder="e.g. 32 days overdue, no response for 5 days" value={description} onChange={(e) => setDescription(e.target.value)} />
-          </div>
+          <Button size="sm" onClick={() => setOpen(true)} disabled={!loanId}>
+            <Plus className="h-4 w-4" /> Escalate
+          </Button>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="destructive" onClick={submit}>Create Escalation</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {escalations.length === 0 ? (
+          <EmptyState icon={<AlertTriangle className="h-6 w-6" />} title="No escalations" description="Escalate when collection requires owner intervention." />
+        ) : (
+          escalations.map((e) => (
+            <div key={e.id} className="rounded-xl border border-border p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <StatusBadge variant={e.reason === 'LONG_OVERDUE' || e.reason === 'BROKEN_PTP' ? 'AI_HIGH' : 'AI_MEDIUM'}>
+                    {reasonLabel[e.reason] ?? e.reason}
+                  </StatusBadge>
+                  <p className="text-xs text-muted-foreground mt-1">{e.description ?? '—'}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">{fmtDate(e.createdAt)}</p>
+                </div>
+                <StatusBadge variant={e.status}>{formatStatus(e.status)}</StatusBadge>
+              </div>
+            </div>
+          ))
+        )}
+      </CardContent>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Escalate Candidate</DialogTitle>
+            <DialogDescription>Escalate to owner for intervention.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Reason</Label>
+              <Select value={reason} onValueChange={setReason}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="REPEATED_MISSED_PAYMENT">Repeated Missed Payment</SelectItem>
+                  <SelectItem value="BROKEN_PTP">Broken PTP</SelectItem>
+                  <SelectItem value="LONG_OVERDUE">Long Overdue</SelectItem>
+                  <SelectItem value="FAILED_CONTACT">Failed Contact</SelectItem>
+                  <SelectItem value="HIGH_OUTSTANDING">High Outstanding</SelectItem>
+                  <SelectItem value="OTHER">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Explain why escalation is needed" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !description}>Escalate</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
   )
 }

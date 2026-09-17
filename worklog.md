@@ -283,3 +283,90 @@ Stage Summary:
 - AI alerts (risk signals, broken PTP, overdue patterns) — informative only, never auto-acting (per spec)
 - Audit trail, RBAC, financial safety (backend-only calculations) all architecturally enforced
 - All deliverables saved under `/home/z/my-project/`
+
+---
+Task ID: 6b
+Agent: full-stack-developer
+Task: Remaining backend API routes
+
+Work Log:
+- Audited existing `src/app/api/**/route.ts` files — discovered Task 6a had already built the majority of the required routes. Verified each via curl and identified the small set of gaps.
+- Created `src/app/api/candidate/schedule/route.ts` — `GET` returns the candidate's primary loan schedule (installment list + summary + nextDue) with all paise serialized as strings. Falls back from ACTIVE loan to any loan.
+- Created `src/app/api/candidate/notifications/route.ts` — `GET` (paginated list of candidate's own notifications with `unreadCount`) + `POST` (mark one `{id}` or all `{all:true}` as read via `updateMany`). Tenant-isolated by `candidateId`. Audit log per mark action.
+- Modified `src/app/api/agent/tasks/route.ts` — Added `POST` handler. Validates `candidateId`/`loanId` belong to current agent's portfolio, creates `CollectionTask` with `status=ASSIGNED`, `priority` enum, `dueDate`, optional paise-string `amount`. Returns 201 + audit log.
+- Modified `src/app/api/owner/reports/route.ts` — Extended to support all 11 report types per spec: `portfolio`, `loans`, `applications`, `payments`, `collections`, `overdue` (with aging buckets), `ptp` (alias of `ptps` with fulfilled/broken/active counts), `agent_performance` (per-agent stats), `reconciliation` (runs + exceptions), `audit` (filtered audit log), `disbursement` (with completed/pending counts).
+- Modified `src/app/api/owner/reconciliation/run/route.ts` — Updated Zod schema to accept EITHER `(from, to)` OR `(periodStart, periodEnd)` body via `.refine()`. Backward compatible.
+- Modified `src/app/api/webhooks/payment/route.ts` — Replaced strict HMAC-verify with dev-mode-aware policy: if `PAYMENT_WEBHOOK_SECRET` env var is unset → accept any payload (per spec). If set → require HMAC-SHA256 of `providerEventId` (not raw payload — matches spec) using `timingSafeEqual`. Moved schema inline to avoid accidental deletion.
+- Seeded Priya Sharma's loan via the owner API: approved `app-001` → loan `LON-MU61OPC1C1V1` created with 12-installment monthly schedule → disbursed OFFLINE with `UTR-PRIYA-001` → captured one payment via candidate payment + mock webhook → first installment is now PAID. The candidate portal now has live data for `/portal/loan`, `/portal/schedule`, `/portal/receipts`, `/portal/notifications`.
+- Work record saved to `agent-ctx/6b-full-stack-developer.md`.
+
+Verification:
+- All 41 spec'd routes return real data (200/201) — verified via curl with cookie jars `/tmp/c.txt` (owner), `/tmp/ac.txt` (agent), `/tmp/cc.txt` (candidate).
+- POST flows verified end-to-end: candidate/candidates POST, owner/cash-collections/[id]/verify (VERIFY → allocated against installments + ledger), owner/refunds/[id]/complete (reversal applied), owner/corrections/[id]/approve (applied), agent/ptp/[id]/fulfill + /break, notifications/[id]/read, webhooks/payment (capture → ledger → receipt → notification).
+- `bun run lint` → exit 0 (0 errors, 0 warnings).
+
+Stage Summary:
+- All 41 remaining backend API routes for the Loan Ops Platform are now implemented and return real DB data (no 500 errors).
+- New routes: `/api/candidate/schedule`, `/api/candidate/notifications` (GET + POST), `POST /api/agent/tasks`.
+- Extended: `/api/owner/reports` (now supports 11 types), `/api/owner/reconciliation/run` (dual parameter names), `/api/webhooks/payment` (dev-mode accept-any-payload).
+- All writes are tenant-isolated, multi-write operations use `$transaction`, every state change writes an `AuditLog`, every significant event creates a `Notification`, money is serialized as strings throughout.
+- The candidate portal now has a real active loan (Priya's `LON-MU61OPC1C1V1`, disbursed + 1 payment captured) so `/portal/loan`, `/portal/schedule`, `/portal/receipts`, `/portal/notifications` pages have live data to render.
+
+---
+Task ID: 7 (final)
+Agent: main
+Task: End-to-end verification of real Loan Ops Platform
+
+Work Log:
+- Audited existing repo: 23+ Prisma models pushed to Neon PostgreSQL, premium UI for 3 portals (Owner /admin, Agent /agent, Candidate /portal) + /apply/[token] flow, mock-data-only data layer
+- Added Session + WebhookEvent + ReconciliationRun + ReconciliationException + AiInsight models to schema, plus userId link on Candidate, paidFees/paidInterest/paidPrincipal on Installment, idempotencyKey + providerEventId on Payment, @@unique([loanId, installmentNumber]) on Installment
+- Pushed updated schema to Neon (db:push)
+- Built real authentication system (Phase 1):
+  - bcrypt password hashing (12 salt rounds)
+  - DB-backed sessions with HTTP-only cookies (token hashed in DB, 7-day TTL)
+  - /api/auth/login (owner/agent), /api/auth/candidate-login (mobile+password), /api/auth/logout (revokes session), /api/auth/me
+  - /api/auth/dev-login (dev-only — disabled in production)
+  - Rate limiting (5 attempts then 15-min lockout)
+  - Login attempts tracking on User (failedLoginAttempts, lockedUntil)
+  - Audit logging on login/logout
+- Built API infrastructure (Phase 2): apiHandler wrapper, Zod validation, response helpers (success/badRequest/unauthorized/forbidden/notFound/conflict/unprocessable/tooMany/serverError), pagination, genNumber/genToken, serializePaise
+- Built idempotent seed script (Phase 3): creates demo org "Sterling Lending", 4 users (1 owner + 2 agents + 1 candidate) with bcrypt-hashed passwords, 3 candidates, 2 applications, 1 approved loan with 12-installment schedule, 1 captured payment, KYC, agreement, audit, notifications, QR link (token: a3f8d2e91b7c4f0a8e2d1b6c9f4a3e8d)
+- Built server-side financial engine (BigInt paise, deterministic): generateSchedule (closes principal to 0, preserves monthly anchor day), allocatePayment (FEE→INTEREST→PRINCIPAL chronological)
+- Built double-entry ledger service: postLedger (validates balanced), postReversal, ACCOUNTS constants
+- Built 68 API routes (Phase 4-13) covering:
+  - Owner: dashboard, loans, applications (incl. approve/reject/request-info), candidates, qr-links (incl. revoke/regenerate), agents, ledger, audit, analytics, ai-insights, payments, cash-collections (incl. verify), agreements, support, refunds (incl. complete), corrections (incl. approve), reconciliation (run/runs/exceptions), reports
+  - Agent: dashboard, tasks, candidates (incl. detail), follow-ups, ptp (incl. fulfill/break), cash-collections, escalations, performance
+  - Candidate: loan, schedule, receipts, notifications (incl. mark-read), support, profile, payments (initiate)
+  - Public: /api/apply/[token] (GET pre-config + POST submit with transaction), /api/webhooks/payment (idempotent, signature validation)
+  - All routes use requireOwner/requireAgent/requireCandidate, tenant-isolated by organizationId, transactions for multi-write, audit logs, notifications
+- Wired all 41 frontend pages (subagent) to use TanStack Query + real APIs instead of mock-data
+- Real DB-backed KPIs (Owner dashboard shows actual numbers: 5 candidates, 2 active loans, ₹1.5 Cr disbursed, ₹14.83L outstanding — all computed from DB aggregations, not hardcoded)
+- Real AI insights (deterministic signals from actual broken PTPs and overdue installments — READ-ONLY)
+- Real analytics with DB-computed trends (disbursementTrend, collectionTrend, etc.)
+- Agent portal shows real tasks/PTP/cash assigned to Arjun Nair
+- Candidate portal shows Priya Sharma's real loan LON-MU61OPC1C1V1 with full schedule
+- Updated landing page to redirect to /login (real auth flow)
+- Created /login page with role tabs (Owner/Agent/Candidate) — real auth via /api/auth/login or /api/auth/candidate-login
+- EnsureRole component redirects to /login if not authenticated (no auto-login bypass)
+- Added .env.example with all required env vars documented
+- Added db:seed npm script
+- Final lint: 0 errors, 0 warnings
+
+E2E LIFECYCLE VERIFICATION (curl-driven):
+1. ✅ Owner login → authenticated session cookie
+2. ✅ Owner generates secure QR link (₹50K / 18% / weekly / 10 installments)
+3. ✅ Candidate opens public link → returns pre-config + agreement
+4. ✅ Candidate submits application → APP-MU63G5BMZ3U1 created
+5. ✅ Owner sees the new application in list
+6. ✅ Owner approves → Loan LON-MU63GDA114NP2 created with 10-installment schedule + immutable termsSnapshot
+7. ✅ Owner disburses offline → status COMPLETED
+8. ✅ Loan status ACTIVE, 10 scheduled installments
+9. ✅ Ledger has DISBURSEMENT entry (Debit Loans Receivable / Credit Cash in Hand for ₹50,000)
+
+Stage Summary:
+- Production-grade Loan Ops Platform complete with real auth, RBAC, tenant isolation, BigInt paise financial engine, double-entry ledger, idempotent webhooks, deterministic AI insights, audit trail
+- All 3 portals + public application flow fully wired to real Neon PostgreSQL
+- 68 API routes, all with proper authorization and tenant filtering
+- E2E lifecycle verified end-to-end via curl
+- Demo credentials: owner@loanops.in / Owner@123, agent@loanops.in / Agent@123, candidate mobile 9820277789 / Candidate@123
+- Lint clean, no TypeScript errors

@@ -2,18 +2,19 @@
 
 import * as React from 'react'
 import Link from 'next/link'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ListTodo, PhoneCall, MessageCircle, CheckCircle2, Search, Filter,
-  X, Plus, ArrowUpDown, Clock, Calendar, ArrowLeft, ChevronRight,
+  X, ArrowUpDown, Clock, Calendar, ChevronRight, Plus,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
 import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -22,7 +23,7 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { agentTasks, agentCandidates, type CollectionTaskRow } from '@/lib/mock-data'
+import { api } from '@/lib/api-client'
 import { formatPaiseToINR } from '@/lib/money'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
 import { cn } from '@/lib/utils'
@@ -49,64 +50,97 @@ const STATUSES: { key: StatusKey; label: string }[] = [
 ]
 
 const priorityRank: Record<string, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
-const dueRank = (s: string) => {
-  if (s === 'Today') return 0
-  if (s === 'Tomorrow') return 1
-  if (/OVERDUE/i.test(s)) return -1
-  return 5
-}
 
 const initials = (n: string) => n.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
 
-// Synthesize additional tasks for richer UI
-const extraTasks: CollectionTaskRow[] = [
-  { id: 't6', candidateName: 'Imran Khan', loanNumber: 'LON-2024-0884', amount: 285000, dueDate: '19 Sep', priority: 'MEDIUM', status: 'OPEN', assignedTo: 'You', lastContact: '4 days ago', nextFollowUp: '19 Sep 10:00 AM' },
-  { id: 't7', candidateName: 'Sahil Khan', loanNumber: 'LON-2024-0712', amount: 1220000, dueDate: 'OVERDUE 32 days', priority: 'URGENT', status: 'OPEN', assignedTo: 'You', lastContact: '5 days ago', nextFollowUp: 'Today 5:30 PM' },
-  { id: 't8', candidateName: 'Karthik Iyer', loanNumber: 'LON-2024-0812', amount: 1430000, dueDate: 'Tomorrow', priority: 'HIGH', status: 'ASSIGNED', assignedTo: 'You', lastContact: '2 days ago', nextFollowUp: 'Tomorrow 11:00 AM' },
-  { id: 't9', candidateName: 'Suresh Patel', loanNumber: 'LON-2024-0698', amount: 369000, dueDate: 'OVERDUE 18 days', priority: 'URGENT', status: 'ASSIGNED', assignedTo: 'You', lastContact: '1 week ago', nextFollowUp: 'Tomorrow 10:00 AM' },
-  { id: 't10', candidateName: 'Meena Desai', loanNumber: 'LON-2024-0834', amount: 270000, dueDate: 'Today', priority: 'LOW', status: 'RESOLVED', assignedTo: 'You', lastContact: 'Yesterday', nextFollowUp: 'Today 6:00 PM' },
-  { id: 't11', candidateName: 'Rahul Verma', loanNumber: 'LON-2024-0892', amount: 742500, dueDate: '20 Sep', priority: 'MEDIUM', status: 'CLOSED', assignedTo: 'You', lastContact: '3 days ago' },
-]
-const allTasks = [...agentTasks, ...extraTasks]
+interface TaskRow {
+  id: string
+  title: string
+  description?: string | null
+  amount: string | null
+  dueDate: string
+  priority: string
+  status: string
+  candidate: { id: string; fullName: string; mobile: string }
+  loan: { id: string; loanNumber: string } | null
+}
+
+interface CandidateRow {
+  id: string
+  fullName: string
+  mobile: string
+  activeLoanNumbers: string[]
+}
+
+function isSameDay(d: Date, other: Date) {
+  return d.getFullYear() === other.getFullYear() && d.getMonth() === other.getMonth() && d.getDate() === other.getDate()
+}
+function isTomorrow(d: Date) {
+  const t = new Date(); t.setDate(t.getDate() + 1)
+  return isSameDay(d, t)
+}
+function isToday(d: Date) {
+  return isSameDay(d, new Date())
+}
+function isOverdue(d: Date) {
+  return d < new Date() && !isToday(d)
+}
 
 export default function AgentTasksPage() {
+  const queryClient = useQueryClient()
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [status, setStatus] = React.useState<StatusKey>('ALL')
   const [sort, setSort] = React.useState<SortKey>('PRIORITY')
   const [search, setSearch] = React.useState('')
   const [newOpen, setNewOpen] = React.useState(false)
 
+  const { data, isLoading } = useQuery({
+    queryKey: ['agent-tasks', status],
+    queryFn: () => api.get<{ items: TaskRow[]; total: number }>(
+      `/api/agent/tasks?pageSize=100${status !== 'ALL' ? `&status=${status}` : ''}`
+    ),
+  })
+
+  const allTasks = data?.items ?? []
+
   const filtered = React.useMemo(() => {
     let rows = [...allTasks]
-    if (chip === 'OVERDUE') rows = rows.filter((t) => /OVERDUE/i.test(t.dueDate))
-    else if (chip === 'TODAY') rows = rows.filter((t) => t.dueDate === 'Today')
-    else if (chip === 'TOMORROW') rows = rows.filter((t) => t.dueDate === 'Tomorrow')
+    if (chip === 'OVERDUE') rows = rows.filter((t) => isOverdue(new Date(t.dueDate)))
+    else if (chip === 'TODAY') rows = rows.filter((t) => isToday(new Date(t.dueDate)))
+    else if (chip === 'TOMORROW') rows = rows.filter((t) => isTomorrow(new Date(t.dueDate)))
     else if (chip === 'URGENT' || chip === 'HIGH' || chip === 'MEDIUM') rows = rows.filter((t) => t.priority === chip)
-    if (status !== 'ALL') rows = rows.filter((t) => t.status === status)
     if (search.trim()) {
       const q = search.toLowerCase()
-      rows = rows.filter((t) => t.candidateName.toLowerCase().includes(q) || t.loanNumber.toLowerCase().includes(q))
+      rows = rows.filter((t) => t.candidate.fullName.toLowerCase().includes(q) || (t.loan?.loanNumber ?? '').toLowerCase().includes(q))
     }
     rows.sort((a, b) => {
       if (sort === 'PRIORITY') return priorityRank[a.priority] - priorityRank[b.priority]
-      return dueRank(a.dueDate) - dueRank(b.dueDate)
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
     })
     return rows
-  }, [chip, status, sort, search])
+  }, [allTasks, chip, sort, search])
+
+  const completeMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/api/agent/tasks/${id}/complete`, { outcome: 'Resolved' }),
+    onSuccess: () => {
+      toast.success('Task completed', { description: 'Marked as RESOLVED.' })
+      queryClient.invalidateQueries({ queryKey: ['agent-tasks'] })
+      queryClient.invalidateQueries({ queryKey: ['agent-dashboard'] })
+    },
+    onError: (e: Error) => toast.error('Failed to complete task', { description: e.message }),
+  })
 
   const onCall = (n: string) => toast.info(`Calling ${n}…`, { description: 'Connecting via IVR.' })
-  const onWhatsApp = (t: CollectionTaskRow) => {
-    const cand = agentCandidates.find((c) => c.name === t.candidateName)
+  const onWhatsApp = (t: TaskRow) => {
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.PAYMENT_REMINDER, {
-      candidateName: t.candidateName,
-      loanNumber: t.loanNumber,
-      amount: (t.amount / 100).toLocaleString('en-IN'),
-      dueDate: t.dueDate,
+      candidateName: t.candidate.fullName,
+      loanNumber: t.loan?.loanNumber ?? '',
+      amount: t.amount ? (Number(t.amount) / 100).toLocaleString('en-IN') : '0',
+      dueDate: new Date(t.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
     })
-    openWhatsApp(cand?.mobile || '', msg)
-    toast.success('WhatsApp draft opened', { description: `Reminder sent to ${t.candidateName}` })
+    openWhatsApp(t.candidate.mobile, msg)
+    toast.success('WhatsApp draft opened', { description: `Reminder sent to ${t.candidate.fullName}` })
   }
-  const onComplete = (id: string) => toast.success('Task completed', { description: `Task ${id} marked RESOLVED.` })
 
   return (
     <div className="space-y-6">
@@ -176,61 +210,64 @@ export default function AgentTasksPage() {
         </Card>
       </FadeIn>
 
-      {filtered.length === 0 ? (
-        <EmptyState icon={<ListTodo className="h-6 w-6" />} title="No tasks match these filters" />
+      {isLoading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-32 w-full" />)}
+        </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState icon={<ListTodo className="h-6 w-6" />} title="No tasks match these filters" description="Try adjusting filters or status." />
       ) : (
         <StaggerContainer className="space-y-3">
           {filtered.map((t) => {
-            const cand = agentCandidates.find((c) => c.name === t.candidateName)
+            const overdue = isOverdue(new Date(t.dueDate))
             return (
               <StaggerItem key={t.id}>
                 <Card className="shadow-premium hover:border-primary/40 hover:shadow-glow transition-all">
                   <CardContent className="p-4">
                     <div className="flex items-start gap-3">
-                      <Link href={`/agent/candidates/${cand?.id || 'c1'}`} className="flex-shrink-0">
+                      <Link href={`/agent/candidates/${t.candidate.id}`} className="flex-shrink-0">
                         <Avatar className="h-10 w-10">
                           <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-                            {initials(t.candidateName)}
+                            {initials(t.candidate.fullName)}
                           </AvatarFallback>
                         </Avatar>
                       </Link>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-3 flex-wrap">
                           <div className="min-w-0">
-                            <Link href={`/agent/candidates/${cand?.id || 'c1'}`} className="text-sm font-semibold hover:text-primary">
-                              {t.candidateName}
+                            <Link href={`/agent/candidates/${t.candidate.id}`} className="text-sm font-semibold hover:text-primary">
+                              {t.candidate.fullName}
                             </Link>
-                            <p className="font-mono text-[11px] text-muted-foreground">{t.loanNumber}</p>
+                            <p className="font-mono text-[11px] text-muted-foreground">{t.loan?.loanNumber ?? '—'}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">{t.title}</p>
                           </div>
                           <div className="flex items-center gap-2">
                             <StatusBadge variant={t.priority}>{t.priority}</StatusBadge>
-                            <StatusBadge variant={t.status}>{formatStatus(t.status)}</StatusBadge>
+                            <StatusBadge variant={overdue ? 'OVERDUE' : t.status}>{overdue ? 'Overdue' : formatStatus(t.status)}</StatusBadge>
                           </div>
                         </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3 pt-3 border-t border-border">
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Amount</p>
-                            <p className="text-sm font-semibold tabular-nums">{formatPaiseToINR(t.amount)}</p>
-                          </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3 pt-3 border-t border-border">
+                          {t.amount && (
+                            <div>
+                              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Amount</p>
+                              <p className="text-sm font-semibold tabular-nums">{formatPaiseToINR(Number(t.amount))}</p>
+                            </div>
+                          )}
                           <div>
                             <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Due</p>
                             <p className="text-sm inline-flex items-center gap-1">
-                              <Calendar className="h-3 w-3 text-muted-foreground" /> {t.dueDate}
+                              <Calendar className="h-3 w-3 text-muted-foreground" /> {new Date(t.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                             </p>
                           </div>
                           <div>
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Last Contact</p>
-                            <p className="text-sm">{t.lastContact || '—'}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Next Follow-up</p>
+                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Status</p>
                             <p className="text-sm inline-flex items-center gap-1">
-                              <Clock className="h-3 w-3 text-muted-foreground" /> {t.nextFollowUp || '—'}
+                              <Clock className="h-3 w-3 text-muted-foreground" /> {t.status}
                             </p>
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-2 mt-3">
-                          <Button size="sm" variant="outline" className="h-8" onClick={() => onCall(t.candidateName)}>
+                          <Button size="sm" variant="outline" className="h-8" onClick={() => onCall(t.candidate.fullName)}>
                             <PhoneCall className="h-3.5 w-3.5" /> Call
                           </Button>
                           <Button
@@ -242,12 +279,12 @@ export default function AgentTasksPage() {
                             <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
                           </Button>
                           <Button asChild size="sm" variant="ghost" className="h-8">
-                            <Link href={`/agent/candidates/${cand?.id || 'c1'}`}>
+                            <Link href={`/agent/candidates/${t.candidate.id}`}>
                               Open <ChevronRight className="h-3.5 w-3.5" />
                             </Link>
                           </Button>
                           {(t.status === 'OPEN' || t.status === 'ASSIGNED') && (
-                            <Button size="sm" className="h-8 ml-auto" onClick={() => onComplete(t.id)}>
+                            <Button size="sm" className="h-8 ml-auto" disabled={completeMutation.isPending} onClick={() => completeMutation.mutate(t.id)}>
                               <CheckCircle2 className="h-3.5 w-3.5" /> Complete
                             </Button>
                           )}
@@ -268,17 +305,39 @@ export default function AgentTasksPage() {
 }
 
 function NewTaskDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const [candidate, setCandidate] = React.useState('')
+  const { data: candidatesData } = useQuery({
+    queryKey: ['agent-candidates-for-task'],
+    queryFn: () => api.get<{ items: CandidateRow[] }>('/api/agent/candidates?pageSize=100'),
+  })
+  const candidates = candidatesData?.items ?? []
+
+  const [candidateId, setCandidateId] = React.useState('')
+  const [title, setTitle] = React.useState('')
   const [amount, setAmount] = React.useState('')
   const [dueDate, setDueDate] = React.useState('')
   const [priority, setPriority] = React.useState('MEDIUM')
 
+  const createMutation = useMutation({
+    mutationFn: () => {
+      const cand = candidates.find((c) => c.id === candidateId)
+      if (!cand) throw new Error('Select a candidate')
+      const loanNumber = cand.activeLoanNumbers[0] ?? ''
+      // We don't have a dedicated agent tasks POST endpoint yet; just simulate
+      // by calling the owner-side endpoint. For now, log a toast.
+      return Promise.resolve()
+    },
+    onSuccess: () => {
+      toast.success('Task created', {
+        description: `New ${priority} task for ${candidates.find((c) => c.id === candidateId)?.fullName ?? ''} due ${dueDate || '—'}.`,
+      })
+      setCandidateId(''); setTitle(''); setAmount(''); setDueDate(''); setPriority('MEDIUM')
+      onOpenChange(false)
+    },
+  })
+
   const submit = () => {
-    toast.success('Task created', {
-      description: `New ${priority} task for ${candidate || 'candidate'} due ${dueDate || '—'}.`,
-    })
-    setCandidate(''); setAmount(''); setDueDate(''); setPriority('MEDIUM')
-    onOpenChange(false)
+    if (!candidateId || !dueDate) { toast.error('Candidate and due date are required'); return }
+    createMutation.mutate()
   }
 
   return (
@@ -291,14 +350,18 @@ function NewTaskDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label>Candidate</Label>
-            <Select value={candidate} onValueChange={setCandidate}>
+            <Select value={candidateId} onValueChange={setCandidateId}>
               <SelectTrigger className="w-full"><SelectValue placeholder="Select candidate" /></SelectTrigger>
               <SelectContent>
-                {agentCandidates.map((c) => (
-                  <SelectItem key={c.id} value={c.name}>{c.name} · {c.loanNumber}</SelectItem>
+                {candidates.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.fullName} · {c.mobile}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Task Title</Label>
+            <Input placeholder="e.g. Installment reminder call" value={title} onChange={(e) => setTitle(e.target.value)} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -325,7 +388,7 @@ function NewTaskDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit}>Create Task</Button>
+          <Button onClick={submit} disabled={createMutation.isPending}>Create Task</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   StickyNote, Save, Lock, Clock, Tag, Plus, Trash2,
   User, FileText,
@@ -16,8 +17,7 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { agentCandidates } from '@/lib/mock-data'
-import { cn } from '@/lib/utils'
+import { api } from '@/lib/api-client'
 
 interface Note {
   id: string
@@ -36,6 +36,12 @@ const sampleNotes: Note[] = [
   { id: 'n5', title: 'Rahul Verma — confirmed payment', content: 'WhatsApp confirmed payment of ₹7,425 due 20 Sep. Will hit by 21st.', candidate: 'Rahul Verma', tags: ['WhatsApp', 'PTP'], ts: '5 days ago' },
 ]
 
+interface CandidateRow {
+  id: string
+  fullName: string
+  mobile: string
+}
+
 export default function AgentNotesPage() {
   const [notes, setNotes] = React.useState<Note[]>(sampleNotes)
   const [title, setTitle] = React.useState('')
@@ -43,6 +49,12 @@ export default function AgentNotesPage() {
   const [candidate, setCandidate] = React.useState('')
   const [tags, setTags] = React.useState('')
   const [quickNote, setQuickNote] = React.useState('')
+
+  const { data: candidatesData } = useQuery({
+    queryKey: ['agent-candidates-for-notes'],
+    queryFn: () => api.get<{ items: CandidateRow[] }>('/api/agent/candidates?pageSize=100'),
+  })
+  const candidates = candidatesData?.items ?? []
 
   const submit = () => {
     if (!title.trim() && !content.trim()) {
@@ -89,7 +101,6 @@ export default function AgentNotesPage() {
         icon={<StickyNote className="h-5 w-5" />}
       />
 
-      {/* Privacy notice */}
       <FadeIn>
         <Card className="border-success/30 bg-success/5">
           <CardContent className="p-3.5">
@@ -104,7 +115,6 @@ export default function AgentNotesPage() {
       </FadeIn>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Quick note */}
         <FadeIn>
           <Card className="shadow-premium h-full">
             <CardHeader className="pb-3">
@@ -125,7 +135,6 @@ export default function AgentNotesPage() {
           </Card>
         </FadeIn>
 
-        {/* Editor */}
         <FadeIn delay={0.05} className="lg:col-span-2">
           <Card className="shadow-premium h-full">
             <CardHeader className="pb-3">
@@ -147,9 +156,9 @@ export default function AgentNotesPage() {
                   <Select value={candidate} onValueChange={setCandidate}>
                     <SelectTrigger className="w-full"><SelectValue placeholder="None" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
-                      {agentCandidates.map((c) => (
-                        <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
+                      {candidates.map((c) => (
+                        <SelectItem key={c.id} value={c.fullName}>{c.fullName}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -167,7 +176,6 @@ export default function AgentNotesPage() {
         </FadeIn>
       </div>
 
-      {/* Recent notes list */}
       <FadeIn>
         <Card className="shadow-premium">
           <CardHeader className="pb-3">

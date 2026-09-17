@@ -1,35 +1,104 @@
 'use client'
 
 import * as React from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import Link from 'next/link'
 import {
-  Banknote, Building2, Plus, Receipt, Upload, CheckCircle2, Clock,
+  Banknote, Building2, Clock,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { KPICard } from '@/components/ui/kpi-card'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
-import { FadeIn, StaggerContainer, StaggerItem } from '@/components/ui/motion'
+import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
-import { loans } from '@/lib/mock-data'
+import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
-export default function DisbursementsPage() {
-  const [open, setOpen] = React.useState(false)
+interface LoanRow {
+  id: string
+  loanNumber: string
+  candidateName: string
+  principalAmount: string
+  frequency: string
+  totalRepayable: string
+  installmentAmount: string
+  status: string
+  agent?: { id: string; name: string } | null
+}
 
-  const pending = loans.filter((l) => l.status === 'PENDING_DISBURSEMENT')
-  const recent = loans.filter((l) => l.disbursedAt && (l.status === 'ACTIVE' || l.status === 'CLOSED')).slice(0, 6)
+interface DisbursementRow {
+  id: string
+  loanId: string
+  loanNumber: string
+  loanStatus: string
+  candidateName: string
+  candidateMobile: string
+  method: string
+  amount: string
+  status: string
+  reference?: string | null
+  notes?: string | null
+  initiatedAt: string
+  completedAt?: string | null
+  initiatedBy: string
+}
+
+function fmtDate(d?: string | null) {
+  if (!d) return '—'
+  const date = new Date(d)
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+export default function DisbursementsPage() {
+  const queryClient = useQueryClient()
+  const [open, setOpen] = React.useState(false)
+  const [selectedLoan, setSelectedLoan] = React.useState<LoanRow | null>(null)
+
+  const { data: pendingData, isLoading: pendingLoading } = useQuery({
+    queryKey: ['owner-loans-pending-disbursement'],
+    queryFn: () => api.get<{ items: LoanRow[]; total: number }>(`/api/owner/loans?status=PENDING_DISBURSEMENT&pageSize=100`),
+  })
+
+  const { data: disbursedData } = useQuery({
+    queryKey: ['owner-disbursements'],
+    queryFn: () => api.get<{ items: DisbursementRow[]; total: number }>(`/api/owner/disbursements?pageSize=20`),
+  })
+
+  const pending = pendingData?.items ?? []
+  const recent = disbursedData?.items ?? []
+
+  const disburseMutation = useMutation({
+    mutationFn: (input: { loanId: string; method: 'ONLINE' | 'OFFLINE'; reference?: string; notes?: string; amount: string }) =>
+      api.post(`/api/owner/loans/${input.loanId}/disburse`, {
+        method: input.method,
+        amount: input.amount,
+        reference: input.reference,
+        notes: input.notes,
+      }),
+    onSuccess: (data: any) => {
+      toast.success('Disbursement queued', { description: `${data.method} · ${formatPaiseToINR(Number(data.amount))}` })
+      queryClient.invalidateQueries({ queryKey: ['owner-loans-pending-disbursement'] })
+      queryClient.invalidateQueries({ queryKey: ['owner-disbursements'] })
+      queryClient.invalidateQueries({ queryKey: ['owner-loans'] })
+      queryClient.invalidateQueries({ queryKey: ['owner-dashboard'] })
+      setOpen(false)
+      setSelectedLoan(null)
+    },
+    onError: (err: any) => toast.error('Disbursement failed', { description: err.message }),
+  })
 
   return (
     <div className="space-y-6">
@@ -37,30 +106,23 @@ export default function DisbursementsPage() {
         title="Disbursements"
         description="Initiate and track loan disbursements — online transfers and offline cash."
         icon={<Banknote className="h-5 w-5" />}
-        action={
-          <Button size="sm" onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4" /> Initiate Disbursement
-          </Button>
-        }
       />
 
-      {/* KPI strip */}
       <StaggerContainer className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         <StaggerItem>
           <KPICard label="Pending Disbursements" value={String(pending.length)} icon={<Clock className="h-5 w-5" />} variant="warning" spark={[5, 6, 7, 8, 8, 8, 8]} />
         </StaggerItem>
         <StaggerItem>
-          <KPICard label="Disbursed This Month" value={formatPaiseToINRShort(562000000)} icon={<Banknote className="h-5 w-5" />} variant="success" spark={[400, 420, 460, 500, 540, 560, 562]} />
+          <KPICard label="Total Disbursed" value={formatPaiseToINRShort(recent.reduce((s, r) => s + Number(r.amount), 0))} icon={<Banknote className="h-5 w-5" />} variant="success" spark={[400, 420, 460, 500, 540, 560, 562]} />
         </StaggerItem>
         <StaggerItem>
-          <KPICard label="Online Share" value="68%" icon={<Building2 className="h-5 w-5" />} variant="info" spark={[60, 62, 64, 65, 66, 67, 68]} />
+          <KPICard label="Online Share" value={`${recent.filter((r) => r.method === 'ONLINE').length}`} icon={<Building2 className="h-5 w-5" />} variant="info" spark={[60, 62, 64, 65, 66, 67, 68]} />
         </StaggerItem>
         <StaggerItem>
-          <KPICard label="Offline Cash" value="32%" icon={<Banknote className="h-5 w-5" />} variant="default" spark={[40, 38, 36, 35, 34, 33, 32]} />
+          <KPICard label="Offline Cash" value={`${recent.filter((r) => r.method === 'OFFLINE').length}`} icon={<Banknote className="h-5 w-5" />} variant="default" spark={[40, 38, 36, 35, 34, 33, 32]} />
         </StaggerItem>
       </StaggerContainer>
 
-      {/* Pending disbursements */}
       <FadeIn>
         <Card className="shadow-premium border-l-4 border-l-warning">
           <CardHeader className="pb-2">
@@ -68,8 +130,10 @@ export default function DisbursementsPage() {
             <CardDescription>{pending.length} loans awaiting disbursement</CardDescription>
           </CardHeader>
           <CardContent>
-            {pending.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-6 text-center">No pending disbursements.</p>
+            {pendingLoading ? (
+              <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+            ) : pending.length === 0 ? (
+              <EmptyState icon={<Clock className="h-6 w-6" />} title="No pending disbursements" description="Approved loans awaiting disbursement will appear here." />
             ) : (
               <div className="hidden md:block">
                 <Table>
@@ -89,12 +153,12 @@ export default function DisbursementsPage() {
                       <TableRow key={l.id}>
                         <TableCell className="pl-6 font-mono font-semibold text-primary">{l.loanNumber}</TableCell>
                         <TableCell className="font-medium">{l.candidateName}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(l.principalAmount)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(l.principalAmount))}</TableCell>
                         <TableCell><span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium">{l.frequency}</span></TableCell>
-                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(l.totalRepayable)}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{l.agentName || '—'}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(l.totalRepayable))}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{l.agent?.name ?? '—'}</TableCell>
                         <TableCell className="text-right pr-6">
-                          <Button size="sm" onClick={() => { toast.success('Disbursement modal opened', { description: `Disbursing ${formatPaiseToINR(l.principalAmount)} to ${l.candidateName}` }); setOpen(true) }}>
+                          <Button size="sm" onClick={() => { setSelectedLoan(l); setOpen(true) }}>
                             Disburse
                           </Button>
                         </TableCell>
@@ -116,10 +180,10 @@ export default function DisbursementsPage() {
                       <StatusBadge variant="PENDING_DISBURSEMENT">Pending</StatusBadge>
                     </div>
                     <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-border">
-                      <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Principal</p><p className="text-sm font-semibold tabular-nums">{formatPaiseToINR(l.principalAmount)}</p></div>
+                      <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Principal</p><p className="text-sm font-semibold tabular-nums">{formatPaiseToINR(Number(l.principalAmount))}</p></div>
                       <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Frequency</p><p className="text-sm">{l.frequency}</p></div>
                     </div>
-                    <Button size="sm" className="w-full mt-3" onClick={() => { toast.success('Disbursement initiated'); setOpen(true) }}>Disburse Now</Button>
+                    <Button size="sm" className="w-full mt-3" onClick={() => { setSelectedLoan(l); setOpen(true) }}>Disburse Now</Button>
                   </div>
                 </StaggerItem>
               ))}
@@ -128,91 +192,102 @@ export default function DisbursementsPage() {
         </Card>
       </FadeIn>
 
-      {/* Recent disbursements */}
       <FadeIn>
         <Card className="shadow-premium">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Recent Disbursements</CardTitle>
-            <CardDescription>Last 6 completed disbursements</CardDescription>
+            <CardDescription>{recent.length} disbursements</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="hidden md:block">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/40">
-                    <TableHead className="pl-6">Loan No.</TableHead>
-                    <TableHead>Candidate</TableHead>
-                    <TableHead className="text-right">Principal</TableHead>
-                    <TableHead>Channel</TableHead>
-                    <TableHead>Reference</TableHead>
-                    <TableHead>Disbursed At</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recent.map((l, i) => (
-                    <TableRow key={l.id}>
-                      <TableCell className="pl-6 font-mono font-semibold text-primary">{l.loanNumber}</TableCell>
-                      <TableCell className="font-medium">{l.candidateName}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatPaiseToINR(l.principalAmount)}</TableCell>
-                      <TableCell><span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', i % 3 === 0 ? 'bg-muted' : 'bg-info/15 text-info')}>{i % 3 === 0 ? 'OFFLINE' : 'ONLINE'}</span></TableCell>
-                      <TableCell className="font-mono text-xs">DBR-2024-{1000 + i}</TableCell>
-                      <TableCell className="text-sm">{l.disbursedAt}</TableCell>
-                      <TableCell><StatusBadge variant="COMPLETED">Completed</StatusBadge></TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            <StaggerContainer className="md:hidden space-y-3">
-              {recent.map((l, i) => (
-                <StaggerItem key={l.id}>
-                  <div className="rounded-xl border border-border p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="font-mono text-xs text-primary font-semibold">{l.loanNumber}</p>
-                        <p className="text-sm font-medium mt-0.5">{l.candidateName}</p>
-                        <p className="text-xs text-muted-foreground">{l.disbursedAt}</p>
+            {recent.length === 0 ? (
+              <EmptyState icon={<Banknote className="h-6 w-6" />} title="No disbursements yet" description="Disbursements will appear here once initiated." />
+            ) : (
+              <>
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/40">
+                        <TableHead className="pl-6">Loan No.</TableHead>
+                        <TableHead>Candidate</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead>Method</TableHead>
+                        <TableHead>Reference</TableHead>
+                        <TableHead>Initiated By</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {recent.map((d) => (
+                        <TableRow key={d.id}>
+                          <TableCell className="pl-6 font-mono font-semibold text-primary">{d.loanNumber}</TableCell>
+                          <TableCell className="font-medium">{d.candidateName}</TableCell>
+                          <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(d.amount))}</TableCell>
+                          <TableCell><span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', d.method === 'OFFLINE' ? 'bg-muted' : 'bg-info/15 text-info')}>{d.method}</span></TableCell>
+                          <TableCell className="font-mono text-xs">{d.reference ?? '—'}</TableCell>
+                          <TableCell className="text-xs">{d.initiatedBy}</TableCell>
+                          <TableCell className="text-sm">{fmtDate(d.initiatedAt)}</TableCell>
+                          <TableCell><StatusBadge variant={d.status}>{formatStatus(d.status)}</StatusBadge></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <StaggerContainer className="md:hidden space-y-3">
+                  {recent.map((d) => (
+                    <StaggerItem key={d.id}>
+                      <div className="rounded-xl border border-border p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-mono text-xs text-primary font-semibold">{d.loanNumber}</p>
+                            <p className="text-sm font-medium mt-0.5">{d.candidateName}</p>
+                            <p className="text-xs text-muted-foreground">{fmtDate(d.initiatedAt)}</p>
+                          </div>
+                          <StatusBadge variant={d.status}>{formatStatus(d.status)}</StatusBadge>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-border">
+                          <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Amount</p><p className="text-sm font-semibold tabular-nums">{formatPaiseToINR(Number(d.amount))}</p></div>
+                          <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Method</p><p className="text-sm">{d.method === 'OFFLINE' ? 'Offline Cash' : 'Online Transfer'}</p></div>
+                        </div>
                       </div>
-                      <StatusBadge variant="COMPLETED">Completed</StatusBadge>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-border">
-                      <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Amount</p><p className="text-sm font-semibold tabular-nums">{formatPaiseToINR(l.principalAmount)}</p></div>
-                      <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Channel</p><p className="text-sm">{i % 3 === 0 ? 'Offline Cash' : 'Online Transfer'}</p></div>
-                    </div>
-                  </div>
-                </StaggerItem>
-              ))}
-            </StaggerContainer>
+                    </StaggerItem>
+                  ))}
+                </StaggerContainer>
+              </>
+            )}
           </CardContent>
         </Card>
       </FadeIn>
 
-      {/* Initiate Disbursement modal */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Initiate Disbursement</DialogTitle>
-            <DialogDescription>Select channel, amount, and upload proof if needed.</DialogDescription>
+            <DialogTitle>Disburse Loan {selectedLoan?.loanNumber}</DialogTitle>
+            <DialogDescription>Select channel and confirm the disbursement.</DialogDescription>
           </DialogHeader>
-          <DisburseForm onClose={() => setOpen(false)} />
+          {selectedLoan && (
+            <DisburseForm
+              loan={selectedLoan}
+              submitting={disburseMutation.isPending}
+              onSubmit={(input) => disburseMutation.mutate({ ...input, loanId: selectedLoan.id, amount: selectedLoan.principalAmount })}
+              onClose={() => setOpen(false)}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </div>
   )
 }
 
-function DisburseForm({ onClose }: { onClose: () => void }) {
+function DisburseForm({ loan, onSubmit, onClose, submitting }: {
+  loan: LoanRow
+  onSubmit: (input: { method: 'ONLINE' | 'OFFLINE'; reference?: string; notes?: string }) => void
+  onClose: () => void
+  submitting: boolean
+}) {
   const [channel, setChannel] = React.useState<'ONLINE' | 'OFFLINE'>('ONLINE')
-  const [loan, setLoan] = React.useState('')
-  const [amount, setAmount] = React.useState('')
   const [reference, setReference] = React.useState('')
   const [notes, setNotes] = React.useState('')
-
-  const submit = () => {
-    toast.success('Disbursement queued', { description: `${channel} · ${amount || '₹—'} via ${channel === 'ONLINE' ? reference || 'pending UTR' : 'cash handover'}` })
-    onClose()
-  }
 
   return (
     <div className="space-y-4">
@@ -227,20 +302,14 @@ function DisburseForm({ onClose }: { onClose: () => void }) {
               {c === 'ONLINE' ? <Building2 className="h-4 w-4" /> : <Banknote className="h-4 w-4" />}
               <p className="text-sm font-semibold">{c === 'ONLINE' ? 'Online Transfer' : 'Offline Cash'}</p>
             </div>
-            <p className="text-xs text-muted-foreground">{c === 'ONLINE' ? 'Bank/UPI/Netbanking' : 'Cash handover with receipt'}</p>
+            <p className="text-xs text-muted-foreground">{c === 'ONLINE' ? 'Bank/UPI (waits for webhook)' : 'Cash handover (immediate)'}</p>
           </button>
         ))}
       </div>
-      <div>
-        <Label htmlFor="loan">Loan Number</Label>
-        <Input id="loan" value={loan} onChange={(e) => setLoan(e.target.value)} placeholder="LON-2024-XXXX" />
-      </div>
-      <div>
-        <Label htmlFor="amount">Amount (₹)</Label>
-        <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₹</span>
-          <Input id="amount" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="pl-8" type="text" inputMode="decimal" />
-        </div>
+      <div className="rounded-lg bg-muted/50 p-3 text-sm space-y-1">
+        <div className="flex justify-between"><span className="text-muted-foreground">Loan</span><span className="font-mono font-semibold text-primary">{loan.loanNumber}</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">Candidate</span><span className="font-medium">{loan.candidateName}</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">Principal</span><span className="font-semibold tabular-nums">{formatPaiseToINR(Number(loan.principalAmount))}</span></div>
       </div>
       {channel === 'ONLINE' && (
         <div>
@@ -249,19 +318,14 @@ function DisburseForm({ onClose }: { onClose: () => void }) {
         </div>
       )}
       <div>
-        <Label>Proof Upload</Label>
-        <div className="rounded-xl border-2 border-dashed border-border p-5 text-center hover:border-primary/40 transition-all cursor-pointer" onClick={() => toast.info('Proof upload coming soon')}>
-          <Upload className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
-          <p className="text-xs text-muted-foreground">Click to upload receipt/bank confirmation</p>
-        </div>
-      </div>
-      <div>
         <Label htmlFor="notes">Notes</Label>
         <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Optional notes" />
       </div>
       <DialogFooter>
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button onClick={submit}>Initiate Disbursement</Button>
+        <Button variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
+        <Button onClick={() => onSubmit({ method: channel, reference, notes })} disabled={submitting}>
+          {submitting ? 'Processing…' : 'Initiate Disbursement'}
+        </Button>
       </DialogFooter>
     </div>
   )

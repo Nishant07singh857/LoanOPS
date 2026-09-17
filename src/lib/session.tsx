@@ -1,5 +1,10 @@
-// Simple session-based auth context for demo
-// In production: replace with NextAuth + bcrypt + JWT/session in DB
+// Client-side session context.
+// Backed by HTTP-only cookie set by /api/auth/login (owner/agent) or
+// /api/auth/candidate-login (candidate). On mount, fetches /api/auth/me
+// to hydrate the current user. login() posts to the real API.
+// loginAs() is retained as a dev convenience that hits a /api/auth/dev-login
+// endpoint only when NODE_ENV !== 'production'.
+
 'use client'
 
 import * as React from 'react'
@@ -14,98 +19,102 @@ export interface SessionUser {
   role: Role
   organizationId: string
   organizationName: string
-  phone?: string
+  phone?: string | null
+  candidateId?: string | null
 }
 
 interface SessionContextValue {
   user: SessionUser | null
   loading: boolean
   login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>
+  loginCandidate: (mobile: string, password: string) => Promise<{ ok: boolean; error?: string }>
   loginAs: (role: Role) => Promise<void>
   logout: () => Promise<void>
+  refresh: () => Promise<void>
 }
 
 const SessionContext = React.createContext<SessionContextValue | null>(null)
-
-const DEMO_ACCOUNTS: Record<Role, SessionUser> = {
-  OWNER: {
-    id: 'demo-owner',
-    email: 'owner@loanops.in',
-    name: 'Ravi Mehta',
-    role: 'OWNER',
-    organizationId: 'demo-org',
-    organizationName: ' Sterling Lending',
-    phone: '+91 98200 11223',
-  },
-  AGENT: {
-    id: 'demo-agent',
-    email: 'agent@loanops.in',
-    name: 'Arjun Nair',
-    role: 'AGENT',
-    organizationId: 'demo-org',
-    organizationName: ' Sterling Lending',
-    phone: '+91 98201 44556',
-  },
-  CANDIDATE: {
-    id: 'demo-candidate',
-    email: 'candidate@loanops.in',
-    name: 'Priya Sharma',
-    role: 'CANDIDATE',
-    organizationId: 'demo-org',
-    organizationName: ' Sterling Lending',
-    phone: '+91 98202 77889',
-  },
-}
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = React.useState<SessionUser | null>(null)
   const [loading, setLoading] = React.useState(true)
   const router = useRouter()
 
-  React.useEffect(() => {
+  const refresh = React.useCallback(async () => {
     try {
-      const saved = typeof window !== 'undefined' ? localStorage.getItem('loanops-session') : null
-      if (saved) setUser(JSON.parse(saved))
-    } catch {}
-    setLoading(false)
+      const r = await fetch('/api/auth/me', { credentials: 'same-origin' })
+      if (r.ok) {
+        const json = await r.json()
+        setUser(json.data)
+      } else {
+        setUser(null)
+      }
+    } catch {
+      setUser(null)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  const persist = (u: SessionUser | null) => {
-    setUser(u)
-    if (typeof window !== 'undefined') {
-      if (u) localStorage.setItem('loanops-session', JSON.stringify(u))
-      else localStorage.removeItem('loanops-session')
+  React.useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  const login = async (email: string, password: string): Promise<{ ok: boolean; error?: string }> => {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ email, password }),
+    })
+    if (r.ok) {
+      const json = await r.json()
+      setUser(json.data)
+      return { ok: true }
     }
+    const json = await r.json().catch(() => ({}))
+    return { ok: false, error: json?.error?.message || 'Login failed' }
   }
 
-  const login = async (email: string, _password: string): Promise<{ ok: boolean; error?: string }> => {
-    const e = email.toLowerCase().trim()
-    if (e.includes('owner')) {
-      persist(DEMO_ACCOUNTS.OWNER)
+  const loginCandidate = async (mobile: string, password: string): Promise<{ ok: boolean; error?: string }> => {
+    const r = await fetch('/api/auth/candidate-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ mobile, password }),
+    })
+    if (r.ok) {
+      const json = await r.json()
+      setUser(json.data)
       return { ok: true }
     }
-    if (e.includes('agent')) {
-      persist(DEMO_ACCOUNTS.AGENT)
-      return { ok: true }
-    }
-    if (e.includes('candidate') || e.includes('user')) {
-      persist(DEMO_ACCOUNTS.CANDIDATE)
-      return { ok: true }
-    }
-    return { ok: false, error: 'Use owner@ / agent@ / candidate@ loanops.in' }
+    const json = await r.json().catch(() => ({}))
+    return { ok: false, error: json?.error?.message || 'Login failed' }
   }
 
   const loginAs = async (role: Role) => {
-    persist(DEMO_ACCOUNTS[role])
+    // Dev convenience — hits the dev-login endpoint which auto-creates a session
+    // using seeded demo credentials. Only available when NODE_ENV !== production.
+    const r = await fetch('/api/auth/dev-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ role }),
+    })
+    if (r.ok) {
+      const json = await r.json()
+      setUser(json.data)
+    }
   }
 
   const logout = async () => {
-    persist(null)
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
+    setUser(null)
     router.push('/')
   }
 
   return (
-    <SessionContext.Provider value={{ user, loading, login, loginAs, logout }}>
+    <SessionContext.Provider value={{ user, loading, login, loginCandidate, loginAs, logout, refresh }}>
       {children}
     </SessionContext.Provider>
   )

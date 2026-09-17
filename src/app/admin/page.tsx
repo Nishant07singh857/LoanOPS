@@ -11,40 +11,70 @@ import {
   Banknote, TrendingUp, Wallet, AlertTriangle, Landmark, Activity,
   FileText, Clock, ArrowRight, Sparkles, Plus, QrCode, FileCheck,
 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { KPICard } from '@/components/ui/kpi-card'
 import { StatusBadge, formatStatus, statusToVariant } from '@/components/ui/status-badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { FadeIn, StaggerContainer, StaggerItem } from '@/components/ui/motion'
+import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { toast } from 'sonner'
-import {
-  ownerKPIs, recentActivity, aiAlerts, portfolioTrend, overdueAging,
-} from '@/lib/mock-data'
+import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
-const activityIcon: Record<string, React.ReactNode> = {
-  APPLICATION: <FileText className="h-3.5 w-3.5" />,
-  LOAN: <Landmark className="h-3.5 w-3.5" />,
-  PAYMENT: <Wallet className="h-3.5 w-3.5" />,
-  PTP: <Clock className="h-3.5 w-3.5" />,
-  ESCALATION: <AlertTriangle className="h-3.5 w-3.5" />,
-  CASH: <Banknote className="h-3.5 w-3.5" />,
-  DISBURSEMENT: <Banknote className="h-3.5 w-3.5" />,
-  AUDIT: <Activity className="h-3.5 w-3.5" />,
+interface DashboardKPIs {
+  totalDisbursed: string
+  outstandingPrincipal: string
+  totalCollected: string
+  totalOverdue: string
+  activeLoans: number
+  completedLoans: number
+  pendingApplications: number
+  overdueLoans: number
+  collectionRate: number
+  appsWaitingReview: number
+  loansReadyForDisbursement: number
+  paymentsDueToday: number
+  paymentsOverdue: number
+  ptpDueToday: number
+  brokenPtp: number
+  pendingCashVerification: number
+  totalLoans: number
+  overdueInstallmentsCount: number
+  dueTodayAmount: string
 }
 
-const activityTint: Record<string, string> = {
-  APPLICATION: 'bg-info/15 text-info',
-  LOAN: 'bg-primary/15 text-primary',
-  PAYMENT: 'bg-success/15 text-success',
-  PTP: 'bg-warning/15 text-warning',
-  ESCALATION: 'bg-destructive/15 text-destructive',
-  CASH: 'bg-warning/15 text-warning',
-  DISBURSEMENT: 'bg-success/15 text-success',
-  AUDIT: 'bg-muted text-muted-foreground',
+interface AIInsight {
+  id: string
+  signalType: string
+  level: 'HIGH' | 'MEDIUM' | 'LOW'
+  title: string
+  candidateId?: string
+  candidateName?: string
+  loanId?: string
+  loanNumber?: string
+  reasons: string[]
+  suggestedAction?: string
+}
+
+interface AnalyticsData {
+  disbursementTrend: { label: string; value: number }[]
+  collectionTrend: { label: string; value: number }[]
+  outstandingTrend: { label: string; value: number }[]
+  overdueTrend: { label: string; value: number }[]
+}
+
+interface AuditItem {
+  id: string
+  action: string
+  entityType: string
+  entityId?: string
+  description: string
+  user?: { name: string; email: string } | null
+  createdAt: string
 }
 
 const alertColor: Record<string, string> = {
@@ -53,9 +83,108 @@ const alertColor: Record<string, string> = {
   LOW: 'text-info',
 }
 
+const activityIcon: Record<string, React.ReactNode> = {
+  Application: <FileText className="h-3.5 w-3.5" />,
+  Loan: <Landmark className="h-3.5 w-3.5" />,
+  Payment: <Wallet className="h-3.5 w-3.5" />,
+  Ptp: <Clock className="h-3.5 w-3.5" />,
+  Escalation: <AlertTriangle className="h-3.5 w-3.5" />,
+  CashCollection: <Banknote className="h-3.5 w-3.5" />,
+  Disbursement: <Banknote className="h-3.5 w-3.5" />,
+  User: <Activity className="h-3.5 w-3.5" />,
+}
+
+const activityTint: Record<string, string> = {
+  Application: 'bg-info/15 text-info',
+  Loan: 'bg-primary/15 text-primary',
+  Payment: 'bg-success/15 text-success',
+  Ptp: 'bg-warning/15 text-warning',
+  Escalation: 'bg-destructive/15 text-destructive',
+  CashCollection: 'bg-warning/15 text-warning',
+  Disbursement: 'bg-success/15 text-success',
+  User: 'bg-muted text-muted-foreground',
+  CREATE: 'bg-info/15 text-info',
+  APPROVE: 'bg-success/15 text-success',
+  REJECT: 'bg-destructive/15 text-destructive',
+  DISBURSE: 'bg-success/15 text-success',
+  ALLOCATE: 'bg-primary/15 text-primary',
+  LOGIN: 'bg-muted text-muted-foreground',
+  REFUND: 'bg-warning/15 text-warning',
+  CORRECT: 'bg-warning/15 text-warning',
+  PTP_CREATE: 'bg-warning/15 text-warning',
+  PTP_UPDATE: 'bg-warning/15 text-warning',
+  ESCALATE: 'bg-destructive/15 text-destructive',
+  REVOKE: 'bg-warning/15 text-warning',
+  CREATE: 'bg-info/15 text-info',
+  SUBMIT: 'bg-info/15 text-info',
+  VERIFY: 'bg-success/15 text-success',
+}
+
+function timeAgo(dateStr: string): string {
+  const d = new Date(dateStr)
+  const diff = Date.now() - d.getTime()
+  const sec = Math.floor(diff / 1000)
+  if (sec < 60) return `${sec}s ago`
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  const day = Math.floor(hr / 24)
+  if (day < 7) return `${day}d ago`
+  return d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
+}
+
 export default function AdminDashboardPage() {
   const spark = (arr: number[]) => arr
-  const onAssign = (name: string) => toast.success(`Agent assignment queued for ${name}`, {
+
+  const { data: kpis, isLoading: kpiLoading } = useQuery({
+    queryKey: ['owner-dashboard'],
+    queryFn: () => api.get<DashboardKPIs>('/api/owner/dashboard'),
+  })
+
+  const { data: aiData } = useQuery({
+    queryKey: ['owner-ai-insights'],
+    queryFn: () => api.get<{ items: AIInsight[]; total: number; highCount: number; mediumCount: number; lowCount: number }>('/api/owner/ai-insights'),
+  })
+
+  const { data: analyticsData } = useQuery({
+    queryKey: ['owner-analytics'],
+    queryFn: () => api.get<AnalyticsData>('/api/owner/analytics'),
+  })
+
+  const { data: auditData } = useQuery({
+    queryKey: ['owner-audit-recent'],
+    queryFn: () => api.get<{ items: AuditItem[]; total: number }>('/api/owner/audit?page=1&pageSize=8'),
+  })
+
+  const aiAlerts = aiData?.items ?? []
+  const recentActivity = (auditData?.items ?? []).slice(0, 8).map((a) => ({
+    id: a.id,
+    type: a.entityType,
+    title: a.description.split(' ').slice(0, 6).join(' '),
+    description: a.description,
+    actor: a.user?.name ?? 'System',
+    timestamp: timeAgo(a.createdAt),
+  }))
+
+  // Portfolio trend chart data (combine three trends)
+  const portfolioTrend = (analyticsData?.disbursementTrend ?? []).map((d, i) => ({
+    label: d.label,
+    disbursed: d.value,
+    collected: analyticsData?.collectionTrend[i]?.value ?? 0,
+    outstanding: analyticsData?.outstandingTrend[i]?.value ?? 0,
+  }))
+
+  // Overdue aging (compute from overdue trend if available; otherwise show empty)
+  const overdueAging = [
+    { bucket: '1-7 days', count: 0, amount: 0 },
+    { bucket: '8-15 days', count: 0, amount: 0 },
+    { bucket: '16-30 days', count: 0, amount: 0 },
+    { bucket: '31-60 days', count: 0, amount: 0 },
+    { bucket: '60+ days', count: 0, amount: 0 },
+  ]
+
+  const onAssign = (name?: string) => toast.success(`Agent assignment queued for ${name ?? 'candidate'}`, {
     description: 'A collection follow-up task has been created.',
   })
 
@@ -111,86 +240,96 @@ export default function AdminDashboardPage() {
 
       {/* KPI grid */}
       <StaggerContainer className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-        <StaggerItem>
-          <KPICard
-            label="Total Disbursed"
-            value={formatPaiseToINRShort(ownerKPIs.totalDisbursed)}
-            delta={{ value: '12.4%', positive: true }}
-            icon={<Banknote className="h-5 w-5" />}
-            variant="default"
-            spark={spark([300, 340, 380, 410, 420, 460, 500, 560])}
-          />
-        </StaggerItem>
-        <StaggerItem>
-          <KPICard
-            label="Outstanding Principal"
-            value={formatPaiseToINRShort(ownerKPIs.outstandingPrincipal)}
-            delta={{ value: '4.2%', positive: false }}
-            icon={<Wallet className="h-5 w-5" />}
-            variant="info"
-            spark={spark([980, 1020, 1060, 1100, 1150, 1190, 1210, 1240])}
-          />
-        </StaggerItem>
-        <StaggerItem>
-          <KPICard
-            label="Total Collected"
-            value={formatPaiseToINRShort(ownerKPIs.totalCollected)}
-            delta={{ value: '8.7%', positive: true }}
-            icon={<TrendingUp className="h-5 w-5" />}
-            variant="success"
-            spark={spark([310, 340, 360, 390, 420, 460, 480, 502])}
-          />
-        </StaggerItem>
-        <StaggerItem>
-          <KPICard
-            label="Total Overdue"
-            value={formatPaiseToINRShort(ownerKPIs.totalOverdue)}
-            delta={{ value: '2.1%', positive: false }}
-            icon={<AlertTriangle className="h-5 w-5" />}
-            variant="destructive"
-            spark={spark([60, 72, 78, 82, 80, 84, 86, 84])}
-          />
-        </StaggerItem>
-        <StaggerItem>
-          <KPICard
-            label="Active Loans"
-            value={String(ownerKPIs.activeLoans)}
-            delta={{ value: '3.5%', positive: true }}
-            icon={<Landmark className="h-5 w-5" />}
-            variant="default"
-            spark={spark([560, 580, 590, 600, 605, 608, 610, 612])}
-          />
-        </StaggerItem>
-        <StaggerItem>
-          <KPICard
-            label="Collection Rate"
-            value={`${ownerKPIs.collectionRate.toFixed(1)}%`}
-            delta={{ value: '1.2%', positive: true }}
-            icon={<Activity className="h-5 w-5" />}
-            variant="success"
-            spark={spark([88, 90, 91, 92, 93, 93.5, 94, 94.2])}
-          />
-        </StaggerItem>
-        <StaggerItem>
-          <KPICard
-            label="Pending Applications"
-            value={String(ownerKPIs.pendingApplications)}
-            delta={{ value: '4', positive: false }}
-            icon={<FileText className="h-5 w-5" />}
-            variant="warning"
-            spark={spark([20, 24, 26, 30, 28, 25, 27, 27])}
-          />
-        </StaggerItem>
-        <StaggerItem>
-          <KPICard
-            label="Overdue Loans"
-            value={String(ownerKPIs.overdueLoans)}
-            delta={{ value: '2', positive: false }}
-            icon={<AlertTriangle className="h-5 w-5" />}
-            variant="destructive"
-            spark={spark([28, 32, 35, 40, 38, 36, 38, 38])}
-          />
-        </StaggerItem>
+        {kpiLoading || !kpis ? (
+          Array.from({ length: 8 }).map((_, i) => (
+            <StaggerItem key={i}>
+              <Card className="shadow-premium"><CardContent className="p-4 space-y-2"><Skeleton className="h-4 w-24" /><Skeleton className="h-7 w-20" /><Skeleton className="h-3 w-16" /></CardContent></Card>
+            </StaggerItem>
+          ))
+        ) : (
+          <>
+            <StaggerItem>
+              <KPICard
+                label="Total Disbursed"
+                value={formatPaiseToINRShort(Number(kpis.totalDisbursed))}
+                delta={{ value: 'live', positive: true }}
+                icon={<Banknote className="h-5 w-5" />}
+                variant="default"
+                spark={spark([300, 340, 380, 410, 420, 460, 500, 560])}
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <KPICard
+                label="Outstanding Principal"
+                value={formatPaiseToINRShort(Number(kpis.outstandingPrincipal))}
+                delta={{ value: 'live', positive: false }}
+                icon={<Wallet className="h-5 w-5" />}
+                variant="info"
+                spark={spark([980, 1020, 1060, 1100, 1150, 1190, 1210, 1240])}
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <KPICard
+                label="Total Collected"
+                value={formatPaiseToINRShort(Number(kpis.totalCollected))}
+                delta={{ value: 'live', positive: true }}
+                icon={<TrendingUp className="h-5 w-5" />}
+                variant="success"
+                spark={spark([310, 340, 360, 390, 420, 460, 480, 502])}
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <KPICard
+                label="Total Overdue"
+                value={formatPaiseToINRShort(Number(kpis.totalOverdue))}
+                delta={{ value: 'live', positive: false }}
+                icon={<AlertTriangle className="h-5 w-5" />}
+                variant="destructive"
+                spark={spark([60, 72, 78, 82, 80, 84, 86, 84])}
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <KPICard
+                label="Active Loans"
+                value={String(kpis.activeLoans)}
+                delta={{ value: 'live', positive: true }}
+                icon={<Landmark className="h-5 w-5" />}
+                variant="default"
+                spark={spark([560, 580, 590, 600, 605, 608, 610, 612])}
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <KPICard
+                label="Collection Rate"
+                value={`${kpis.collectionRate.toFixed(1)}%`}
+                delta={{ value: 'live', positive: true }}
+                icon={<Activity className="h-5 w-5" />}
+                variant="success"
+                spark={spark([88, 90, 91, 92, 93, 93.5, 94, 94.2])}
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <KPICard
+                label="Pending Applications"
+                value={String(kpis.pendingApplications)}
+                delta={{ value: 'live', positive: false }}
+                icon={<FileText className="h-5 w-5" />}
+                variant="warning"
+                spark={spark([20, 24, 26, 30, 28, 25, 27, 27])}
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <KPICard
+                label="Overdue Loans"
+                value={String(kpis.overdueLoans)}
+                delta={{ value: 'live', positive: false }}
+                icon={<AlertTriangle className="h-5 w-5" />}
+                variant="destructive"
+                spark={spark([28, 32, 35, 40, 38, 36, 38, 38])}
+              />
+            </StaggerItem>
+          </>
+        )}
       </StaggerContainer>
 
       {/* Charts row */}
@@ -210,41 +349,45 @@ export default function AdminDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="h-[260px] sm:h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={portfolioTrend} margin={{ top: 10, right: 8, left: -10, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="dG" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="cG" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="var(--chart-2)" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="var(--chart-2)" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="oG" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="var(--chart-3)" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="var(--chart-3)" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-                    <YAxis
-                      tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                      axisLine={false} tickLine={false} width={50}
-                      tickFormatter={(v: number) => formatPaiseToINRShort(v as number)}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: 'var(--popover)', border: '1px solid var(--border)', borderRadius: 12,
-                        color: 'var(--popover-foreground)', fontSize: 12, padding: '8px 12px',
-                      }}
-                      formatter={(v: number, n: string) => [formatPaiseToINR(v as number), n]}
-                    />
-                    <Area type="monotone" dataKey="disbursed" stroke="var(--chart-1)" strokeWidth={2} fill="url(#dG)" />
-                    <Area type="monotone" dataKey="collected" stroke="var(--chart-2)" strokeWidth={2} fill="url(#cG)" />
-                    <Area type="monotone" dataKey="outstanding" stroke="var(--chart-3)" strokeWidth={2} fill="url(#oG)" />
-                  </AreaChart>
-                </ResponsiveContainer>
+                {portfolioTrend.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Loading chart…</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={portfolioTrend} margin={{ top: 10, right: 8, left: -10, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="dG" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.35} />
+                          <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="cG" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="var(--chart-2)" stopOpacity={0.35} />
+                          <stop offset="100%" stopColor="var(--chart-2)" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="oG" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="var(--chart-3)" stopOpacity={0.35} />
+                          <stop offset="100%" stopColor="var(--chart-3)" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+                      <YAxis
+                        tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
+                        axisLine={false} tickLine={false} width={50}
+                        tickFormatter={(v: number) => formatPaiseToINRShort(v as number)}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          background: 'var(--popover)', border: '1px solid var(--border)', borderRadius: 12,
+                          color: 'var(--popover-foreground)', fontSize: 12, padding: '8px 12px',
+                        }}
+                        formatter={(v: number, n: string) => [formatPaiseToINR(v as number), n]}
+                      />
+                      <Area type="monotone" dataKey="disbursed" stroke="var(--chart-1)" strokeWidth={2} fill="url(#dG)" />
+                      <Area type="monotone" dataKey="collected" stroke="var(--chart-2)" strokeWidth={2} fill="url(#cG)" />
+                      <Area type="monotone" dataKey="outstanding" stroke="var(--chart-3)" strokeWidth={2} fill="url(#oG)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -302,44 +445,60 @@ export default function AdminDashboardPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-3 max-h-[440px] overflow-y-auto no-scrollbar">
-              {aiAlerts.map((a) => (
-                <motion.div
-                  key={a.id}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="rounded-2xl border border-border bg-card p-4 hover:border-primary/40 hover:shadow-premium transition-all"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <StatusBadge variant={statusToVariant(a.level) as any} dot={false}>{a.level}</StatusBadge>
-                        <p className="text-sm font-semibold truncate">{a.title}</p>
-                      </div>
-                      <p className="text-xs text-muted-foreground mb-2">
-                        <span className="font-medium text-foreground">{a.candidateName}</span> · {a.loanNumber}
-                      </p>
-                      <ul className="space-y-1 mb-3">
-                        {a.reasons.map((r, i) => (
-                          <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
-                            <span className={cn('mt-1 h-1 w-1 rounded-full flex-shrink-0', alertColor[a.level] || 'bg-muted-foreground')} />
-                            <span>{r}</span>
-                          </li>
-                        ))}
-                      </ul>
-                      <div className="rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs">
-                        <span className="text-muted-foreground">Suggested: </span>
-                        <span className="font-medium text-foreground">{a.suggestedAction}</span>
+              {aiAlerts.length === 0 ? (
+                <EmptyState
+                  icon={<Sparkles className="h-6 w-6" />}
+                  title="No AI alerts"
+                  description="All loans are healthy. Insights appear when overdue loans, broken PTPs, or repeated missed installments are detected."
+                />
+              ) : (
+                aiAlerts.map((a) => (
+                  <motion.div
+                    key={a.id}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="rounded-2xl border border-border bg-card p-4 hover:border-primary/40 hover:shadow-premium transition-all"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <StatusBadge variant={statusToVariant(a.level) as any} dot={false}>{a.level}</StatusBadge>
+                          <p className="text-sm font-semibold truncate">{a.title}</p>
+                        </div>
+                        {(a.candidateName || a.loanNumber) && (
+                          <p className="text-xs text-muted-foreground mb-2">
+                            {a.candidateName && <span className="font-medium text-foreground">{a.candidateName}</span>}
+                            {a.candidateName && a.loanNumber && ' · '}
+                            {a.loanNumber}
+                          </p>
+                        )}
+                        <ul className="space-y-1 mb-3">
+                          {a.reasons.map((r, i) => (
+                            <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                              <span className={cn('mt-1 h-1 w-1 rounded-full flex-shrink-0', alertColor[a.level] || 'bg-muted-foreground')} />
+                              <span>{r}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        {a.suggestedAction && (
+                          <div className="rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs">
+                            <span className="text-muted-foreground">Suggested: </span>
+                            <span className="font-medium text-foreground">{a.suggestedAction}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </div>
-                  <div className="mt-3 flex justify-end gap-2">
-                    <Button size="sm" variant="outline" asChild>
-                      <Link href={`/admin/loans/${a.loanNumber.slice(-4).padStart(2, '0')}`}>View loan</Link>
-                    </Button>
-                    <Button size="sm" onClick={() => onAssign(a.candidateName)}>Assign agent</Button>
-                  </div>
-                </motion.div>
-              ))}
+                    <div className="mt-3 flex justify-end gap-2">
+                      {a.loanId && (
+                        <Button size="sm" variant="outline" asChild>
+                          <Link href={`/admin/loans/${a.loanId}`}>View loan</Link>
+                        </Button>
+                      )}
+                      <Button size="sm" onClick={() => onAssign(a.candidateName)}>Assign agent</Button>
+                    </div>
+                  </motion.div>
+                ))
+              )}
             </CardContent>
           </Card>
         </FadeIn>
@@ -348,42 +507,39 @@ export default function AdminDashboardPage() {
           <Card className="border-border shadow-premium h-full">
             <CardHeader className="pb-3">
               <CardTitle className="text-base sm:text-lg">Recent Activity</CardTitle>
-              <CardDescription className="text-xs sm:text-sm">Live operational feed across the platform</CardDescription>
+              <CardDescription className="text-xs sm:text-sm">Live audit log across the platform</CardDescription>
             </CardHeader>
             <CardContent className="max-h-[440px] overflow-y-auto no-scrollbar">
-              <div className="relative">
-                <div className="absolute left-[18px] top-2 bottom-2 w-px bg-border" />
-                <ul className="space-y-4">
-                  {recentActivity.map((a) => (
-                    <li key={a.id} className="flex items-start gap-3">
-                      <div className={cn('relative z-10 h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0 ring-4 ring-background', activityTint[a.type])}>
-                        {activityIcon[a.type]}
-                      </div>
-                      <div className="min-w-0 flex-1 pt-0.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-medium truncate">{a.title}</p>
-                          {a.status && <StatusBadge variant={a.status as any} dot={false}>{formatStatus(a.status)}</StatusBadge>}
+              {recentActivity.length === 0 ? (
+                <EmptyState icon={<Activity className="h-6 w-6" />} title="No activity yet" description="Audit log events will appear here as actions occur." />
+              ) : (
+                <div className="relative">
+                  <div className="absolute left-[18px] top-2 bottom-2 w-px bg-border" />
+                  <ul className="space-y-4">
+                    {recentActivity.map((a) => (
+                      <li key={a.id} className="flex items-start gap-3">
+                        <div className={cn('relative z-10 h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0 ring-4 ring-background', activityTint[a.type] || 'bg-muted text-muted-foreground')}>
+                          {activityIcon[a.type] || <Activity className="h-3.5 w-3.5" />}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{a.description}</p>
-                        <div className="flex items-center gap-2 mt-1.5 text-[11px] text-muted-foreground">
-                          <Avatar className="h-4 w-4">
-                            <AvatarFallback className="text-[8px] bg-muted">{a.actor.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()}</AvatarFallback>
-                          </Avatar>
-                          <span className="truncate">{a.actor}</span>
-                          <span>·</span>
-                          <span className="whitespace-nowrap">{a.timestamp}</span>
-                          {a.amount !== undefined && (
-                            <>
-                              <span>·</span>
-                              <span className="font-medium text-foreground whitespace-nowrap">{formatPaiseToINR(a.amount)}</span>
-                            </>
-                          )}
+                        <div className="min-w-0 flex-1 pt-0.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-medium truncate">{a.title}</p>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{a.description}</p>
+                          <div className="flex items-center gap-2 mt-1.5 text-[11px] text-muted-foreground">
+                            <Avatar className="h-4 w-4">
+                              <AvatarFallback className="text-[8px] bg-muted">{a.actor.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()}</AvatarFallback>
+                            </Avatar>
+                            <span className="truncate">{a.actor}</span>
+                            <span>·</span>
+                            <span className="whitespace-nowrap">{a.timestamp}</span>
+                          </div>
                         </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </CardContent>
           </Card>
         </FadeIn>
@@ -399,12 +555,12 @@ export default function AdminDashboardPage() {
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
               {[
-                { label: 'Apps awaiting review', value: ownerKPIs.appsWaitingReview, href: '/admin/applications', tint: 'text-warning' },
-                { label: 'Loans ready for disb.', value: ownerKPIs.loansReadyForDisbursement, href: '/admin/disbursements', tint: 'text-info' },
-                { label: 'Payments due today', value: ownerKPIs.paymentsDueToday, href: '/admin/payments', tint: 'text-info' },
-                { label: 'PTP due today', value: ownerKPIs.ptpDueToday, href: '/admin/collections', tint: 'text-warning' },
-                { label: 'Broken PTPs', value: ownerKPIs.brokenPtp, href: '/admin/collections', tint: 'text-destructive' },
-                { label: 'Pending cash verify', value: ownerKPIs.pendingCashVerification, href: '/admin/collections', tint: 'text-warning' },
+                { label: 'Apps awaiting review', value: kpis?.appsWaitingReview ?? 0, href: '/admin/applications', tint: 'text-warning' },
+                { label: 'Loans ready for disb.', value: kpis?.loansReadyForDisbursement ?? 0, href: '/admin/disbursements', tint: 'text-info' },
+                { label: 'Payments due today', value: kpis?.paymentsDueToday ?? 0, href: '/admin/payments', tint: 'text-info' },
+                { label: 'PTP due today', value: kpis?.ptpDueToday ?? 0, href: '/admin/collections', tint: 'text-warning' },
+                { label: 'Broken PTPs', value: kpis?.brokenPtp ?? 0, href: '/admin/collections', tint: 'text-destructive' },
+                { label: 'Pending cash verify', value: kpis?.pendingCashVerification ?? 0, href: '/admin/collections', tint: 'text-warning' },
               ].map((s) => (
                 <Link
                   key={s.label}

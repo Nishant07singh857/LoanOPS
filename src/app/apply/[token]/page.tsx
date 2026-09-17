@@ -3,12 +3,14 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Wallet, ArrowRight, ArrowLeft, CheckCircle2, User, Mail, Phone,
   MapPin, IdCard, FileText, Briefcase, Building2, Banknote,
   ShieldCheck, PenLine, Upload, Sparkles, Star, Lock,
   IndianRupee, CalendarClock, Eraser, PartyPopper, Home, CreditCard,
+  Loader2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,17 +21,32 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
-import { agreementTemplates } from '@/lib/mock-data'
+import { api, ApiRequestError } from '@/lib/api-client'
 import { generateSchedulePreview, type InterestType, type RepaymentFrequency } from '@/lib/financial-engine'
 import { formatPaiseToINR, parseDisplayPaise } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
-// Pre-config derivation based on token (mirror of owner QR link data)
-const TOKEN_PRECONFIG: Record<string, { principalPaise: number; frequency: RepaymentFrequency; installments: number }> = {
-  a3f8: { principalPaise: 10000000, frequency: 'WEEKLY', installments: 20 },
-  b7e3: { principalPaise: 25000000, frequency: 'WEEKLY', installments: 26 },
-  d2e5: { principalPaise: 5000000, frequency: 'MONTHLY', installments: 12 },
+interface ApplyPreConfig {
+  principalAmount: string
+  interestType: InterestType
+  interestRate: number | null
+  fixedInterest: string | null
+  frequency: RepaymentFrequency
+  installments: number
+  purpose?: string | null
+}
+
+interface ApplyData {
+  organizationName: string
+  preConfig: ApplyPreConfig | null
+  agreement: {
+    id: string
+    name: string
+    version: string
+    body: string
+  } | null
 }
 
 const VALUE_PROPS = [
@@ -129,25 +146,34 @@ export default function ApplyPage() {
   const token = params.token as string
   const router = useRouter()
 
-  const preConfig = React.useMemo(() => {
-    const prefix = token.slice(0, 4)
-    return TOKEN_PRECONFIG[prefix]
-  }, [token])
-
-  const [step, setStep] = React.useState<number>(0)
-  const [form, setForm] = React.useState<FormState>(() => {
-    if (preConfig) {
-      return {
-        ...INITIAL_FORM,
-        principal: String(preConfig.principalPaise / 100),
-        frequency: preConfig.frequency,
-        installments: String(preConfig.installments),
-      }
-    }
-    return INITIAL_FORM
+  // Fetch the apply link config + agreement from the public API
+  const { data: applyData, isLoading: applyLoading, error: applyError } = useQuery<ApplyData>({
+    queryKey: ['apply', token],
+    queryFn: () => api.get<ApplyData>(`/api/apply/${token}`),
+    retry: false,
   })
 
-  const activeAgreement = agreementTemplates.find((a) => a.isActive) || agreementTemplates[0]
+  const preConfig = applyData?.preConfig ?? null
+  const activeAgreement = applyData?.agreement ?? null
+
+  const [step, setStep] = React.useState<number>(0)
+  const [form, setForm] = React.useState<FormState>(INITIAL_FORM)
+  const [appNumber, setAppNumber] = React.useState<string>('')
+
+  // Once preConfig is loaded, pre-fill the loan form
+  React.useEffect(() => {
+    if (preConfig) {
+      setForm((prev) => ({
+        ...prev,
+        principal: String(Number(preConfig.principalAmount) / 100),
+        frequency: preConfig.frequency,
+        installments: String(preConfig.installments),
+        interestType: preConfig.interestType,
+        rateBps: preConfig.interestRate ? String(preConfig.interestRate / 100) : prev.rateBps,
+        fixedInterest: preConfig.fixedInterest ? String(Number(preConfig.fixedInterest) / 100) : prev.fixedInterest,
+      }))
+    }
+  }, [preConfig])
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -226,16 +252,103 @@ export default function ApplyPage() {
     if (validateStep(step)) next()
   }
 
+  const submitMutation = useMutation({
+    mutationFn: () => {
+      const principalPaise = String(parseDisplayPaise(form.principal || '0'))
+      const firstDue = form.firstDueDate
+        ? new Date(form.firstDueDate)
+        : (() => { const d = new Date(); d.setDate(d.getDate() + 7); return d })()
+      const payload: Record<string, unknown> = {
+        // Personal
+        fullName: form.fullName.trim(),
+        mobile: form.mobile.replace(/\D/g, ''),
+        email: form.email.trim() || undefined,
+        dob: form.dob ? new Date(form.dob).toISOString() : undefined,
+        address: form.address.trim() || undefined,
+        // KYC
+        aadhaarMasked: form.aadhaar.replace(/\s/g, '') || undefined,
+        panMasked: form.pan.toUpperCase() || undefined,
+        // Financial
+        occupation: form.occupation || undefined,
+        employer: form.employer.trim() || undefined,
+        monthlyIncome: String(parseDisplayPaise(form.monthlyIncome || '0')) || undefined,
+        existingObligations: String(parseDisplayPaise(form.existingObligations || '0')) || undefined,
+        // Bank
+        bankName: form.bankName.trim() || undefined,
+        bankAccount: form.accountNumber.trim() || undefined,
+        bankIfsc: form.ifsc.trim() || undefined,
+        upiId: form.upiId.trim() || undefined,
+        // Loan
+        principalAmount: principalPaise,
+        purpose: preConfig?.purpose || 'Personal loan application',
+        interestType: form.interestType,
+        interestRate: form.interestType === 'PERCENTAGE' ? Math.round((Number(form.rateBps) || 0) * 100) : undefined,
+        fixedInterest: form.interestType === 'FIXED' ? String(parseDisplayPaise(form.fixedInterest || '0')) : undefined,
+        frequency: form.frequency,
+        installments: parseInt(form.installments || '12', 10) || 12,
+        firstDueDate: firstDue.toISOString(),
+        processingFee: String(parseDisplayPaise(form.processingFee || '0')),
+        otherFees: '0',
+        // Agreement
+        agreementTemplateId: activeAgreement?.id,
+        agreementVersion: activeAgreement?.version,
+        agreementAccepted: form.agreedToTerms,
+      }
+      return api.post<{ applicationNumber: string }>(`/api/apply/${token}`, payload)
+    },
+    onSuccess: (data) => {
+      setAppNumber(data.applicationNumber)
+      toast.success('Application submitted successfully', { description: 'We\'ll review and respond within 24 hours.' })
+      setStep(9)
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof ApiRequestError ? err.message : 'Submission failed'
+      toast.error('Submission failed', { description: message })
+    },
+  })
+
   const submit = () => {
     if (!validateStep(8)) return
-    toast.success('Application submitted successfully', { description: 'We\'ll review and respond within 24 hours.' })
-    setStep(9)
+    submitMutation.mutate()
   }
 
-  const appNumber = React.useMemo(() => `APP-2024-${Math.floor(1000 + Math.random() * 9000)}`, [])
-
   if (step === 9) {
-    return <SuccessView appNumber={appNumber} onHome={() => router.push('/portal')} />
+    return <SuccessView appNumber={appNumber || 'APP-'} onHome={() => router.push('/portal')} />
+  }
+
+  // Loading state: fetch apply link
+  if (applyLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="max-w-md w-full text-center">
+          <div className="h-12 w-12 rounded-2xl bg-success/15 text-success flex items-center justify-center mx-auto mb-4">
+            <Loader2 className="h-6 w-6 animate-spin" />
+          </div>
+          <p className="text-sm font-medium">Loading your application…</p>
+          <p className="text-xs text-muted-foreground mt-1">Verifying your secure link</p>
+          <Skeleton className="h-2 w-48 mx-auto mt-6 rounded-full" />
+        </div>
+      </div>
+    )
+  }
+
+  // Error state: invalid/expired/used link
+  if (applyError || (!applyData && !applyLoading)) {
+    const err = applyError instanceof ApiRequestError ? applyError.message : 'This application link is no longer valid.'
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="max-w-md w-full text-center">
+          <div className="h-14 w-14 rounded-2xl bg-destructive/15 text-destructive flex items-center justify-center mx-auto mb-4">
+            <Wallet className="h-7 w-7" />
+          </div>
+          <h1 className="text-xl font-bold mb-2">Application link unavailable</h1>
+          <p className="text-sm text-muted-foreground mb-6">{err}</p>
+          <Button asChild variant="outline">
+            <Link href="/"><Home className="h-4 w-4" /> Return Home</Link>
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   const currentStepKey = STEPS[step]?.key
@@ -380,12 +493,14 @@ export default function ApplyPage() {
                     <AgreementStep
                       form={form}
                       update={update}
-                      agreementBody={activeAgreement.body}
-                      agreementName={activeAgreement.name}
-                      agreementVersion={activeAgreement.version}
+                      agreementBody={activeAgreement?.body ?? ''}
+                      agreementName={activeAgreement?.name ?? 'Loan Agreement'}
+                      agreementVersion={activeAgreement?.version ?? '1.0'}
                     />
                   )}
-                  {step === 8 && <ReviewStep form={form} preview={preview} />}
+                  {step === 8 && (
+                    <ReviewStep form={form} preview={preview} submitLoading={submitMutation.isPending} onSubmit={submit} />
+                  )}
                 </motion.div>
               </AnimatePresence>
             </div>
@@ -394,7 +509,7 @@ export default function ApplyPage() {
             {step > 0 && step < 9 && (
               <div className="sticky bottom-0 left-0 right-0 bg-background/85 backdrop-blur-xl border-t border-border px-4 sm:px-6 lg:px-8 py-3 lg:py-4 mt-6">
                 <div className="max-w-2xl mx-auto w-full flex items-center gap-3">
-                  <Button variant="outline" onClick={back} className="min-h-[44px]">
+                  <Button variant="outline" onClick={back} className="min-h-[44px]" disabled={submitMutation.isPending}>
                     <ArrowLeft className="h-4 w-4" /> Back
                   </Button>
                   <div className="flex-1" />
@@ -403,8 +518,8 @@ export default function ApplyPage() {
                       Next <ArrowRight className="h-4 w-4" />
                     </Button>
                   ) : (
-                    <Button onClick={submit} className="min-h-[44px] min-w-[160px] bg-success hover:bg-success/90">
-                      <CheckCircle2 className="h-4 w-4" /> Submit Application
+                    <Button onClick={submit} className="min-h-[44px] min-w-[160px] bg-success hover:bg-success/90" disabled={submitMutation.isPending}>
+                      {submitMutation.isPending ? <><Loader2 className="h-4 w-4 animate-spin" /> Submitting…</> : <><CheckCircle2 className="h-4 w-4" /> Submit Application</>}
                     </Button>
                   )}
                 </div>
@@ -439,7 +554,7 @@ function StepHeader({ icon, title, subtitle }: { icon: React.ReactNode; title: s
   )
 }
 
-function WelcomeStep({ preConfig }: { preConfig: typeof TOKEN_PRECONFIG[string] | undefined }) {
+function WelcomeStep({ preConfig }: { preConfig: ApplyPreConfig | null }) {
   return (
     <div>
       <StepHeader
@@ -459,7 +574,7 @@ function WelcomeStep({ preConfig }: { preConfig: typeof TOKEN_PRECONFIG[string] 
           <div className="grid grid-cols-3 gap-3">
             <div>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Principal</p>
-              <p className="text-lg font-bold mt-1 tabular-nums">{formatPaiseToINR(preConfig.principalPaise)}</p>
+              <p className="text-lg font-bold mt-1 tabular-nums">{formatPaiseToINR(Number(preConfig.principalAmount))}</p>
             </div>
             <div>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Frequency</p>
@@ -500,7 +615,7 @@ function WelcomeStep({ preConfig }: { preConfig: typeof TOKEN_PRECONFIG[string] 
   )
 }
 
-function LoanInfoStep({ form, update, preview, preConfig }: { form: FormState; update: <K extends keyof FormState>(k: K, v: FormState[K]) => void; preview: any; preConfig: typeof TOKEN_PRECONFIG[string] | undefined }) {
+function LoanInfoStep({ form, update, preview, preConfig }: { form: FormState; update: <K extends keyof FormState>(k: K, v: FormState[K]) => void; preview: any; preConfig: ApplyPreConfig | null }) {
   return (
     <div>
       <StepHeader
@@ -1061,7 +1176,7 @@ function SignaturePad({ value, onChange }: { value: string | null; onChange: (da
   )
 }
 
-function ReviewStep({ form, preview }: { form: FormState; preview: any }) {
+function ReviewStep({ form, preview }: { form: FormState; preview: any; submitLoading?: boolean; onSubmit?: () => void }) {
   return (
     <div>
       <StepHeader

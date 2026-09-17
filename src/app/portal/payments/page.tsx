@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   CreditCard, Banknote, Smartphone, Wallet, Lock, CheckCircle2,
   Clock, ChevronRight, Receipt, AlertCircle, PiggyBank, Building,
@@ -14,12 +15,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
 import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { toast } from 'sonner'
-import { candidateLoan, candidatePayments } from '@/lib/mock-data'
+import { api } from '@/lib/api-client'
 import { formatPaiseToINR } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
@@ -49,12 +51,53 @@ const METHOD_ICON: Record<string, React.ReactNode> = {
   BANK_TRANSFER: <Building className="h-3 w-3" />,
 }
 
-export default function PaymentsPage() {
-  const loan = candidateLoan
-  const nextInstallmentAmount = loan.installmentAmount
-  const lastPayment = candidatePayments.find((p) => p.status === 'ALLOCATED')
+interface CandidateLoan {
+  id: string
+  loanNumber?: string
+  installmentAmount: string
+  status: string
+  nextDue?: { installmentNumber: number; dueDate: string; totalDue: string } | null
+}
 
+interface PaymentRow {
+  id: string
+  paymentNumber: string
+  loanNumber: string
+  amount: string
+  method: string
+  status: string
+  reference?: string | null
+  receiptNumber?: string | null
+  allocatedFees: string
+  allocatedInterest: string
+  allocatedPrincipal: string
+  createdAt: string
+  allocatedAt?: string | null
+}
+
+function fmtDate(d?: string | null) {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+export default function PaymentsPage() {
+  const queryClient = useQueryClient()
   const [payOpen, setPayOpen] = React.useState(false)
+
+  const { data: loan } = useQuery({
+    queryKey: ['candidate-loan'],
+    queryFn: () => api.get<CandidateLoan>('/api/candidate/loan'),
+    retry: false,
+  })
+
+  const { data: paymentsData, isLoading } = useQuery({
+    queryKey: ['candidate-payments'],
+    queryFn: () => api.get<{ items: PaymentRow[]; total: number }>('/api/candidate/payments?pageSize=100'),
+  })
+  const payments = paymentsData?.items ?? []
+  const lastPayment = payments.find((p) => p.status === 'ALLOCATED')
+  const nextInstallmentAmount = loan?.nextDue?.totalDue ?? loan?.installmentAmount ?? '0'
+  const nextDue = loan?.nextDue
 
   return (
     <div className="space-y-6">
@@ -64,49 +107,48 @@ export default function PaymentsPage() {
         icon={<CreditCard className="h-5 w-5" />}
       />
 
-      {/* Pay next installment hero */}
-      <FadeIn>
-        <Card className="shadow-premium overflow-hidden border-success/15 bg-gradient-to-br from-success/10 via-card to-card">
-          <CardContent className="p-4 sm:p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="flex items-start gap-3.5">
-                <div className="h-12 w-12 rounded-2xl bg-success/15 text-success flex items-center justify-center flex-shrink-0">
-                  <CreditCard className="h-6 w-6" />
+      {loan && loan.loanNumber ? (
+        <FadeIn>
+          <Card className="shadow-premium overflow-hidden border-success/15 bg-gradient-to-br from-success/10 via-card to-card">
+            <CardContent className="p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="h-12 w-12 rounded-2xl bg-success/15 text-success flex items-center justify-center flex-shrink-0">
+                    <CreditCard className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Pay Next Installment</p>
+                    <p className="text-2xl sm:text-3xl font-bold mt-0.5 tabular-nums">{formatPaiseToINR(Number(nextInstallmentAmount))}</p>
+                    <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5" /> Due {fmtDate(nextDue?.dueDate)} · Installment #{nextDue?.installmentNumber ?? '—'}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider">Pay Next Installment</p>
-                  <p className="text-2xl sm:text-3xl font-bold mt-0.5 tabular-nums">{formatPaiseToINR(nextInstallmentAmount)}</p>
-                  <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1.5">
-                    <Clock className="h-3.5 w-3.5" /> Due {loan.nextDueDate} · Installment #2
-                  </p>
-                </div>
+                <Button size="lg" onClick={() => setPayOpen(true)} className="min-h-[44px]">
+                  <CreditCard className="h-4 w-4" /> Pay Now
+                </Button>
               </div>
-              <Button size="lg" onClick={() => setPayOpen(true)} className="min-h-[44px]">
-                <CreditCard className="h-4 w-4" /> Pay Now
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </FadeIn>
+            </CardContent>
+          </Card>
+        </FadeIn>
+      ) : null}
 
-      {/* Allocation breakdown + payment history */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Allocation breakdown */}
         <FadeIn>
           <Card className="shadow-premium h-full border-info/15">
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2"><PiggyBank className="h-4 w-4" /> Last Payment Allocation</CardTitle>
               <CardDescription className="text-xs">
-                {lastPayment ? `${lastPayment.paymentNumber} · ${lastPayment.date}` : '—'}
+                {lastPayment ? `${lastPayment.paymentNumber} · ${fmtDate(lastPayment.allocatedAt ?? lastPayment.createdAt)}` : '—'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {lastPayment ? (
                 <>
-                  <AllocRow label="Total Paid" amount={lastPayment.amount} highlight />
-                  <AllocRow label="Towards Principal" amount={lastPayment.allocatedPrincipal ?? 0} icon={<Wallet className="h-4 w-4" />} tint="text-primary" />
-                  <AllocRow label="Towards Interest" amount={lastPayment.allocatedInterest ?? 0} icon={<Banknote className="h-4 w-4" />} tint="text-info" />
-                  <AllocRow label="Towards Fees" amount={0} icon={<Receipt className="h-4 w-4" />} tint="text-warning" />
+                  <AllocRow label="Total Paid" amount={Number(lastPayment.amount)} highlight />
+                  <AllocRow label="Towards Principal" amount={Number(lastPayment.allocatedPrincipal)} icon={<Wallet className="h-4 w-4" />} tint="text-primary" />
+                  <AllocRow label="Towards Interest" amount={Number(lastPayment.allocatedInterest)} icon={<Banknote className="h-4 w-4" />} tint="text-info" />
+                  <AllocRow label="Towards Fees" amount={Number(lastPayment.allocatedFees)} icon={<Receipt className="h-4 w-4" />} tint="text-warning" />
                   <div className="pt-2 mt-2 border-t border-border">
                     <p className="text-[11px] text-muted-foreground">Allocation order: Fees → Interest → Principal</p>
                   </div>
@@ -118,7 +160,6 @@ export default function PaymentsPage() {
           </Card>
         </FadeIn>
 
-        {/* Payment history */}
         <FadeIn delay={0.05} className="lg:col-span-2">
           <Card className="shadow-premium h-full">
             <CardHeader className="pb-3">
@@ -129,7 +170,7 @@ export default function PaymentsPage() {
                   </div>
                   <div>
                     <CardTitle className="text-base">Payment History</CardTitle>
-                    <CardDescription className="text-xs">{candidatePayments.length} payments</CardDescription>
+                    <CardDescription className="text-xs">{payments.length} payments</CardDescription>
                   </div>
                 </div>
                 <Button asChild variant="ghost" size="sm">
@@ -138,11 +179,15 @@ export default function PaymentsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {candidatePayments.length === 0 ? (
+              {isLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}
+                </div>
+              ) : payments.length === 0 ? (
                 <EmptyState icon={<Receipt className="h-6 w-6" />} title="No payments yet" description="Your payment history will appear here." />
               ) : (
                 <StaggerContainer className="space-y-3">
-                  {candidatePayments.map((p) => (
+                  {payments.map((p) => (
                     <StaggerItem key={p.id}>
                       <div className="rounded-xl border border-border bg-card p-3.5 hover:border-primary/40 hover:shadow-premium transition-all">
                         <div className="flex items-start gap-3">
@@ -153,13 +198,13 @@ export default function PaymentsPage() {
                             <div className="flex items-start justify-between gap-2 flex-wrap">
                               <div>
                                 <p className="font-mono text-xs text-muted-foreground font-semibold">{p.paymentNumber}</p>
-                                <p className="text-sm font-bold mt-0.5 tabular-nums">{formatPaiseToINR(p.amount)}</p>
+                                <p className="text-sm font-bold mt-0.5 tabular-nums">{formatPaiseToINR(Number(p.amount))}</p>
                               </div>
                               <StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge>
                             </div>
                             <div className="flex items-center gap-2 mt-2 flex-wrap">
                               <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                                <Clock className="h-3 w-3" /> {p.date}
+                                <Clock className="h-3 w-3" /> {fmtDate(p.allocatedAt ?? p.createdAt)}
                               </span>
                               <span
                                 className={cn(
@@ -167,7 +212,7 @@ export default function PaymentsPage() {
                                   METHOD_BADGE_VARIANT[p.method] === 'warning' ? 'bg-warning/15 text-warning' : 'bg-info/15 text-info'
                                 )}
                               >
-                                {METHOD_ICON[p.method]} {METHOD_LABEL[p.method]}
+                                {METHOD_ICON[p.method]} {METHOD_LABEL[p.method] ?? p.method}
                               </span>
                             </div>
                             {(p.status === 'ALLOCATED' || p.status === 'VERIFIED') && p.receiptNumber && (
@@ -194,7 +239,18 @@ export default function PaymentsPage() {
         </FadeIn>
       </div>
 
-      <PayNowDialog open={payOpen} onOpenChange={setPayOpen} amount={nextInstallmentAmount} dueDate={loan.nextDueDate} />
+      <PayNowDialog
+        open={payOpen}
+        onOpenChange={setPayOpen}
+        amount={nextInstallmentAmount}
+        loanId={loan?.id}
+        dueDate={nextDue?.dueDate}
+        installmentNumber={nextDue?.installmentNumber}
+        onPaid={() => {
+          queryClient.invalidateQueries({ queryKey: ['candidate-payments'] })
+          queryClient.invalidateQueries({ queryKey: ['candidate-loan'] })
+        }}
+      />
     </div>
   )
 }
@@ -211,21 +267,45 @@ function AllocRow({ label, amount, icon, tint, highlight }: { label: string; amo
   )
 }
 
-function PayNowDialog({ open, onOpenChange, amount, dueDate }: { open: boolean; onOpenChange: (v: boolean) => void; amount: number; dueDate: string }) {
+function PayNowDialog({ open, onOpenChange, amount, loanId, dueDate, installmentNumber, onPaid }: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  amount: string
+  loanId?: string
+  dueDate?: string
+  installmentNumber?: number
+  onPaid?: () => void
+}) {
   const [method, setMethod] = React.useState<Method>('ONLINE_UPI')
   const [upiId, setUpiId] = React.useState('')
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      if (!loanId) throw new Error('No active loan')
+      return api.post<{ id: string; paymentNumber: string; status: string }>('/api/candidate/payments', {
+        loanId,
+        amount,
+        method,
+        reference: method === 'ONLINE_UPI' && upiId ? `UPI-${upiId}` : null,
+      })
+    },
+    onSuccess: (res) => {
+      toast.success('Payment initiated', {
+        description: `${formatPaiseToINR(Number(amount))} via ${METHOD_LABEL[method]} · ${res.paymentNumber}. You'll receive a confirmation shortly.`,
+      })
+      onPaid?.()
+      setUpiId(''); setMethod('ONLINE_UPI')
+      onOpenChange(false)
+    },
+    onError: (e: Error) => toast.error('Failed to initiate payment', { description: e.message }),
+  })
 
   const submit = () => {
     if (method === 'ONLINE_UPI' && !upiId.trim()) {
       toast.error('Enter your UPI ID')
       return
     }
-    toast.success('Payment initiated', {
-      description: `${formatPaiseToINR(amount)} via ${METHOD_LABEL[method]} · You'll receive a confirmation shortly.`,
-    })
-    setUpiId('')
-    setMethod('ONLINE_UPI')
-    onOpenChange(false)
+    mutation.mutate()
   }
 
   const METHODS: { key: Method; label: string; desc: string; icon: React.ReactNode }[] = [
@@ -239,17 +319,15 @@ function PayNowDialog({ open, onOpenChange, amount, dueDate }: { open: boolean; 
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><CreditCard className="h-4 w-4" /> Pay Installment</DialogTitle>
-          <DialogDescription>Installment #2 due {dueDate}</DialogDescription>
+          <DialogDescription>Installment #{installmentNumber ?? '—'} due {dueDate ? new Date(dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          {/* Amount display */}
           <div className="rounded-xl bg-muted/40 p-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wider">Amount Payable</p>
-            <p className="text-2xl font-bold mt-1 tabular-nums">{formatPaiseToINR(amount)}</p>
+            <p className="text-2xl font-bold mt-1 tabular-nums">{formatPaiseToINR(Number(amount))}</p>
             <p className="text-[11px] text-muted-foreground mt-1">Read-only · This is your scheduled installment amount</p>
           </div>
 
-          {/* Method selection */}
           <div className="space-y-2">
             <Label>Payment Method</Label>
             <RadioGroup value={method} onValueChange={(v) => setMethod(v as Method)} className="grid grid-cols-1 gap-2">
@@ -268,7 +346,6 @@ function PayNowDialog({ open, onOpenChange, amount, dueDate }: { open: boolean; 
             </RadioGroup>
           </div>
 
-          {/* UPI ID input */}
           {method === 'ONLINE_UPI' && (
             <div className="space-y-1.5">
               <Label htmlFor="upi">UPI ID</Label>
@@ -284,7 +361,7 @@ function PayNowDialog({ open, onOpenChange, amount, dueDate }: { open: boolean; 
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit}>
+          <Button onClick={submit} disabled={mutation.isPending}>
             <Lock className="h-4 w-4" /> Pay Securely
           </Button>
         </DialogFooter>

@@ -36,6 +36,10 @@ model Organization {
   qrLinks        QrLink[]
   payments       Payment[]
   collectionTasks CollectionTask[]
+  webhookEvents  WebhookEvent[]
+  reconciliationRuns ReconciliationRun[]
+  reconciliationExceptions ReconciliationException[]
+  aiInsights    AiInsight[]
 }
 
 enum UserRole {
@@ -53,12 +57,15 @@ model User {
   phone          String?
   role           UserRole
   isActive       Boolean  @default(true)
+  failedLoginAttempts Int @default(0)
+  lockedUntil    DateTime?
   lastLoginAt    DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   organization       Organization      @relation(fields: [organizationId], references: [id])
   agentProfile       AgentProfile?
+  sessions           Session[]
   auditLogs          AuditLog[]
   notifications      Notification[]
   qrLinks            QrLink[]
@@ -74,6 +81,24 @@ model User {
   @@index([organizationId])
   @@index([role])
 }
+
+model Session {
+  id          String   @id @default(cuid())
+  token       String   @unique
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  ipAddr      String?
+  userAgent   String?
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+}
+
+// Optional: candidate userId if candidate is also a portal user
+// Candidate does not necessarily have a User record unless they sign in.
 
 model AgentProfile {
   id             String   @id @default(cuid())
@@ -100,6 +125,7 @@ model AgentProfile {
 model Candidate {
   id             String   @id @default(cuid())
   organizationId String
+  userId        String?  @unique  // link to User for candidate portal login
   fullName       String
   mobile         String
   email          String?
@@ -113,6 +139,8 @@ model Candidate {
   bankAccount    String?
   bankIfsc       String?
   upiId          String?
+  aadhaarMasked  String?
+  panMasked      String?
   assignedAgentId String?
   status         CandidateStatus @default(ACTIVE)
   createdAt      DateTime @default(now())
@@ -359,6 +387,9 @@ model Installment {
   feesComponent   Int
   totalDue        Int
   closingPrincipal Int
+  paidFees        Int @default(0)
+  paidInterest    Int @default(0)
+  paidPrincipal   Int @default(0)
   paidAmount      Int @default(0)
   status          InstallmentStatus @default(UPCOMING)
   paidAt          DateTime?
@@ -367,6 +398,7 @@ model Installment {
 
   loan    Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
 
+  @@unique([loanId, installmentNumber])
   @@index([loanId])
   @@index([status])
   @@index([dueDate])
@@ -439,6 +471,8 @@ model Payment {
   reference      String?
   proofUrl       String?
   status         PaymentStatus @default(INITIATED)
+  idempotencyKey String?  @unique
+  providerEventId String? @unique
   // Allocation breakdown
   allocatedFees      Int @default(0)
   allocatedInterest Int @default(0)
@@ -903,3 +937,91 @@ model AuditLog {
   @@index([userId])
   @@index([entityType, entityId])
 }
+
+// ============================================================
+// WEBHOOK EVENTS (idempotent provider event log)
+// ============================================================
+
+model WebhookEvent {
+  id             String   @id @default(cuid())
+  organizationId String?
+  provider       String  // e.g. "razorpay", "stripe", "mock"
+  eventId        String?  // provider's event id
+  signature      String?
+  rawPayload     Json
+  processed      Boolean  @default(false)
+  processingError String?
+  receivedAt     DateTime @default(now())
+  processedAt    DateTime?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  @@index([provider, eventId])
+  @@index([organizationId])
+}
+
+// ============================================================
+// RECONCILIATION
+// ============================================================
+
+model ReconciliationRun {
+  id             String   @id @default(cuid())
+  organizationId String
+  runNumber      String
+  periodStart    DateTime
+  periodEnd      DateTime
+  totalExpected  Int
+  totalCaptured   Int
+  totalAllocated  Int
+  exceptionsCount Int @default(0)
+  status         String @default("COMPLETED") // COMPLETED / FAILED
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+}
+
+model ReconciliationException {
+  id             String   @id @default(cuid())
+  organizationId String
+  runId          String?
+  type          String   // DUPLICATE_PROVIDER_EVENT, MISSING_PAYMENT, etc.
+  severity      String   // LOW / MEDIUM / HIGH
+  description   String
+  reference     String?
+  resolvedAt    DateTime?
+  resolutionNotes String?
+  createdAt     DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([runId])
+}
+
+// ============================================================
+// AI INSIGHTS (advisory only — never authoritative)
+// ============================================================
+
+model AiInsight {
+  id             String   @id @default(cuid())
+  organizationId String
+  candidateId    String?
+  loanId         String?
+  signalType     String   // PAYMENT_DELAY, REPEATED_MISSED_INSTALLMENTS, etc.
+  level          String   // LOW / MEDIUM / HIGH
+  title          String
+  reasons        Json
+  suggestedAction String?
+  isResolved     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([loanId])
+  @@index([candidateId])
+}
+
+// Add relations on Organization for new models
+// (already has via above)

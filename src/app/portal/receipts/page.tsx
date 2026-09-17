@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   FileText, Download, Eye, Mail, Wallet, Banknote, Receipt,
   CheckCircle2, Smartphone, Building, CreditCard, IndianRupee,
@@ -10,11 +11,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
 import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { candidatePayments, candidateLoan } from '@/lib/mock-data'
+import { api } from '@/lib/api-client'
 import { formatPaiseToINR } from '@/lib/money'
 import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
@@ -39,40 +41,31 @@ interface ReceiptRow {
   id: string
   receiptNumber: string
   paymentNumber: string
-  amount: number
+  loanNumber: string
+  amount: string
   method: string
-  date: string
-  status: string
-  allocatedPrincipal?: number
-  allocatedInterest?: number
+  allocatedFees: string
+  allocatedInterest: string
+  allocatedPrincipal: string
+  allocatedAt?: string | null
+  reference?: string | null
+}
+
+function fmtDate(d?: string | null) {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export default function ReceiptsPage() {
   const { user } = useSession()
-  const candidateName = user?.name || 'Priya Sharma'
-  const candidateMobile = user?.phone || '+91 98202 77889'
+  const candidateName = user?.name || 'Candidate'
+  const candidateMobile = user?.phone || '—'
 
-  // Derive receipts from candidatePayments where status is ALLOCATED or VERIFIED
-  const receipts: ReceiptRow[] = candidatePayments
-    .filter((p) => p.status === 'ALLOCATED' || p.status === 'VERIFIED')
-    .map((p) => ({
-      id: p.id,
-      receiptNumber: p.receiptNumber || `RCP-${p.id.toUpperCase()}`,
-      paymentNumber: p.paymentNumber,
-      amount: p.amount,
-      method: p.method,
-      date: p.date,
-      status: p.status,
-      allocatedPrincipal: p.allocatedPrincipal,
-      allocatedInterest: p.allocatedInterest,
-    }))
-
-  // Synthesize 2 more historical receipts for a fuller page
-  const extraReceipts: ReceiptRow[] = [
-    { id: 'r3', receiptNumber: 'RCP-2024-8832', paymentNumber: 'PAY-2024-8810', amount: 742500, method: 'ONLINE_UPI', date: '12 Jul 2024', status: 'ALLOCATED', allocatedPrincipal: 500000, allocatedInterest: 242500 },
-  ]
-
-  const allReceipts = [...receipts, ...extraReceipts]
+  const { data, isLoading } = useQuery({
+    queryKey: ['candidate-receipts'],
+    queryFn: () => api.get<{ items: ReceiptRow[] }>('/api/candidate/receipts'),
+  })
+  const receipts = data?.items ?? []
 
   const [open, setOpen] = React.useState(false)
   const [active, setActive] = React.useState<ReceiptRow | null>(null)
@@ -101,16 +94,20 @@ export default function ReceiptsPage() {
               </div>
               <div>
                 <CardTitle className="text-base">All Receipts</CardTitle>
-                <CardDescription className="text-xs">{allReceipts.length} official receipts</CardDescription>
+                <CardDescription className="text-xs">{receipts.length} official receipts</CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            {allReceipts.length === 0 ? (
+            {isLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+              </div>
+            ) : receipts.length === 0 ? (
               <EmptyState icon={<FileText className="h-6 w-6" />} title="No receipts yet" description="Your receipts will appear here after your first successful payment." />
             ) : (
               <StaggerContainer className="space-y-3">
-                {allReceipts.map((r) => (
+                {receipts.map((r) => (
                   <StaggerItem key={r.id}>
                     <div className="rounded-xl border border-border bg-card p-3.5 flex items-center gap-3 hover:border-primary/40 hover:shadow-premium transition-all">
                       <div className="h-10 w-10 rounded-xl bg-success/10 text-success flex items-center justify-center flex-shrink-0">
@@ -120,11 +117,11 @@ export default function ReceiptsPage() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-mono text-xs font-semibold">{r.receiptNumber}</p>
                           <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                            {METHOD_ICON[r.method]} {METHOD_LABEL[r.method]}
+                            {METHOD_ICON[r.method]} {METHOD_LABEL[r.method] ?? r.method}
                           </span>
                         </div>
-                        <p className="text-sm font-bold mt-1 tabular-nums">{formatPaiseToINR(r.amount)}</p>
-                        <p className="text-[11px] text-muted-foreground">{r.paymentNumber} · {r.date}</p>
+                        <p className="text-sm font-bold mt-1 tabular-nums">{formatPaiseToINR(Number(r.amount))}</p>
+                        <p className="text-[11px] text-muted-foreground">{r.paymentNumber} · {fmtDate(r.allocatedAt)}</p>
                       </div>
                       <div className="flex flex-col sm:flex-row gap-1.5">
                         <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => onView(r)}>
@@ -143,7 +140,6 @@ export default function ReceiptsPage() {
         </Card>
       </FadeIn>
 
-      {/* Receipt dialog */}
       <ReceiptDialog
         open={open}
         onOpenChange={setOpen}
@@ -169,11 +165,10 @@ function ReceiptDialog({
   onEmail: (r: ReceiptRow) => void
 }) {
   if (!receipt) return null
-  const principal = receipt.allocatedPrincipal ?? 0
-  const interest = receipt.allocatedInterest ?? 0
-  const fees = 0
-  const totalPaid = receipt.amount
-  const remaining = candidateLoan.outstandingPrincipal + candidateLoan.outstandingInterest - principal
+  const principal = Number(receipt.allocatedPrincipal)
+  const interest = Number(receipt.allocatedInterest)
+  const fees = Number(receipt.allocatedFees)
+  const totalPaid = Number(receipt.amount)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -183,9 +178,7 @@ function ReceiptDialog({
           <DialogDescription>Official receipt for your payment</DialogDescription>
         </DialogHeader>
 
-        {/* Receipt body */}
         <div className="rounded-xl border border-border overflow-hidden">
-          {/* Header */}
           <div className="bg-success/10 p-4 border-b border-success/20">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
@@ -197,17 +190,16 @@ function ReceiptDialog({
                   <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Official Payment Receipt</p>
                 </div>
               </div>
-              <StatusBadge variant={receipt.status}>{formatStatus(receipt.status)}</StatusBadge>
+              <StatusBadge variant="ALLOCATED">Allocated</StatusBadge>
             </div>
           </div>
 
-          {/* Receipt details */}
           <div className="p-4 space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <DetailRow label="Receipt Number" value={receipt.receiptNumber} mono />
-              <DetailRow label="Date" value={receipt.date} />
+              <DetailRow label="Date" value={fmtDate(receipt.allocatedAt)} />
               <DetailRow label="Payment Number" value={receipt.paymentNumber} mono />
-              <DetailRow label="Method" value={METHOD_LABEL[receipt.method]} />
+              <DetailRow label="Method" value={METHOD_LABEL[receipt.method] ?? receipt.method} />
             </div>
 
             <div className="pt-3 border-t border-border">
@@ -218,11 +210,9 @@ function ReceiptDialog({
 
             <div className="pt-3 border-t border-border">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Loan</p>
-              <p className="text-sm font-medium font-mono">{candidateLoan.loanNumber}</p>
-              <p className="text-[11px] text-muted-foreground">{candidateLoan.frequency.charAt(0) + candidateLoan.frequency.slice(1).toLowerCase()} · Installment #1</p>
+              <p className="text-sm font-medium font-mono">{receipt.loanNumber}</p>
             </div>
 
-            {/* Payment breakdown */}
             <div className="pt-3 border-t border-border space-y-2">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Payment Breakdown</p>
               <BreakRow icon={<IndianRupee className="h-3.5 w-3.5" />} label="Principal" amount={principal} tint="text-primary" />
@@ -232,11 +222,6 @@ function ReceiptDialog({
                 <span className="text-sm font-semibold">Total Paid</span>
                 <span className="text-base font-bold tabular-nums">{formatPaiseToINR(totalPaid)}</span>
               </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-3 border-t border-border bg-muted/20 -mx-4 -mb-4 px-4 py-3">
-              <span className="text-xs text-muted-foreground">Remaining Balance</span>
-              <span className="text-sm font-semibold tabular-nums">{formatPaiseToINR(Math.max(0, remaining))}</span>
             </div>
           </div>
         </div>

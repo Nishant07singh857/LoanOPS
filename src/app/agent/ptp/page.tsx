@@ -2,19 +2,21 @@
 
 import * as React from 'react'
 import Link from 'next/link'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Handshake, CheckCircle2, XCircle, MessageCircle, Ban, Plus,
+  Handshake, CheckCircle2, XCircle, MessageCircle, Plus,
   Calendar, Filter, X, Clock, ChevronRight, StickyNote,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { KPICard } from '@/components/ui/kpi-card'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
 import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -23,7 +25,7 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { agentPtps, agentCandidates } from '@/lib/mock-data'
+import { api } from '@/lib/api-client'
 import { formatPaiseToINR } from '@/lib/money'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
 import { cn } from '@/lib/utils'
@@ -40,33 +42,84 @@ const CHIPS: { key: ChipKey; label: string }[] = [
 
 const initials = (n: string) => n.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
 
+interface PtpRow {
+  id: string
+  promisedAmount: string
+  promiseDate: string
+  status: string
+  notes?: string | null
+  fulfilledAt?: string | null
+  brokenAt?: string | null
+  candidate: { id: string; fullName: string; mobile: string }
+  loan: { loanNumber: string }
+  createdAt: string
+}
+
+interface CandidateRow {
+  id: string
+  fullName: string
+  mobile: string
+  activeLoanNumbers: string[]
+}
+
+function fmtDate(d?: string | null) {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function isToday(d: Date) {
+  const n = new Date()
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate()
+}
+
 export default function AgentPtpPage() {
+  const queryClient = useQueryClient()
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [newOpen, setNewOpen] = React.useState(false)
 
-  const filtered = React.useMemo(() => {
-    if (chip === 'ALL') return agentPtps
-    return agentPtps.filter((p) => p.status === chip)
-  }, [chip])
+  const { data, isLoading } = useQuery({
+    queryKey: ['agent-ptp', chip],
+    queryFn: () => api.get<{ items: PtpRow[]; total: number }>(
+      `/api/agent/ptp?pageSize=100${chip !== 'ALL' ? `&status=${chip}` : ''}`
+    ),
+  })
 
-  const activeCount = agentPtps.filter((p) => p.status === 'ACTIVE').length
-  const fulfilledCount = agentPtps.filter((p) => p.status === 'FULFILLED').length
-  const brokenCount = agentPtps.filter((p) => p.status === 'BROKEN').length
-  const dueTodayCount = agentPtps.filter((p) => p.promiseDate === '22 Sep 2024').length
+  const all = data?.items ?? []
 
-  const onFulfilled = (id: string, name: string) => toast.success('PTP fulfilled', { description: `${name}'s PTP ${id} marked FULFILLED.` })
-  const onBroken = (id: string, name: string) => toast.error('PTP marked broken', { description: `${name}'s PTP ${id} marked BROKEN.` })
-  const onCancel = (id: string) => toast.info('PTP cancelled', { description: `PTP ${id} has been CANCELLED.` })
-  const onReminder = (p: typeof agentPtps[number]) => {
-    const cand = agentCandidates.find((c) => c.name === p.candidateName)
+  const activeCount = all.filter((p) => p.status === 'ACTIVE').length
+  const fulfilledCount = all.filter((p) => p.status === 'FULFILLED').length
+  const brokenCount = all.filter((p) => p.status === 'BROKEN').length
+  const dueTodayCount = all.filter((p) => p.status === 'ACTIVE' && isToday(new Date(p.promiseDate))).length
+
+  const fulfillMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/api/agent/ptp/${id}/fulfill`),
+    onSuccess: () => {
+      toast.success('PTP fulfilled')
+      queryClient.invalidateQueries({ queryKey: ['agent-ptp'] })
+      queryClient.invalidateQueries({ queryKey: ['agent-dashboard'] })
+    },
+    onError: (e: Error) => toast.error('Failed', { description: e.message }),
+  })
+
+  const breakMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/api/agent/ptp/${id}/break`),
+    onSuccess: () => {
+      toast.error('PTP marked broken')
+      queryClient.invalidateQueries({ queryKey: ['agent-ptp'] })
+      queryClient.invalidateQueries({ queryKey: ['agent-dashboard'] })
+    },
+    onError: (e: Error) => toast.error('Failed', { description: e.message }),
+  })
+
+  const onReminder = (p: PtpRow) => {
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.PTP_REMINDER, {
-      candidateName: p.candidateName,
-      loanNumber: p.loanNumber,
-      amount: (p.promisedAmount / 100).toLocaleString('en-IN'),
-      dueDate: p.promiseDate,
+      candidateName: p.candidate.fullName,
+      loanNumber: p.loan.loanNumber,
+      amount: (Number(p.promisedAmount) / 100).toLocaleString('en-IN'),
+      dueDate: fmtDate(p.promiseDate),
     })
-    openWhatsApp(cand?.mobile || '', msg)
-    toast.success('WhatsApp reminder sent', { description: `Reminder sent to ${p.candidateName}` })
+    openWhatsApp(p.candidate.mobile, msg)
+    toast.success('WhatsApp reminder sent', { description: `Reminder sent to ${p.candidate.fullName}` })
   }
 
   return (
@@ -117,87 +170,85 @@ export default function AgentPtpPage() {
         </Card>
       </FadeIn>
 
-      {filtered.length === 0 ? (
-        <EmptyState icon={<Handshake className="h-6 w-6" />} title="No PTPs in this view" />
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-44 w-full" />)}
+        </div>
+      ) : all.length === 0 ? (
+        <EmptyState icon={<Handshake className="h-6 w-6" />} title="No PTPs in this view" description="Create a PTP to see it here." />
       ) : (
         <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-          {filtered.map((p) => {
-            const cand = agentCandidates.find((c) => c.name === p.candidateName)
-            return (
-              <StaggerItem key={p.id}>
-                <Card className="shadow-premium hover:border-primary/40 hover:shadow-glow transition-all h-full">
-                  <CardContent className="p-4">
-                    <div className="flex items-start gap-3">
-                      <Avatar className="h-10 w-10 flex-shrink-0">
-                        <AvatarFallback className={cn(
-                          'text-xs font-semibold',
-                          p.status === 'BROKEN' ? 'bg-destructive/10 text-destructive' :
-                          p.status === 'FULFILLED' ? 'bg-success/10 text-success' :
-                          p.status === 'CANCELLED' ? 'bg-muted text-muted-foreground' :
-                          'bg-info/10 text-info'
-                        )}>
-                          {initials(p.candidateName)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-2 flex-wrap">
-                          <div className="min-w-0">
-                            <Link href={`/agent/candidates/${cand?.id || 'c1'}`} className="text-sm font-semibold hover:text-primary">
-                              {p.candidateName}
-                            </Link>
-                            <p className="font-mono text-[11px] text-muted-foreground">{p.loanNumber}</p>
-                          </div>
-                          <StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge>
+          {all.map((p) => (
+            <StaggerItem key={p.id}>
+              <Card className="shadow-premium hover:border-primary/40 hover:shadow-glow transition-all h-full">
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <Avatar className="h-10 w-10 flex-shrink-0">
+                      <AvatarFallback className={cn(
+                        'text-xs font-semibold',
+                        p.status === 'BROKEN' ? 'bg-destructive/10 text-destructive' :
+                        p.status === 'FULFILLED' ? 'bg-success/10 text-success' :
+                        p.status === 'CANCELLED' ? 'bg-muted text-muted-foreground' :
+                        'bg-info/10 text-info'
+                      )}>
+                        {initials(p.candidate.fullName)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2 flex-wrap">
+                        <div className="min-w-0">
+                          <Link href={`/agent/candidates/${p.candidate.id}`} className="text-sm font-semibold hover:text-primary">
+                            {p.candidate.fullName}
+                          </Link>
+                          <p className="font-mono text-[11px] text-muted-foreground">{p.loan.loanNumber}</p>
                         </div>
-                        <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-border">
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Promised</p>
-                            <p className="text-sm font-bold tabular-nums">{formatPaiseToINR(p.promisedAmount)}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Promise Date</p>
-                            <p className="text-sm inline-flex items-center gap-1">
-                              <Calendar className="h-3 w-3 text-muted-foreground" /> {p.promiseDate}
-                            </p>
-                          </div>
-                        </div>
-                        {p.notes && (
-                          <p className="text-xs text-muted-foreground mt-2 inline-flex items-start gap-1.5">
-                            <StickyNote className="h-3 w-3 mt-0.5 flex-shrink-0" /> {p.notes}
-                          </p>
-                        )}
-                        {p.status === 'ACTIVE' && (
-                          <div className="flex flex-wrap gap-2 mt-3">
-                            <Button size="sm" variant="outline" className="h-8" onClick={() => onFulfilled(p.id, p.candidateName)}>
-                              <CheckCircle2 className="h-3.5 w-3.5" /> Fulfilled
-                            </Button>
-                            <Button size="sm" variant="outline" className="h-8 text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => onBroken(p.id, p.candidateName)}>
-                              <XCircle className="h-3.5 w-3.5" /> Broken
-                            </Button>
-                            <Button size="sm" variant="outline" className="h-8 text-info border-info/40 hover:bg-info/10" onClick={() => onReminder(p)}>
-                              <MessageCircle className="h-3.5 w-3.5" /> Reminder
-                            </Button>
-                            <Button size="sm" variant="ghost" className="h-8 ml-auto" onClick={() => onCancel(p.id)}>
-                              <Ban className="h-3.5 w-3.5" /> Cancel
-                            </Button>
-                          </div>
-                        )}
-                        {p.status !== 'ACTIVE' && (
-                          <div className="flex justify-end mt-3">
-                            <Button asChild size="sm" variant="ghost" className="h-8">
-                              <Link href={`/agent/candidates/${cand?.id || 'c1'}`}>
-                                Open <ChevronRight className="h-3.5 w-3.5" />
-                              </Link>
-                            </Button>
-                          </div>
-                        )}
+                        <StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge>
                       </div>
+                      <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-border">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Promised</p>
+                          <p className="text-sm font-bold tabular-nums">{formatPaiseToINR(Number(p.promisedAmount))}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Promise Date</p>
+                          <p className="text-sm inline-flex items-center gap-1">
+                            <Calendar className="h-3 w-3 text-muted-foreground" /> {fmtDate(p.promiseDate)}
+                          </p>
+                        </div>
+                      </div>
+                      {p.notes && (
+                        <p className="text-xs text-muted-foreground mt-2 inline-flex items-start gap-1.5">
+                          <StickyNote className="h-3 w-3 mt-0.5 flex-shrink-0" /> {p.notes}
+                        </p>
+                      )}
+                      {p.status === 'ACTIVE' && (
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          <Button size="sm" variant="outline" className="h-8" disabled={fulfillMutation.isPending} onClick={() => fulfillMutation.mutate(p.id)}>
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Fulfilled
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-8 text-destructive border-destructive/40 hover:bg-destructive/10" disabled={breakMutation.isPending} onClick={() => breakMutation.mutate(p.id)}>
+                            <XCircle className="h-3.5 w-3.5" /> Broken
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-8 text-info border-info/40 hover:bg-info/10" onClick={() => onReminder(p)}>
+                            <MessageCircle className="h-3.5 w-3.5" /> Reminder
+                          </Button>
+                        </div>
+                      )}
+                      {p.status !== 'ACTIVE' && (
+                        <div className="flex justify-end mt-3">
+                          <Button asChild size="sm" variant="ghost" className="h-8">
+                            <Link href={`/agent/candidates/${p.candidate.id}`}>
+                              Open <ChevronRight className="h-3.5 w-3.5" />
+                            </Link>
+                          </Button>
+                        </div>
+                      )}
                     </div>
-                  </CardContent>
-                </Card>
-              </StaggerItem>
-            )
-          })}
+                  </div>
+                </CardContent>
+              </Card>
+            </StaggerItem>
+          ))}
         </StaggerContainer>
       )}
 
@@ -207,18 +258,59 @@ export default function AgentPtpPage() {
 }
 
 function NewPtpDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const [candidate, setCandidate] = React.useState('')
-  const [loan, setLoan] = React.useState('')
+  const queryClient = useQueryClient()
+  const { data: candidatesData } = useQuery({
+    queryKey: ['agent-candidates-for-ptp'],
+    queryFn: () => api.get<{ items: CandidateRow[] }>('/api/agent/candidates?pageSize=100'),
+  })
+  const candidates = candidatesData?.items ?? []
+
+  const [candidateId, setCandidateId] = React.useState('')
+  const [loanNumber, setLoanNumber] = React.useState('')
+  const [loanId, setLoanId] = React.useState('')
   const [amount, setAmount] = React.useState('')
   const [promiseDate, setPromiseDate] = React.useState('')
   const [notes, setNotes] = React.useState('')
 
-  const selectedCand = agentCandidates.find((c) => c.name === candidate)
+  const createMutation = useMutation({
+    mutationFn: () => {
+      if (!loanId) throw new Error('Select a candidate with an active loan')
+      return api.post('/api/agent/ptp', {
+        candidateId,
+        loanId,
+        promisedAmount: amount,
+        promiseDate,
+        notes,
+      })
+    },
+    onSuccess: () => {
+      toast.success('PTP created', { description: `${candidates.find((c) => c.id === candidateId)?.fullName ?? ''} promised ${amount}` })
+      queryClient.invalidateQueries({ queryKey: ['agent-ptp'] })
+      queryClient.invalidateQueries({ queryKey: ['agent-dashboard'] })
+      setCandidateId(''); setLoanId(''); setLoanNumber(''); setAmount(''); setPromiseDate(''); setNotes('')
+      onOpenChange(false)
+    },
+    onError: (e: Error) => toast.error('Failed to create PTP', { description: e.message }),
+  })
+
+  const onCandidateChange = (v: string) => {
+    setCandidateId(v)
+    const c = candidates.find((c) => c.id === v)
+    if (c) {
+      setLoanNumber(c.activeLoanNumbers[0] ?? '')
+      // We need the loanId — not directly returned. We'll have to fetch the candidate detail.
+      // Simpler: fetch from /api/agent/candidates/[id] but that's overhead. For now, fetch loans on demand.
+      // Actually the API returns activeLoanNumbers but no IDs. Let me query the candidate detail:
+      api.get<any>(`/api/agent/candidates/${v}`).then((res) => {
+        const loan = res.loans?.find((l: any) => l.status === 'ACTIVE')
+        if (loan) setLoanId(loan.id)
+      }).catch(() => {})
+    }
+  }
 
   const submit = () => {
-    toast.success('PTP created', { description: `${candidate || 'Candidate'} promised ${amount || '—'} by ${promiseDate || '—'}.` })
-    setCandidate(''); setLoan(''); setAmount(''); setPromiseDate(''); setNotes('')
-    onOpenChange(false)
+    if (!candidateId || !amount || !promiseDate) { toast.error('Candidate, amount and date are required'); return }
+    createMutation.mutate()
   }
 
   return (
@@ -231,26 +323,23 @@ function NewPtpDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v:
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label>Candidate</Label>
-            <Select
-              value={candidate}
-              onValueChange={(v) => { setCandidate(v); setLoan(agentCandidates.find((c) => c.name === v)?.loanNumber || '') }}
-            >
+            <Select value={candidateId} onValueChange={onCandidateChange}>
               <SelectTrigger className="w-full"><SelectValue placeholder="Select candidate" /></SelectTrigger>
               <SelectContent>
-                {agentCandidates.map((c) => (
-                  <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                {candidates.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.fullName} · {c.mobile}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
             <Label>Loan</Label>
-            <Input value={loan || (selectedCand?.loanNumber || '')} readOnly className="bg-muted/30 font-mono text-xs" />
+            <Input value={loanNumber || '—'} readOnly className="bg-muted/30 font-mono text-xs" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Amount (₹)</Label>
-              <Input placeholder="e.g. 7,425" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <Input placeholder="e.g. 5000" value={amount} onChange={(e) => setAmount(e.target.value)} type="text" inputMode="decimal" />
             </div>
             <div className="space-y-1.5">
               <Label>Promise Date</Label>
@@ -264,7 +353,7 @@ function NewPtpDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v:
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit}>Create PTP</Button>
+          <Button onClick={submit} disabled={createMutation.isPending}>Create PTP</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

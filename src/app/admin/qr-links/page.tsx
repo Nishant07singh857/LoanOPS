@@ -1,15 +1,16 @@
 'use client'
 
 import * as React from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  QrCode, Plus, Copy, Download, RefreshCw, Ban, CheckCircle2, XCircle, Clock, ExternalLink,
+  QrCode, Plus, Copy, Download, RefreshCw, Ban, CheckCircle2, Clock, ExternalLink,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { FadeIn, StaggerContainer, StaggerItem } from '@/components/ui/motion'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -21,45 +22,84 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { qrLinks } from '@/lib/mock-data'
+import { api } from '@/lib/api-client'
 import { formatPaiseToINR } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
+interface QrLinkRow {
+  id: string
+  token: string
+  prePrincipal?: number | null
+  preInterestType?: string | null
+  preInterestRate?: number | null
+  preFrequency?: string | null
+  preInstallments?: number | null
+  prePurpose?: string | null
+  expiresAt?: string | null
+  isRevoked: boolean
+  isUsed: boolean
+  submittedAt?: string | null
+  createdAt: string
+  createdBy: string | null
+  application?: { applicationNumber: string; status: string; candidate: { fullName: string; mobile: string } } | null
+}
+
+function fmtDate(d?: string | null) {
+  if (!d) return '—'
+  const date = new Date(d)
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function isExpired(expiresAt?: string | null) {
+  if (!expiresAt) return false
+  return new Date(expiresAt) < new Date()
+}
+
 export default function QrLinksPage() {
-  const [links, setLinks] = React.useState(qrLinks)
+  const queryClient = useQueryClient()
+  const { data } = useQuery({
+    queryKey: ['owner-qr-links'],
+    queryFn: () => api.get<{ items: QrLinkRow[]; total: number }>('/api/owner/qr-links?pageSize=100'),
+  })
+  const links = data?.items ?? []
   const [open, setOpen] = React.useState(false)
-  const [generated, setGenerated] = React.useState<string | null>(null)
+  const [generated, setGenerated] = useStateOrNull<string | null>(null)
+
   const [prePrincipal, setPrePrincipal] = React.useState('')
   const [preFreq, setPreFreq] = React.useState<'DAILY' | 'WEEKLY' | 'MONTHLY' | ''>('')
   const [preInstallments, setPreInstallments] = React.useState('')
   const [expiry, setExpiry] = React.useState('7')
 
-  const fmtStatus = (l: typeof qrLinks[number]) => {
+  const fmtStatus = (l: QrLinkRow) => {
     if (l.isRevoked) return { variant: 'REJECTED', label: 'Revoked' }
     if (l.isUsed) return { variant: 'COMPLETED', label: 'Used' }
-    if (l.expiresAt && /expired/i.test(l.expiresAt)) return { variant: 'REJECTED', label: 'Expired' }
+    if (isExpired(l.expiresAt)) return { variant: 'REJECTED', label: 'Expired' }
     return { variant: 'ACTIVE', label: 'Active' }
   }
 
+  const createMutation = useMutation({
+    mutationFn: (input: any) => api.post('/api/owner/qr-links', input),
+    onSuccess: (data: any) => {
+      toast.success('QR Link generated', { description: 'Link is ready to share with the candidate.' })
+      const url = `${window.location.origin}/apply/${data.token}`
+      setGenerated(url)
+      queryClient.invalidateQueries({ queryKey: ['owner-qr-links'] })
+      setOpen(false)
+      setPrePrincipal(''); setPreFreq(''); setPreInstallments(''); setExpiry('7')
+    },
+    onError: (err: any) => toast.error('Generation failed', { description: err.message }),
+  })
+
   const generate = () => {
-    const token = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
-    const newLink = {
-      id: `q${links.length + 1}`,
-      token,
-      prePrincipal: prePrincipal ? Number(prePrincipal) * 100 : undefined,
-      preFrequency: preFreq || undefined,
-      preInstallments: preInstallments ? Number(preInstallments) : undefined,
-      createdBy: 'Ravi Mehta',
-      createdAt: 'Just now',
-      expiresAt: `${expiry} days`,
-      isRevoked: false,
-      isUsed: false,
-    }
-    setLinks([newLink, ...links])
-    setGenerated(`https://apply.sterlinglending.in/q/${token}`)
-    toast.success('QR Link generated', { description: 'Link is ready to share with the candidate.' })
-    setOpen(false)
-    setPrePrincipal(''); setPreFreq(''); setPreInstallments(''); setExpiry('7')
+    const expiryDate = new Date(Date.now() + Number(expiry || 7) * 24 * 60 * 60 * 1000).toISOString()
+    createMutation.mutate({
+      prePrincipal: prePrincipal ? Math.round(Number(prePrincipal) * 100) : null,
+      preInterestType: 'PERCENTAGE',
+      preInterestRate: 1800,
+      preFrequency: preFreq || null,
+      preInstallments: preInstallments ? Number(preInstallments) : null,
+      expiresAt: expiryDate,
+    })
   }
 
   const copyLink = (link: string) => {
@@ -67,16 +107,21 @@ export default function QrLinksPage() {
     toast.success('Link copied', { description: link })
   }
 
-  const revoke = (id: string) => {
-    setLinks((prev) => prev.map((l) => l.id === id ? { ...l, isRevoked: true } : l))
-    toast.error('Link revoked', { description: 'The candidate can no longer use this link.' })
-  }
+  const revokeMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/api/owner/qr-links/${id}/revoke`, {}),
+    onSuccess: () => {
+      toast.error('Link revoked', { description: 'The candidate can no longer use this link.' })
+      queryClient.invalidateQueries({ queryKey: ['owner-qr-links'] })
+    },
+  })
 
-  const regenerate = (id: string) => {
-    const t = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
-    setLinks((prev) => prev.map((l) => l.id === id ? { ...l, token: t, isRevoked: false, isUsed: false, createdAt: 'Just now' } : l))
-    toast.success('Link regenerated', { description: `New token: ${t.slice(0, 8)}...` })
-  }
+  const regenerateMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/api/owner/qr-links/${id}/regenerate`, {}),
+    onSuccess: (data: any) => {
+      toast.success('Link regenerated', { description: `New token: ${data.token.slice(0, 8)}...` })
+      queryClient.invalidateQueries({ queryKey: ['owner-qr-links'] })
+    },
+  })
 
   return (
     <div className="space-y-6">
@@ -92,7 +137,7 @@ export default function QrLinksPage() {
       />
 
       <StaggerContainer className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-        <StaggerItem><Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Active Links</p><p className="text-2xl font-bold tabular-nums text-success">{links.filter((l) => !l.isRevoked && !l.isUsed).length}</p></CardContent></Card></StaggerItem>
+        <StaggerItem><Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Active Links</p><p className="text-2xl font-bold tabular-nums text-success">{links.filter((l) => !l.isRevoked && !l.isUsed && !isExpired(l.expiresAt)).length}</p></CardContent></Card></StaggerItem>
         <StaggerItem><Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Used</p><p className="text-2xl font-bold tabular-nums">{links.filter((l) => l.isUsed).length}</p></CardContent></Card></StaggerItem>
         <StaggerItem><Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Revoked</p><p className="text-2xl font-bold tabular-nums text-destructive">{links.filter((l) => l.isRevoked).length}</p></CardContent></Card></StaggerItem>
         <StaggerItem><Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Generated</p><p className="text-2xl font-bold tabular-nums">{links.length}</p></CardContent></Card></StaggerItem>
@@ -123,30 +168,30 @@ export default function QrLinksPage() {
                       <TableRow key={l.id}>
                         <TableCell className="pl-6 font-mono text-xs">{l.token.slice(0, 12)}...</TableCell>
                         <TableCell className="text-xs">
-                          {l.prePrincipal || l.preFreq || l.preInstallments ? (
+                          {l.prePrincipal || l.preFrequency || l.preInstallments ? (
                             <div className="space-y-0.5">
-                              {l.prePrincipal && <div>{formatPaiseToINR(l.prePrincipal)}</div>}
-                              {l.preFreq && <div className="text-muted-foreground">{l.preFreq.toLowerCase()} · {l.preInstallments} inst.</div>}
+                              {l.prePrincipal ? <div>{formatPaiseToINR(l.prePrincipal)}</div> : null}
+                              {l.preFrequency && <div className="text-muted-foreground">{l.preFrequency.toLowerCase()} · {l.preInstallments ?? '?'} inst.</div>}
                             </div>
                           ) : (
                             <span className="text-muted-foreground">— no pre-config</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-xs">{l.createdBy}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{l.createdAt}</TableCell>
-                        <TableCell className="text-xs">{l.expiresAt || '—'}</TableCell>
-                        <TableCell><StatusBadge variant={s.variant}>{s.label}</StatusBadge></TableCell>
-                        <TableCell className="text-xs font-mono">{l.applicationNumber || '—'}</TableCell>
+                        <TableCell className="text-xs">{l.createdBy ?? '—'}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{fmtDate(l.createdAt)}</TableCell>
+                        <TableCell className="text-xs">{fmtDate(l.expiresAt)}</TableCell>
+                        <TableCell><StatusBadge variant={s.variant as any}>{s.label}</StatusBadge></TableCell>
+                        <TableCell className="text-xs font-mono">{l.application?.applicationNumber ?? '—'}</TableCell>
                         <TableCell className="text-right pr-6">
                           <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="sm" onClick={() => copyLink(`https://apply.sterlinglending.in/q/${l.token}`)} title="Copy">
+                            <Button variant="ghost" size="sm" onClick={() => copyLink(`${window.location.origin}/apply/${l.token}`)} title="Copy">
                               <Copy className="h-3.5 w-3.5" />
                             </Button>
-                            <Button variant="ghost" size="sm" onClick={() => regenerate(l.id)} title="Regenerate">
+                            <Button variant="ghost" size="sm" onClick={() => regenerateMutation.mutate(l.id)} title="Regenerate">
                               <RefreshCw className="h-3.5 w-3.5" />
                             </Button>
                             {!l.isRevoked && (
-                              <Button variant="ghost" size="sm" onClick={() => revoke(l.id)} title="Revoke" className="text-destructive">
+                              <Button variant="ghost" size="sm" onClick={() => revokeMutation.mutate(l.id)} title="Revoke" className="text-destructive">
                                 <Ban className="h-3.5 w-3.5" />
                               </Button>
                             )}
@@ -167,21 +212,21 @@ export default function QrLinksPage() {
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <p className="font-mono text-xs">{l.token.slice(0, 16)}...</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">by {l.createdBy}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">by {l.createdBy ?? '—'}</p>
                         </div>
-                        <StatusBadge variant={s.variant}>{s.label}</StatusBadge>
+                        <StatusBadge variant={s.variant as any}>{s.label}</StatusBadge>
                       </div>
                       <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-border text-xs">
-                        {l.prePrincipal && <div><p className="text-muted-foreground">Principal</p><p className="font-medium">{formatPaiseToINR(l.prePrincipal)}</p></div>}
-                        {l.preFreq && <div><p className="text-muted-foreground">Frequency</p><p className="font-medium">{l.preFreq}</p></div>}
+                        {l.prePrincipal ? <div><p className="text-muted-foreground">Principal</p><p className="font-medium">{formatPaiseToINR(l.prePrincipal)}</p></div> : null}
+                        {l.preFrequency && <div><p className="text-muted-foreground">Frequency</p><p className="font-medium">{l.preFrequency}</p></div>}
                         {l.preInstallments && <div><p className="text-muted-foreground">Installments</p><p className="font-medium">{l.preInstallments}</p></div>}
-                        <div><p className="text-muted-foreground">Expires</p><p className="font-medium">{l.expiresAt || '—'}</p></div>
+                        <div><p className="text-muted-foreground">Expires</p><p className="font-medium">{fmtDate(l.expiresAt)}</p></div>
                       </div>
                       <div className="flex gap-2 mt-3">
-                        <Button size="sm" variant="outline" className="flex-1" onClick={() => copyLink(`https://apply.sterlinglending.in/q/${l.token}`)}><Copy className="h-3.5 w-3.5" /> Copy</Button>
-                        <Button size="sm" variant="outline" onClick={() => regenerate(l.id)}><RefreshCw className="h-3.5 w-3.5" /></Button>
+                        <Button size="sm" variant="outline" className="flex-1" onClick={() => copyLink(`${window.location.origin}/apply/${l.token}`)}><Copy className="h-3.5 w-3.5" /> Copy</Button>
+                        <Button size="sm" variant="outline" onClick={() => regenerateMutation.mutate(l.id)}><RefreshCw className="h-3.5 w-3.5" /></Button>
                         {!l.isRevoked && (
-                          <Button size="sm" variant="outline" onClick={() => revoke(l.id)} className="text-destructive border-destructive/40"><Ban className="h-3.5 w-3.5" /></Button>
+                          <Button size="sm" variant="outline" onClick={() => revokeMutation.mutate(l.id)} className="text-destructive border-destructive/40"><Ban className="h-3.5 w-3.5" /></Button>
                         )}
                       </div>
                     </div>
@@ -193,7 +238,6 @@ export default function QrLinksPage() {
         </Card>
       </FadeIn>
 
-      {/* Generate Modal */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
@@ -237,12 +281,13 @@ export default function QrLinksPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={generate}><QrCode className="h-4 w-4" /> Generate Link</Button>
+            <Button onClick={generate} disabled={createMutation.isPending}>
+              {createMutation.isPending ? 'Generating…' : <><QrCode className="h-4 w-4" /> Generate Link</>}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Generated link display */}
       <Dialog open={!!generated} onOpenChange={(o) => !o && setGenerated(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -250,7 +295,6 @@ export default function QrLinksPage() {
             <DialogDescription>Share this link with the candidate or print the QR code.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {/* QR placeholder */}
             <div className="flex justify-center">
               <div className="h-44 w-44 rounded-2xl border-2 border-dashed border-border p-3 bg-white">
                 <QrPattern />
@@ -274,8 +318,11 @@ export default function QrLinksPage() {
   )
 }
 
+function useStateOrNull<T>(initial: T) {
+  return React.useState<T>(initial)
+}
+
 function QrPattern() {
-  // CSS-rendered pseudo QR pattern
   const cells = Array.from({ length: 144 }, (_, i) => Math.random() > 0.5)
   return (
     <div className="grid grid-cols-12 gap-0 h-full w-full">

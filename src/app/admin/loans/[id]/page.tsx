@@ -1,12 +1,12 @@
 'use client'
 
 import * as React from 'react'
-import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Landmark, Banknote, Receipt, FileText, ClipboardList, ScrollText,
   FileSignature, MessageCircle, Eye, Calendar, Phone, User, Wallet,
-  TrendingUp, CreditCard, AlertCircle, ChevronRight, Building2,
+  CreditCard, AlertCircle, Building2,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
 import { FadeIn, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
@@ -26,74 +27,187 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
-import { loans, candidatePayments } from '@/lib/mock-data'
+import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatBpsToPercent } from '@/lib/money'
-import { generateSchedulePreview, type ScheduleInput } from '@/lib/financial-engine'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
 import { cn } from '@/lib/utils'
 
-const isOverdue = (next?: string) => !!next && /OVERDUE/i.test(next)
+interface LoanDetail {
+  id: string
+  loanNumber: string
+  candidateId: string
+  principalAmount: string
+  interestType: string
+  interestRate?: number | null
+  fixedInterest?: string | null
+  frequency: string
+  installments: number
+  installmentAmount: string
+  totalRepayable: string
+  outstandingPrincipal: string
+  outstandingInterest: string
+  outstandingFees: string
+  totalCollected: string
+  firstDueDate: string
+  finalDueDate: string
+  processingFee?: string | null
+  otherFees?: string | null
+  status: string
+  disbursedAt?: string | null
+  closedAt?: string | null
+  createdAt: string
+  candidate: {
+    id: string
+    fullName: string
+    mobile: string
+    email?: string | null
+    address?: string | null
+    occupation?: string | null
+    employer?: string | null
+    monthlyIncome?: number | null
+    bankName?: string | null
+    bankAccount?: string | null
+    bankIfsc?: string | null
+    upiId?: string | null
+    aadhaarMasked?: string | null
+    panMasked?: string | null
+    assignedAgent?: { id: string; name: string; phone?: string | null } | null
+  }
+  schedule: Array<{
+    id: string
+    installmentNumber: number
+    dueDate: string
+    openingPrincipal: string
+    principalComponent: string
+    interestComponent: string
+    feesComponent: string
+    totalDue: string
+    closingPrincipal: string
+    paidFees: string
+    paidInterest: string
+    paidPrincipal: string
+    paidAmount: string
+    status: string
+    paidAt?: string | null
+  }>
+  payments: Array<{
+    id: string
+    paymentNumber: string
+    amount: string
+    method: string
+    status: string
+    receiptNumber?: string | null
+    reference?: string | null
+    allocatedPrincipal: string
+    allocatedInterest: string
+    allocatedFees: string
+    createdAt: string
+    allocatedAt?: string | null
+  }>
+  disbursements: Array<{
+    id: string
+    method: string
+    amount: string
+    status: string
+    reference?: string | null
+    notes?: string | null
+    initiatedAt: string
+    completedAt?: string | null
+    initiatedBy: string
+  }>
+  ptps: Array<{
+    id: string
+    promisedAmount: string
+    promiseDate: string
+    status: string
+    notes?: string | null
+    agent: string
+    createdAt: string
+  }>
+  escalations: Array<{
+    id: string
+    reason: string
+    status: string
+    description?: string | null
+    agent: string
+    createdAt: string
+  }>
+}
 
-function firstDueDateFromLoan(l: typeof loans[number]): Date {
-  const today = new Date()
-  if (l.frequency === 'MONTHLY') today.setMonth(today.getMonth() + 1)
-  else if (l.frequency === 'WEEKLY') today.setDate(today.getDate() + 7)
-  else today.setDate(today.getDate() + 1)
-  return today
+function fmtDate(d?: string | null) {
+  if (!d) return '—'
+  const date = new Date(d)
+  if (isNaN(date.getTime())) return '—'
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function fmtDateTime(d?: string | null) {
+  if (!d) return '—'
+  const date = new Date(d)
+  if (isNaN(date.getTime())) return '—'
+  return date.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 export default function LoanDetailPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
-  const loan = loans.find((l) => l.id === params.id) || loans[0]
+  const queryClient = useQueryClient()
+
+  const { data: loan, isLoading } = useQuery({
+    queryKey: ['owner-loan', params.id],
+    queryFn: () => api.get<LoanDetail>(`/api/owner/loans/${params.id}`),
+    enabled: !!params.id,
+  })
+
   const [disburseOpen, setDisburseOpen] = React.useState(false)
-  const overdue = isOverdue(loan.nextDueDate)
 
-  const scheduleInput: ScheduleInput = {
-    principalPaise: BigInt(loan.principalAmount),
-    interestType: loan.interestType,
-    interestRateBps: BigInt(loan.interestRate || 0),
-    fixedInterestPaise: BigInt(loan.fixedInterest || 0),
-    frequency: loan.frequency,
-    installments: loan.installments,
-    firstDueDate: firstDueDateFromLoan(loan),
-    processingFeePaise: BigInt(0),
-    otherFeesPaise: BigInt(0),
+  const disburseMutation = useMutation({
+    mutationFn: (input: { method: 'ONLINE' | 'OFFLINE'; reference?: string; notes?: string }) =>
+      api.post(`/api/owner/loans/${params.id}/disburse`, {
+        method: input.method,
+        amount: loan?.principalAmount,
+        reference: input.reference,
+        notes: input.notes,
+      }),
+    onSuccess: (data: any) => {
+      toast.success('Disbursement initiated', {
+        description: `${data.method} · ${formatPaiseToINR(Number(data.amount))} to ${loan?.candidate.fullName}`,
+      })
+      queryClient.invalidateQueries({ queryKey: ['owner-loan', params.id] })
+      queryClient.invalidateQueries({ queryKey: ['owner-loans'] })
+      queryClient.invalidateQueries({ queryKey: ['owner-dashboard'] })
+      setDisburseOpen(false)
+    },
+    onError: (err: any) => toast.error('Disbursement failed', { description: err.message }),
+  })
+
+  if (isLoading || !loan) {
+    return (
+      <div className="space-y-6">
+        <Button variant="ghost" size="sm" onClick={() => router.push('/admin/loans')} className="gap-1">
+          <ArrowLeft className="h-4 w-4" /> Back to Loans
+        </Button>
+        <Card className="shadow-premium"><CardContent className="p-4 space-y-3">
+          {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
+        </CardContent></Card>
+      </div>
+    )
   }
-  const preview = generateSchedulePreview(scheduleInput)
 
-  const fmtDate = (d: Date) => d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  const overdue = loan.status === 'ACTIVE'
+    && loan.schedule.some((s) => s.status === 'OVERDUE' || (s.status === 'DUE' && new Date(s.dueDate) < new Date()))
 
   const onWhatsApp = () => {
+    const nextDue = loan.schedule.find((s) => s.status !== 'PAID' && s.status !== 'UPCOMING') ?? loan.schedule.find((s) => s.status === 'UPCOMING')
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.PAYMENT_REMINDER, {
-      candidateName: loan.candidateName,
+      candidateName: loan.candidate.fullName,
       loanNumber: loan.loanNumber,
-      amount: (loan.installmentAmount / 100).toLocaleString('en-IN'),
-      dueDate: loan.nextDueDate || 'soon',
+      amount: (Number(loan.installmentAmount) / 100).toLocaleString('en-IN'),
+      dueDate: nextDue ? fmtDate(nextDue.dueDate) : 'soon',
     })
-    openWhatsApp(loan.mobile, msg)
-    toast.success('WhatsApp draft opened', { description: `Reminder sent to ${loan.candidateName}` })
+    openWhatsApp(loan.candidate.mobile, msg)
+    toast.success('WhatsApp draft opened', { description: `Reminder sent to ${loan.candidate.fullName}` })
   }
-
-  const auditLog = [
-    { ts: '34m ago', actor: 'Owner', action: 'VIEWED', desc: 'Loan overview opened' },
-    { ts: '2 days ago', actor: loan.agentName || 'System', action: 'PTP_CREATED', desc: 'PTP recorded for next due' },
-    { ts: '12 Aug 2024', actor: 'Owner', action: 'DISBURSED', desc: `Disbursed ${formatPaiseToINR(loan.principalAmount)}` },
-    { ts: '11 Aug 2024', actor: 'Owner', action: 'APPROVED', desc: 'Application approved' },
-  ]
-
-  const ptps = [
-    { date: '22 Sep 2024', amount: loan.installmentAmount, status: 'ACTIVE' as const, note: 'Will pay after shop revenue' },
-  ]
-  const collections = [
-    { date: 'Today', amount: loan.installmentAmount, method: 'CASH', status: 'PENDING_VERIFICATION', ref: 'CASH-2024-4471' },
-  ]
-  const documents = [
-    { name: 'KYC — Aadhaar.pdf', size: '420 KB', uploaded: '11 Aug 2024', type: 'KYC' },
-    { name: 'KYC — PAN.pdf', size: '180 KB', uploaded: '11 Aug 2024', type: 'KYC' },
-    { name: 'Signed Agreement.pdf', size: '1.1 MB', uploaded: '12 Aug 2024', type: 'AGREEMENT' },
-    { name: 'Disbursement Receipt.pdf', size: '95 KB', uploaded: '12 Aug 2024', type: 'RECEIPT' },
-  ]
 
   return (
     <div className="space-y-6">
@@ -105,7 +219,7 @@ export default function LoanDetailPage() {
 
       <SectionHeading
         title={loan.loanNumber}
-        description={`${loan.candidateName} · ${loan.frequency} · ${loan.installments} installments`}
+        description={`${loan.candidate.fullName} · ${loan.frequency} · ${loan.installments} installments`}
         icon={<Landmark className="h-5 w-5" />}
         action={
           <>
@@ -132,13 +246,13 @@ export default function LoanDetailPage() {
                 <StatusBadge variant={overdue ? 'OVERDUE' : loan.status}>{overdue ? 'Overdue' : formatStatus(loan.status)}</StatusBadge>
                 <div>
                   <p className="text-xs text-muted-foreground">Outstanding principal</p>
-                  <p className="text-2xl font-bold tabular-nums">{formatPaiseToINR(loan.outstandingPrincipal)}</p>
+                  <p className="text-2xl font-bold tabular-nums">{formatPaiseToINR(Number(loan.outstandingPrincipal))}</p>
                 </div>
               </div>
               <div className="flex gap-6 sm:gap-10">
-                <div><p className="text-xs text-muted-foreground">Collected</p><p className="text-base font-semibold tabular-nums">{formatPaiseToINR(loan.totalCollected)}</p></div>
-                <div><p className="text-xs text-muted-foreground">Next due</p><p className={cn('text-base font-semibold', overdue ? 'text-destructive' : '')}>{loan.nextDueDate || '—'}</p></div>
-                <div className="hidden sm:block"><p className="text-xs text-muted-foreground">Disbursed</p><p className="text-base font-semibold">{loan.disbursedAt || '—'}</p></div>
+                <div><p className="text-xs text-muted-foreground">Collected</p><p className="text-base font-semibold tabular-nums">{formatPaiseToINR(Number(loan.totalCollected))}</p></div>
+                <div><p className="text-xs text-muted-foreground">Next due</p><p className={cn('text-base font-semibold', overdue ? 'text-destructive' : '')}>{fmtDate(loan.schedule.find((s) => s.status !== 'PAID' && s.status !== 'UPCOMING')?.dueDate ?? null) || '—'}</p></div>
+                <div className="hidden sm:block"><p className="text-xs text-muted-foreground">Disbursed</p><p className="text-base font-semibold">{fmtDate(loan.disbursedAt)}</p></div>
               </div>
             </div>
           </CardContent>
@@ -152,9 +266,8 @@ export default function LoanDetailPage() {
           <TabsTrigger value="payments" className="flex-1 min-w-[80px]">Payments</TabsTrigger>
           <TabsTrigger value="collections" className="flex-1 min-w-[80px]">Collections</TabsTrigger>
           <TabsTrigger value="ptp" className="flex-1 min-w-[80px]">PTP</TabsTrigger>
-          <TabsTrigger value="documents" className="flex-1 min-w-[80px]">Documents</TabsTrigger>
+          <TabsTrigger value="disbursement" className="flex-1 min-w-[80px]">Disbursement</TabsTrigger>
           <TabsTrigger value="agreement" className="flex-1 min-w-[80px]">Agreement</TabsTrigger>
-          <TabsTrigger value="audit" className="flex-1 min-w-[80px]">Audit</TabsTrigger>
         </TabsList>
 
         {/* Overview */}
@@ -166,16 +279,16 @@ export default function LoanDetailPage() {
                 <div className="flex items-center gap-3">
                   <Avatar className="h-12 w-12">
                     <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                      {loan.candidateName.split(' ').map(p => p[0]).join('').slice(0, 2)}
+                      {loan.candidate.fullName.split(' ').map(p => p[0]).join('').slice(0, 2)}
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <p className="font-semibold">{loan.candidateName}</p>
-                    <p className="text-xs text-muted-foreground flex items-center gap-1"><Phone className="h-3 w-3" /> {loan.mobile}</p>
+                    <p className="font-semibold">{loan.candidate.fullName}</p>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1"><Phone className="h-3 w-3" /> {loan.candidate.mobile}</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 pt-3 border-t border-border text-sm">
-                  <div><p className="text-xs text-muted-foreground">Agent</p><p>{loan.agentName || '—'}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Agent</p><p>{loan.candidate.assignedAgent?.name ?? '—'}</p></div>
                   <div><p className="text-xs text-muted-foreground">Loan type</p><p>{loan.interestType}</p></div>
                 </div>
               </CardContent>
@@ -185,31 +298,19 @@ export default function LoanDetailPage() {
               <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold flex items-center gap-2"><CreditCard className="h-4 w-4" /> Terms Snapshot</CardTitle></CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                  <Term label="Principal" value={formatPaiseToINR(loan.principalAmount)} />
-                  <Term label="Interest" value={loan.interestType === 'PERCENTAGE' ? `${formatBpsToPercent(loan.interestRate || 0)} (flat)` : loan.interestType === 'FIXED' ? formatPaiseToINR(loan.fixedInterest || 0) : 'No interest'} />
+                  <Term label="Principal" value={formatPaiseToINR(Number(loan.principalAmount))} />
+                  <Term label="Interest" value={loan.interestType === 'PERCENTAGE' ? `${formatBpsToPercent(loan.interestRate ?? 0)} (flat)` : loan.interestType === 'FIXED' ? formatPaiseToINR(Number(loan.fixedInterest ?? 0)) : 'No interest'} />
                   <Term label="Frequency" value={loan.frequency} />
                   <Term label="Installments" value={String(loan.installments)} />
-                  <Term label="Installment Amt" value={formatPaiseToINR(loan.installmentAmount)} />
-                  <Term label="Total Repayable" value={formatPaiseToINR(loan.totalRepayable)} />
-                  <Term label="Outstanding" value={formatPaiseToINR(loan.outstandingPrincipal)} />
-                  <Term label="Collected" value={formatPaiseToINR(loan.totalCollected)} />
-                  <Term label="Disbursed On" value={loan.disbursedAt || '—'} />
+                  <Term label="Installment Amt" value={formatPaiseToINR(Number(loan.installmentAmount))} />
+                  <Term label="Total Repayable" value={formatPaiseToINR(Number(loan.totalRepayable))} />
+                  <Term label="Outstanding" value={formatPaiseToINR(Number(loan.outstandingPrincipal))} />
+                  <Term label="Collected" value={formatPaiseToINR(Number(loan.totalCollected))} />
+                  <Term label="Disbursed On" value={fmtDate(loan.disbursedAt)} />
                 </div>
               </CardContent>
             </Card>
           </div>
-
-          <Card className="shadow-premium">
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold flex items-center gap-2"><Banknote className="h-4 w-4" /> Disbursement Information</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-                <Term label="Method" value="Bank Transfer" />
-                <Term label="Reference" value="DBR-2024-0892" />
-                <Term label="Disbursed At" value={loan.disbursedAt || '—'} />
-                <Term label="Channel" value="Online UPI" />
-              </div>
-            </CardContent>
-          </Card>
         </TabsContent>
 
         {/* Schedule */}
@@ -217,7 +318,7 @@ export default function LoanDetailPage() {
           <Card className="shadow-premium">
             <CardHeader className="pb-2">
               <CardTitle className="text-base">Installment Schedule</CardTitle>
-              <CardDescription>Live preview generated from loan terms · {preview.installments.length} installments · total {formatPaiseToINR(Number(preview.totalRepayable))}</CardDescription>
+              <CardDescription>{loan.schedule.length} installments · total {formatPaiseToINR(Number(loan.totalRepayable))}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="hidden md:block">
@@ -230,18 +331,22 @@ export default function LoanDetailPage() {
                       <TableHead className="text-right">Interest</TableHead>
                       <TableHead className="text-right">Fees</TableHead>
                       <TableHead className="text-right">Total Due</TableHead>
-                      <TableHead className="text-right pr-6">Closing Balance</TableHead>
+                      <TableHead className="text-right">Paid</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right pr-6">Closing</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {preview.installments.map((inst) => (
-                      <TableRow key={inst.number}>
-                        <TableCell className="pl-6 font-mono font-semibold">{inst.number}</TableCell>
+                    {loan.schedule.map((inst) => (
+                      <TableRow key={inst.id}>
+                        <TableCell className="pl-6 font-mono font-semibold">{inst.installmentNumber}</TableCell>
                         <TableCell><span className="inline-flex items-center gap-1.5 text-sm"><Calendar className="h-3 w-3 text-muted-foreground" /> {fmtDate(inst.dueDate)}</span></TableCell>
-                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(inst.principal))}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(inst.interest))}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(inst.fees))}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(inst.principalComponent))}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(inst.interestComponent))}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(inst.feesComponent))}</TableCell>
                         <TableCell className="text-right tabular-nums font-medium">{formatPaiseToINR(Number(inst.totalDue))}</TableCell>
+                        <TableCell className="text-right tabular-nums text-muted-foreground">{formatPaiseToINR(Number(inst.paidAmount))}</TableCell>
+                        <TableCell><StatusBadge variant={inst.status}>{formatStatus(inst.status)}</StatusBadge></TableCell>
                         <TableCell className="text-right tabular-nums pr-6 text-muted-foreground">{formatPaiseToINR(Number(inst.closingPrincipal))}</TableCell>
                       </TableRow>
                     ))}
@@ -249,16 +354,17 @@ export default function LoanDetailPage() {
                 </Table>
               </div>
               <div className="md:hidden space-y-3">
-                {preview.installments.map((inst) => (
-                  <div key={inst.number} className="rounded-xl border border-border p-3">
+                {loan.schedule.map((inst) => (
+                  <div key={inst.id} className="rounded-xl border border-border p-3">
                     <div className="flex items-center justify-between">
-                      <span className="font-mono font-semibold text-primary text-sm">#{inst.number}</span>
-                      <span className="text-xs text-muted-foreground">{fmtDate(inst.dueDate)}</span>
+                      <span className="font-mono font-semibold text-primary text-sm">#{inst.installmentNumber}</span>
+                      <StatusBadge variant={inst.status}>{formatStatus(inst.status)}</StatusBadge>
                     </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">{fmtDate(inst.dueDate)}</p>
                     <p className="text-lg font-bold mt-1 tabular-nums">{formatPaiseToINR(Number(inst.totalDue))}</p>
                     <div className="grid grid-cols-3 gap-1 mt-2 pt-2 border-t border-border text-xs">
-                      <div><p className="text-muted-foreground">Principal</p><p className="tabular-nums">{formatPaiseToINR(Number(inst.principal))}</p></div>
-                      <div><p className="text-muted-foreground">Interest</p><p className="tabular-nums">{formatPaiseToINR(Number(inst.interest))}</p></div>
+                      <div><p className="text-muted-foreground">Principal</p><p className="tabular-nums">{formatPaiseToINR(Number(inst.principalComponent))}</p></div>
+                      <div><p className="text-muted-foreground">Interest</p><p className="tabular-nums">{formatPaiseToINR(Number(inst.interestComponent))}</p></div>
                       <div><p className="text-muted-foreground">Balance</p><p className="tabular-nums">{formatPaiseToINR(Number(inst.closingPrincipal))}</p></div>
                     </div>
                   </div>
@@ -273,34 +379,40 @@ export default function LoanDetailPage() {
           <Card className="shadow-premium">
             <CardHeader className="pb-2"><CardTitle className="text-base">Payments</CardTitle><CardDescription>Recorded payments against this loan</CardDescription></CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/40">
-                    <TableHead className="pl-6">Payment #</TableHead>
-                    <TableHead>Method</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right pr-6">Receipt</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {candidatePayments.map((p) => (
-                    <TableRow key={p.id}>
-                      <TableCell className="pl-6 font-mono">{p.paymentNumber}</TableCell>
-                      <TableCell><span className="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium">{p.method.replace(/_/g, ' ')}</span></TableCell>
-                      <TableCell className="text-sm">{p.date}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatPaiseToINR(p.amount)}</TableCell>
-                      <TableCell><StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge></TableCell>
-                      <TableCell className="text-right pr-6">
-                        <Button variant="ghost" size="sm" onClick={() => toast.info(`Opening receipt ${p.receiptNumber}`)}>
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
+              {loan.payments.length === 0 ? (
+                <EmptyState icon={<Wallet className="h-6 w-6" />} title="No payments yet" description="Payments will appear here once the candidate pays or agents record cash." />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/40">
+                      <TableHead className="pl-6">Payment #</TableHead>
+                      <TableHead>Method</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right pr-6">Receipt</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {loan.payments.map((p) => (
+                      <TableRow key={p.id}>
+                        <TableCell className="pl-6 font-mono">{p.paymentNumber}</TableCell>
+                        <TableCell><span className="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium">{p.method.replace(/_/g, ' ')}</span></TableCell>
+                        <TableCell className="text-sm">{fmtDate(p.createdAt)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(p.amount))}</TableCell>
+                        <TableCell><StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge></TableCell>
+                        <TableCell className="text-right pr-6">
+                          {p.receiptNumber ? (
+                            <Button variant="ghost" size="sm" onClick={() => toast.info(`Opening receipt ${p.receiptNumber}`)}>
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          ) : '—'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -308,33 +420,19 @@ export default function LoanDetailPage() {
         {/* Collections */}
         <TabsContent value="collections">
           <Card className="shadow-premium">
-            <CardHeader className="pb-2"><CardTitle className="text-base">Cash Collections</CardTitle><CardDescription>Cash pickup records awaiting verification</CardDescription></CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-base">Cash Collections</CardTitle><CardDescription>Cash pickup records for this loan</CardDescription></CardHeader>
             <CardContent>
-              {collections.length === 0 ? (
+              {loan.disbursements.filter((d) => d.method === 'OFFLINE').length === 0 ? (
                 <EmptyState icon={<Wallet className="h-6 w-6" />} title="No cash collections recorded" description="Cash collections made by agents will appear here." />
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/40">
-                      <TableHead className="pl-6">Date</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Reference</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {collections.map((c, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="pl-6">{c.date}</TableCell>
-                        <TableCell><span className="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium">{c.method}</span></TableCell>
-                        <TableCell className="font-mono text-xs">{c.ref}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(c.amount)}</TableCell>
-                        <TableCell><StatusBadge variant={c.status}>{formatStatus(c.status)}</StatusBadge></TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <div className="space-y-2">
+                  {loan.disbursements.filter((d) => d.method === 'OFFLINE').map((d) => (
+                    <div key={d.id} className="rounded-xl border border-border p-3 flex justify-between">
+                      <span className="font-mono text-xs">{d.reference ?? '—'}</span>
+                      <span className="font-semibold tabular-nums">{formatPaiseToINR(Number(d.amount))}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>
@@ -345,20 +443,21 @@ export default function LoanDetailPage() {
           <Card className="shadow-premium">
             <CardHeader className="pb-2"><CardTitle className="text-base">Promise-to-Pay</CardTitle><CardDescription>Commitments from the candidate</CardDescription></CardHeader>
             <CardContent>
-              {ptps.length === 0 ? (
+              {loan.ptps.length === 0 ? (
                 <EmptyState icon={<ClipboardList className="h-6 w-6" />} title="No PTPs recorded" />
               ) : (
                 <div className="space-y-3">
-                  {ptps.map((p, i) => (
-                    <div key={i} className="rounded-xl border border-border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  {loan.ptps.map((p) => (
+                    <div key={p.id} className="rounded-xl border border-border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
                         <div className="flex items-center gap-2">
                           <StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge>
-                          <span className="text-sm font-medium">Promise on {p.date}</span>
+                          <span className="text-sm font-medium">Promise on {fmtDate(p.promiseDate)}</span>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1">{p.note}</p>
+                        {p.notes && <p className="text-xs text-muted-foreground mt-1">{p.notes}</p>}
+                        <p className="text-xs text-muted-foreground mt-1">By {p.agent}</p>
                       </div>
-                      <p className="text-xl font-bold tabular-nums">{formatPaiseToINR(p.amount)}</p>
+                      <p className="text-xl font-bold tabular-nums">{formatPaiseToINR(Number(p.promisedAmount))}</p>
                     </div>
                   ))}
                 </div>
@@ -367,27 +466,39 @@ export default function LoanDetailPage() {
           </Card>
         </TabsContent>
 
-        {/* Documents */}
-        <TabsContent value="documents">
+        {/* Disbursement */}
+        <TabsContent value="disbursement">
           <Card className="shadow-premium">
-            <CardHeader className="pb-2"><CardTitle className="text-base">Documents</CardTitle><CardDescription>Uploaded KYC, agreement, and receipts</CardDescription></CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-base">Disbursement Information</CardTitle><CardDescription>Records of disbursements made for this loan</CardDescription></CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {documents.map((d, i) => (
-                  <div key={i} className="rounded-xl border border-border p-4 hover:border-primary/40 hover:shadow-premium transition-all cursor-pointer" onClick={() => toast.info(`Opening ${d.name}`)}>
-                    <div className="flex items-start gap-3">
-                      <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
-                        <FileText className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{d.name}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{d.size} · {d.uploaded}</p>
-                        <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider mt-1.5">{d.type}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {loan.disbursements.length === 0 ? (
+                <EmptyState icon={<Banknote className="h-6 w-6" />} title="No disbursements yet" description="Click 'Disburse' to initiate a disbursement." />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/40">
+                      <TableHead className="pl-6">Method</TableHead>
+                      <TableHead>Reference</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Initiated By</TableHead>
+                      <TableHead>Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loan.disbursements.map((d) => (
+                      <TableRow key={d.id}>
+                        <TableCell className="pl-6"><span className="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium">{d.method}</span></TableCell>
+                        <TableCell className="font-mono text-xs">{d.reference ?? '—'}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(d.amount))}</TableCell>
+                        <TableCell><StatusBadge variant={d.status}>{formatStatus(d.status)}</StatusBadge></TableCell>
+                        <TableCell className="text-xs">{d.initiatedBy}</TableCell>
+                        <TableCell className="text-xs">{fmtDateTime(d.initiatedAt)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -395,46 +506,16 @@ export default function LoanDetailPage() {
         {/* Agreement */}
         <TabsContent value="agreement">
           <Card className="shadow-premium">
-            <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><FileSignature className="h-4 w-4" /> Agreement</CardTitle><CardDescription>Standard Personal Loan Agreement v3.1</CardDescription></CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><FileSignature className="h-4 w-4" /> Agreement</CardTitle><CardDescription>Standard Personal Loan Agreement</CardDescription></CardHeader>
             <CardContent className="space-y-4">
               <div className="rounded-xl bg-muted/40 p-4 text-sm leading-relaxed">
                 <p className="font-semibold mb-2"># Loan Agreement</p>
-                <p className="text-muted-foreground">This agreement is entered into between <strong>Sterling Lending</strong> ("Lender") and <strong>{loan.candidateName}</strong> ("Borrower"). The principal amount of <strong>{formatPaiseToINR(loan.principalAmount)}</strong> shall be repaid in <strong>{loan.installments} {loan.frequency.toLowerCase()}</strong> installments of <strong>{formatPaiseToINR(loan.installmentAmount)}</strong> each, commencing on the disbursement date.</p>
+                <p className="text-muted-foreground">This agreement is entered into between <strong>Sterling Lending</strong> ("Lender") and <strong>{loan.candidate.fullName}</strong> ("Borrower"). The principal amount of <strong>{formatPaiseToINR(Number(loan.principalAmount))}</strong> shall be repaid in <strong>{loan.installments} {loan.frequency.toLowerCase()}</strong> installments of <strong>{formatPaiseToINR(Number(loan.installmentAmount))}</strong> each, commencing on the disbursement date.</p>
                 <p className="text-muted-foreground mt-2">Interest shall be charged per the agreed terms. Late payment may attract additional charges. This agreement is governed by applicable RBI guidelines and NBFC regulations.</p>
               </div>
               <div className="flex items-center justify-between pt-3 border-t border-border">
-                <StatusBadge variant="VERIFIED">Accepted on {loan.disbursedAt || '—'}</StatusBadge>
+                <StatusBadge variant="VERIFIED">Accepted {fmtDate(loan.disbursedAt)}</StatusBadge>
                 <Button variant="outline" size="sm" onClick={() => toast.info('Generating PDF preview...')}>View Full Agreement</Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Audit */}
-        <TabsContent value="audit">
-          <Card className="shadow-premium">
-            <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><ScrollText className="h-4 w-4" /> Audit Timeline</CardTitle><CardDescription>Append-only record of changes to this loan</CardDescription></CardHeader>
-            <CardContent>
-              <div className="relative">
-                <div className="absolute left-3 top-2 bottom-2 w-px bg-border" />
-                <ul className="space-y-4">
-                  {auditLog.map((a, i) => (
-                    <li key={i} className="flex items-start gap-3">
-                      <div className="relative z-10 h-6 w-6 rounded-full bg-primary/10 text-primary flex items-center justify-center flex-shrink-0 ring-4 ring-background">
-                        <AlertCircle className="h-3 w-3" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-medium">{a.action}</p>
-                          <span className="text-xs text-muted-foreground">by {a.actor}</span>
-                          <span className="text-xs text-muted-foreground">·</span>
-                          <span className="text-xs text-muted-foreground">{a.ts}</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">{a.desc}</p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
               </div>
             </CardContent>
           </Card>
@@ -447,7 +528,12 @@ export default function LoanDetailPage() {
             <DialogTitle>Disburse Loan — {loan.loanNumber}</DialogTitle>
             <DialogDescription>Choose a channel and confirm the disbursement.</DialogDescription>
           </DialogHeader>
-          <DisburseForm loan={loan} onClose={() => setDisburseOpen(false)} />
+          <DisburseForm
+            loan={loan}
+            submitting={disburseMutation.isPending}
+            onSubmit={(input) => disburseMutation.mutate(input)}
+            onClose={() => setDisburseOpen(false)}
+          />
         </DialogContent>
       </Dialog>
     </div>
@@ -463,17 +549,15 @@ function Term({ label, value }: { label: string; value: string }) {
   )
 }
 
-function DisburseForm({ loan, onClose }: { loan: typeof loans[number]; onClose: () => void }) {
+function DisburseForm({ loan, onSubmit, onClose, submitting }: {
+  loan: LoanDetail
+  onSubmit: (input: { method: 'ONLINE' | 'OFFLINE'; reference?: string; notes?: string }) => void
+  onClose: () => void
+  submitting: boolean
+}) {
   const [channel, setChannel] = React.useState<'ONLINE' | 'OFFLINE'>('ONLINE')
   const [reference, setReference] = React.useState('')
   const [notes, setNotes] = React.useState('')
-
-  const submit = () => {
-    toast.success('Disbursement initiated', {
-      description: `${channel} · ${formatPaiseToINR(loan.principalAmount)} to ${loan.candidateName}`,
-    })
-    onClose()
-  }
 
   return (
     <div className="space-y-4">
@@ -496,7 +580,8 @@ function DisburseForm({ loan, onClose }: { loan: typeof loans[number]; onClose: 
         ))}
       </div>
       <div className="rounded-lg bg-muted/50 p-3 text-sm">
-        <div className="flex justify-between"><span className="text-muted-foreground">Principal</span><span className="font-semibold tabular-nums">{formatPaiseToINR(loan.principalAmount)}</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">Principal</span><span className="font-semibold tabular-nums">{formatPaiseToINR(Number(loan.principalAmount))}</span></div>
+        <div className="flex justify-between mt-1"><span className="text-muted-foreground">Channel</span><span className="font-medium">{channel === 'ONLINE' ? 'Online (waits for webhook)' : 'Offline (immediate)'}</span></div>
       </div>
       {channel === 'ONLINE' && (
         <div>
@@ -509,8 +594,10 @@ function DisburseForm({ loan, onClose }: { loan: typeof loans[number]; onClose: 
         <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes..." rows={3} />
       </div>
       <DialogFooter>
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button onClick={submit}>Confirm Disbursement</Button>
+        <Button variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
+        <Button onClick={() => onSubmit({ method: channel, reference, notes })} disabled={submitting}>
+          {submitting ? 'Processing…' : 'Confirm Disbursement'}
+        </Button>
       </DialogFooter>
     </div>
   )

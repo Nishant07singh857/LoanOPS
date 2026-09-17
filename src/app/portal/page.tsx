@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
+import { useQuery } from '@tanstack/react-query'
 import {
   Wallet, CreditCard, CalendarClock, FileText, MessageCircle,
   Bell, ShieldCheck, Landmark, CheckCircle2, Clock, ChevronRight,
@@ -11,19 +12,17 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { StatusBadge } from '@/components/ui/status-badge'
-import { FadeIn, StaggerContainer, StaggerItem } from '@/components/ui/motion'
+import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
+import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
-import {
-  candidateLoan, candidateInstallments, candidateNotifications,
-} from '@/lib/mock-data'
+import { api } from '@/lib/api-client'
 import { formatPaiseToINR } from '@/lib/money'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
 import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
-// Agent + Owner contact info (mirrors DEMO_ACCOUNTS from session.tsx)
-const AGENT_PHONE = '+91 98201 44556' // Arjun Nair
-const OWNER_PHONE = '+91 98200 11223' // Ravi Mehta
+const AGENT_PHONE = '+91 98201 44556'
+const OWNER_PHONE = '+91 98200 11223'
 
 const TRUST = [
   { icon: <ShieldCheck className="h-4 w-4" />, label: 'Bank-grade security' },
@@ -32,24 +31,74 @@ const TRUST = [
   { icon: <CheckCircle2 className="h-4 w-4" />, label: 'ISO 27001' },
 ]
 
+interface CandidateLoan {
+  id: string
+  loanNumber?: string
+  principalAmount: string
+  installmentAmount: string
+  totalRepayable: string
+  outstandingPrincipal: string
+  outstandingInterest: string
+  outstandingFees: string
+  totalCollected: string
+  installments: number
+  paidInstallments: number
+  overdueInstallments: number
+  status: string
+  firstDueDate: string
+  finalDueDate: string
+  nextDue?: {
+    installmentNumber: number
+    dueDate: string
+    totalDue: string
+  } | null
+}
+
+interface NotificationRow {
+  id: string
+  type: string
+  title: string
+  message: string
+  isRead: boolean
+  createdAt: string
+}
+
+function fmtDate(d?: string | null) {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
 export default function CandidateHomePage() {
   const { user } = useSession()
-  const candidateName = user?.name || 'Priya Sharma'
+  const candidateName = user?.name || 'Candidate'
   const firstName = candidateName.split(' ')[0]
 
   const today = new Date().toLocaleDateString('en-IN', {
     weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
   })
 
-  const loan = candidateLoan
-  const paidCount = candidateInstallments.filter((i) => i.status === 'PAID').length
-  const progress = Math.round((paidCount / loan.installments) * 100)
-  const nextInstallment = candidateInstallments.find((i) => i.status === 'DUE')
+  // Loan data — gracefully handle no loan case
+  const { data: loan, isLoading: loanLoading } = useQuery({
+    queryKey: ['candidate-loan'],
+    queryFn: () => api.get<CandidateLoan>('/api/candidate/loan'),
+    retry: false,
+  })
+
+  const { data: notifData } = useQuery({
+    queryKey: ['candidate-notifications'],
+    queryFn: () => api.get<{ items: NotificationRow[]; total: number; unreadCount: number }>('/api/notifications?pageSize=10'),
+  })
+  const notifications = notifData?.items ?? []
+
+  const paidCount = loan?.paidInstallments ?? 0
+  const installmentsTotal = loan?.installments ?? 0
+  const progress = installmentsTotal > 0 ? Math.round((paidCount / installmentsTotal) * 100) : 0
+  const nextInstallment = loan?.nextDue
 
   const onWhatsAppAgent = () => {
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.CANDIDATE_TO_AGENT, {
       candidateName,
-      loanNumber: loan.loanNumber,
+      loanNumber: loan?.loanNumber ?? '',
     })
     openWhatsApp(AGENT_PHONE, msg)
     toast.success('WhatsApp draft opened', { description: 'Your agent will respond shortly.' })
@@ -57,18 +106,16 @@ export default function CandidateHomePage() {
   const onWhatsAppOwner = () => {
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.CANDIDATE_TO_OWNER, {
       candidateName,
-      loanNumber: loan.loanNumber,
+      loanNumber: loan?.loanNumber ?? '',
     })
     openWhatsApp(OWNER_PHONE, msg)
     toast.success('WhatsApp draft opened', { description: 'Owner notified.' })
   }
 
-  // Countdown to next due date — use loan.nextDueDate '20 Sep 2024'
-  const dueDate = new Date('2024-09-20T00:00:00')
+  // Countdown to next due date
+  const dueDate = nextInstallment?.dueDate ? new Date(nextInstallment.dueDate) : null
   const now = new Date()
-  const daysLeft = Math.max(0, Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
-  // Use a stable "daysLeft" estimate since the mock date is in the past
-  const daysToDue = Math.max(0, daysLeft || 5)
+  const daysLeft = dueDate ? Math.max(0, Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))) : 0
 
   return (
     <div className="space-y-6 sm:space-y-8">
@@ -89,7 +136,11 @@ export default function CandidateHomePage() {
                     Hello, {firstName} <span className="inline-block">👋</span>
                   </h1>
                   <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                    Your loan is <span className="font-semibold text-success">on track</span>. {paidCount} of {loan.installments} installments paid.
+                    {loan ? (
+                      <>Your loan is <span className="font-semibold text-success">on track</span>. {paidCount} of {installmentsTotal} installments paid.</>
+                    ) : (
+                      <>Welcome! No active loan yet — check back after your application is approved.</>
+                    )}
                   </p>
                 </div>
               </div>
@@ -97,8 +148,8 @@ export default function CandidateHomePage() {
                 <Button asChild variant="outline" size="sm">
                   <Link href="/portal/loan"><Wallet className="h-4 w-4" /> My Loan</Link>
                 </Button>
-                <Button size="sm" onClick={() => toast.success('Pay Now opened', { description: 'Head to the Payments page to complete your installment.' })}>
-                  <CreditCard className="h-4 w-4" /> Pay Now
+                <Button asChild size="sm">
+                  <Link href="/portal/payments"><CreditCard className="h-4 w-4" /> Pay Now</Link>
                 </Button>
               </div>
             </div>
@@ -106,146 +157,153 @@ export default function CandidateHomePage() {
         </Card>
       </FadeIn>
 
-      {/* Active loan card + next due */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        <FadeIn className="lg:col-span-2">
-          <Card className="shadow-premium h-full">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-2.5">
-                  <div className="h-9 w-9 rounded-xl bg-success/15 text-success flex items-center justify-center">
-                    <Wallet className="h-5 w-5" />
+      {loanLoading ? (
+        <Card className="shadow-premium"><CardContent className="p-4 space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+        </CardContent></Card>
+      ) : loan && loan.loanNumber ? (
+        <>
+          {/* Active loan card + next due */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+            <FadeIn className="lg:col-span-2">
+              <Card className="shadow-premium h-full">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-9 w-9 rounded-xl bg-success/15 text-success flex items-center justify-center">
+                        <Wallet className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base">Active Loan</CardTitle>
+                        <CardDescription className="text-xs font-mono">{loan.loanNumber}</CardDescription>
+                      </div>
+                    </div>
+                    <StatusBadge variant={loan.status}>Active</StatusBadge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="rounded-xl bg-muted/40 p-3">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Outstanding</p>
+                      <p className="text-base sm:text-lg font-bold mt-1 tabular-nums">
+                        {formatPaiseToINR(Number(loan.outstandingPrincipal) + Number(loan.outstandingInterest))}
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-muted/40 p-3">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Next Due</p>
+                      <p className="text-base sm:text-lg font-bold mt-1">{nextInstallment ? fmtDate(nextInstallment.dueDate) : '—'}</p>
+                    </div>
+                    <div className="rounded-xl bg-muted/40 p-3 col-span-2 sm:col-span-1">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Installment</p>
+                      <p className="text-base sm:text-lg font-bold mt-1 tabular-nums">
+                        {formatPaiseToINR(Number(loan.installmentAmount))}
+                      </p>
+                    </div>
                   </div>
                   <div>
-                    <CardTitle className="text-base">Active Loan</CardTitle>
-                    <CardDescription className="text-xs font-mono">{loan.loanNumber}</CardDescription>
+                    <div className="flex items-center justify-between text-xs mb-1.5">
+                      <span className="text-muted-foreground">Repayment progress</span>
+                      <span className="font-medium">{paidCount} of {installmentsTotal} paid · {progress}%</span>
+                    </div>
+                    <Progress value={progress} className="h-2.5" />
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/portal/loan">View Details <ChevronRight className="h-3.5 w-3.5" /></Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/portal/schedule"><CalendarClock className="h-3.5 w-3.5" /> Schedule</Link>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </FadeIn>
+
+            <FadeIn delay={0.05}>
+              <Card className="shadow-premium h-full border-warning/20 bg-gradient-to-br from-warning/10 via-card to-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2 text-warning">
+                    <Clock className="h-4 w-4" /> Next Payment Due
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <p className="text-3xl sm:text-4xl font-bold tracking-tight tabular-nums">
+                      {nextInstallment ? formatPaiseToINR(Number(nextInstallment.totalDue)) : formatPaiseToINR(Number(loan.installmentAmount))}
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">Installment #{nextInstallment?.installmentNumber ?? 1} · {nextInstallment ? fmtDate(nextInstallment.dueDate) : fmtDate(loan.firstDueDate)}</p>
+                  </div>
+                  <div className="rounded-xl bg-warning/10 p-3 text-center">
+                    <p className="text-xs text-muted-foreground">Time remaining</p>
+                    <p className="text-2xl font-bold text-warning mt-0.5">
+                      {daysLeft} <span className="text-base font-medium">days</span>
+                    </p>
+                  </div>
+                  <Button asChild className="w-full" size="sm">
+                    <Link href="/portal/payments"><CreditCard className="h-4 w-4" /> Pay Now</Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            </FadeIn>
+          </div>
+
+          {/* Quick Actions */}
+          <FadeIn>
+            <Card className="shadow-premium border-primary/15">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Quick Actions</CardTitle>
+                    <CardDescription className="text-xs">Everything you need, one tap away</CardDescription>
                   </div>
                 </div>
-                <StatusBadge variant={loan.status}>Active</StatusBadge>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <div className="rounded-xl bg-muted/40 p-3">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Outstanding</p>
-                  <p className="text-base sm:text-lg font-bold mt-1 tabular-nums">
-                    {formatPaiseToINR(loan.outstandingPrincipal + loan.outstandingInterest)}
-                  </p>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Pay Now', icon: <CreditCard className="h-5 w-5" />, tint: 'bg-success/15 text-success', href: '/portal/payments' },
+                    { label: 'View Schedule', icon: <CalendarClock className="h-5 w-5" />, tint: 'bg-primary/10 text-primary', href: '/portal/schedule' },
+                    { label: 'Download Receipt', icon: <FileText className="h-5 w-5" />, tint: 'bg-info/15 text-info', href: '/portal/receipts' },
+                    { label: 'WhatsApp Support', icon: <MessageCircle className="h-5 w-5" />, tint: 'bg-warning/15 text-warning', onClick: onWhatsAppAgent },
+                  ].map((q) => {
+                    const inner = (
+                      <>
+                        <div className={cn('h-10 w-10 rounded-xl flex items-center justify-center mb-3', q.tint)}>
+                          {q.icon}
+                        </div>
+                        <p className="text-sm font-medium flex items-center gap-1.5">
+                          {q.label}
+                          <ArrowRight className="h-3.5 w-3.5 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all text-primary" />
+                        </p>
+                      </>
+                    )
+                    return q.href ? (
+                      <Link
+                        key={q.label}
+                        href={q.href}
+                        className="group rounded-2xl border border-border bg-card p-4 hover:border-primary/40 hover:shadow-premium transition-all min-h-[88px]"
+                      >
+                        {inner}
+                      </Link>
+                    ) : (
+                      <button
+                        key={q.label}
+                        onClick={q.onClick}
+                        className="group rounded-2xl border border-border bg-card p-4 hover:border-primary/40 hover:shadow-premium transition-all min-h-[88px] text-left"
+                      >
+                        {inner}
+                      </button>
+                    )
+                  })}
                 </div>
-                <div className="rounded-xl bg-muted/40 p-3">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Next Due</p>
-                  <p className="text-base sm:text-lg font-bold mt-1">{loan.nextDueDate}</p>
-                </div>
-                <div className="rounded-xl bg-muted/40 p-3 col-span-2 sm:col-span-1">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Installment</p>
-                  <p className="text-base sm:text-lg font-bold mt-1 tabular-nums">
-                    {formatPaiseToINR(loan.installmentAmount)}
-                  </p>
-                </div>
-              </div>
-              <div>
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="text-muted-foreground">Repayment progress</span>
-                  <span className="font-medium">{paidCount} of {loan.installments} paid · {progress}%</span>
-                </div>
-                <Progress value={progress} className="h-2.5" />
-              </div>
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/portal/loan">View Details <ChevronRight className="h-3.5 w-3.5" /></Link>
-                </Button>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/portal/schedule"><CalendarClock className="h-3.5 w-3.5" /> Schedule</Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </FadeIn>
-
-        {/* Next payment due highlight */}
-        <FadeIn delay={0.05}>
-          <Card className="shadow-premium h-full border-warning/20 bg-gradient-to-br from-warning/10 via-card to-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center gap-2 text-warning">
-                <Clock className="h-4 w-4" /> Next Payment Due
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="text-3xl sm:text-4xl font-bold tracking-tight tabular-nums">
-                  {formatPaiseToINR(nextInstallment?.totalDue ?? loan.installmentAmount)}
-                </p>
-                <p className="text-sm text-muted-foreground mt-1">Installment #{nextInstallment?.number ?? 2} · {loan.nextDueDate}</p>
-              </div>
-              <div className="rounded-xl bg-warning/10 p-3 text-center">
-                <p className="text-xs text-muted-foreground">Time remaining</p>
-                <p className="text-2xl font-bold text-warning mt-0.5">
-                  {daysToDue} <span className="text-base font-medium">days</span>
-                </p>
-              </div>
-              <Button className="w-full" size="sm" onClick={() => toast.success('Pay Now opened', { description: 'Redirecting to payment method selection…' })}>
-                <CreditCard className="h-4 w-4" /> Pay Now
-              </Button>
-            </CardContent>
-          </Card>
-        </FadeIn>
-      </div>
-
-      {/* Quick Actions */}
-      <FadeIn>
-        <Card className="shadow-premium border-primary/15">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                <Sparkles className="h-5 w-5" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Quick Actions</CardTitle>
-                <CardDescription className="text-xs">Everything you need, one tap away</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                { label: 'Pay Now', icon: <CreditCard className="h-5 w-5" />, tint: 'bg-success/15 text-success', href: '/portal/payments' },
-                { label: 'View Schedule', icon: <CalendarClock className="h-5 w-5" />, tint: 'bg-primary/10 text-primary', href: '/portal/schedule' },
-                { label: 'Download Receipt', icon: <FileText className="h-5 w-5" />, tint: 'bg-info/15 text-info', href: '/portal/receipts' },
-                { label: 'WhatsApp Support', icon: <MessageCircle className="h-5 w-5" />, tint: 'bg-warning/15 text-warning', onClick: onWhatsAppAgent },
-              ].map((q) => {
-                const inner = (
-                  <>
-                    <div className={cn('h-10 w-10 rounded-xl flex items-center justify-center mb-3', q.tint)}>
-                      {q.icon}
-                    </div>
-                    <p className="text-sm font-medium flex items-center gap-1.5">
-                      {q.label}
-                      <ArrowRight className="h-3.5 w-3.5 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all text-primary" />
-                    </p>
-                  </>
-                )
-                return q.href ? (
-                  <Link
-                    key={q.label}
-                    href={q.href}
-                    className="group rounded-2xl border border-border bg-card p-4 hover:border-primary/40 hover:shadow-premium transition-all min-h-[88px]"
-                  >
-                    {inner}
-                  </Link>
-                ) : (
-                  <button
-                    key={q.label}
-                    onClick={q.onClick}
-                    className="group rounded-2xl border border-border bg-card p-4 hover:border-primary/40 hover:shadow-premium transition-all min-h-[88px] text-left"
-                  >
-                    {inner}
-                  </button>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      </FadeIn>
+              </CardContent>
+            </Card>
+          </FadeIn>
+        </>
+      ) : null}
 
       {/* Notifications preview + Need Help */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
@@ -259,7 +317,7 @@ export default function CandidateHomePage() {
                   </div>
                   <div>
                     <CardTitle className="text-base">Recent Notifications</CardTitle>
-                    <CardDescription className="text-xs">{candidateNotifications.length} updates</CardDescription>
+                    <CardDescription className="text-xs">{notifications.length} updates</CardDescription>
                   </div>
                 </div>
                 <Button asChild variant="ghost" size="sm">
@@ -268,33 +326,37 @@ export default function CandidateHomePage() {
               </div>
             </CardHeader>
             <CardContent>
-              <StaggerContainer className="space-y-2.5">
-                {candidateNotifications.slice(0, 3).map((n) => (
-                  <StaggerItem key={n.id}>
-                    <Link
-                      href="/portal/notifications"
-                      className={cn(
-                        'block rounded-xl border border-border bg-card p-3.5 hover:border-primary/40 hover:shadow-premium transition-all',
-                        !n.isRead && 'border-success/30 bg-success/5'
-                      )}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className={cn('h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0', n.isRead ? 'bg-muted text-muted-foreground' : 'bg-success/15 text-success')}>
-                          {n.type === 'PAYMENT_REMINDER' ? <Clock className="h-4 w-4" /> : n.type === 'PAYMENT_CONFIRMATION' ? <CheckCircle2 className="h-4 w-4" /> : <IndianRupee className="h-4 w-4" />}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-sm font-medium truncate">{n.title}</p>
-                            {!n.isRead && <span className="h-2 w-2 rounded-full bg-success flex-shrink-0" />}
+              {notifications.length === 0 ? (
+                <EmptyState icon={<Bell className="h-6 w-6" />} title="No notifications" description="You'll see updates here." />
+              ) : (
+                <StaggerContainer className="space-y-2.5">
+                  {notifications.slice(0, 3).map((n) => (
+                    <StaggerItem key={n.id}>
+                      <Link
+                        href="/portal/notifications"
+                        className={cn(
+                          'block rounded-xl border border-border bg-card p-3.5 hover:border-primary/40 hover:shadow-premium transition-all',
+                          !n.isRead && 'border-success/30 bg-success/5'
+                        )}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={cn('h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0', n.isRead ? 'bg-muted text-muted-foreground' : 'bg-success/15 text-success')}>
+                            {n.type === 'PAYMENT_REMINDER' ? <Clock className="h-4 w-4" /> : n.type === 'PAYMENT_CONFIRMATION' ? <CheckCircle2 className="h-4 w-4" /> : <IndianRupee className="h-4 w-4" />}
                           </div>
-                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
-                          <p className="text-[10px] text-muted-foreground mt-1">{n.timestamp}</p>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-medium truncate">{n.title}</p>
+                              {!n.isRead && <span className="h-2 w-2 rounded-full bg-success flex-shrink-0" />}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
+                            <p className="text-[10px] text-muted-foreground mt-1">{fmtDate(n.createdAt)}</p>
+                          </div>
                         </div>
-                      </div>
-                    </Link>
-                  </StaggerItem>
-                ))}
-              </StaggerContainer>
+                      </Link>
+                    </StaggerItem>
+                  ))}
+                </StaggerContainer>
+              )}
             </CardContent>
           </Card>
         </FadeIn>
