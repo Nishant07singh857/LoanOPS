@@ -40,6 +40,12 @@ export const GET = apiHandler(async (req: NextRequest) => {
             assignedAgent: { select: { id: true, user: { select: { name: true } } } },
           },
         },
+        schedule: {
+          where: { status: { in: ['UPCOMING', 'DUE', 'PARTIALLY_PAID', 'OVERDUE'] } },
+          orderBy: { dueDate: 'asc' },
+          take: 1,
+          select: { dueDate: true, status: true, totalDue: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
       skip,
@@ -49,28 +55,39 @@ export const GET = apiHandler(async (req: NextRequest) => {
   ])
 
   return success({
-    items: loans.map(l => ({
-      id: l.id,
-      loanNumber: l.loanNumber,
-      candidateId: l.candidateId,
-      candidateName: l.candidate.fullName,
-      candidateMobile: l.candidate.mobile,
-      principalAmount: String(l.principalAmount),
-      interestType: l.interestType,
-      interestRate: l.interestRate,
-      fixedInterest: l.fixedInterest ? String(l.fixedInterest) : null,
-      frequency: l.frequency,
-      installments: l.installments,
-      installmentAmount: String(l.installmentAmount),
-      totalRepayable: String(l.totalRepayable),
-      outstandingPrincipal: String(l.outstandingPrincipal),
-      outstandingInterest: String(l.outstandingInterest),
-      totalCollected: String(l.totalCollected),
-      status: l.status,
-      disbursedAt: l.disbursedAt,
-      createdAt: l.createdAt,
-      agentName: l.candidate.assignedAgent?.user?.name || null,
-    })),
+    items: loans.map(l => {
+      const nextInstallment = l.schedule?.[0] || null
+      const isOverdue = nextInstallment?.status === 'OVERDUE' ||
+        (nextInstallment && new Date(nextInstallment.dueDate) < new Date() && nextInstallment.status !== 'PAID')
+      return {
+        id: l.id,
+        loanNumber: l.loanNumber,
+        candidateId: l.candidateId,
+        candidateName: l.candidate.fullName,
+        candidateMobile: l.candidate.mobile,
+        principalAmount: String(l.principalAmount),
+        interestType: l.interestType,
+        interestRate: l.interestRate,
+        fixedInterest: l.fixedInterest ? String(l.fixedInterest) : null,
+        frequency: l.frequency,
+        installments: l.installments,
+        installmentAmount: String(l.installmentAmount),
+        totalRepayable: String(l.totalRepayable),
+        outstandingPrincipal: String(l.outstandingPrincipal),
+        outstandingInterest: String(l.outstandingInterest),
+        totalCollected: String(l.totalCollected),
+        status: l.status,
+        disbursedAt: l.disbursedAt,
+        createdAt: l.createdAt,
+        agentName: l.candidate.assignedAgent?.user?.name || null,
+        agent: l.candidate.assignedAgent
+          ? { id: l.candidate.assignedAgent.id, name: l.candidate.assignedAgent.user?.name || '' }
+          : null,
+        nextDueDate: nextInstallment?.dueDate || null,
+        nextDueAmount: nextInstallment ? String(nextInstallment.totalDue) : null,
+        overdue: isOverdue,
+      }
+    }),
     total,
     page: params.page,
     pageSize: params.pageSize,

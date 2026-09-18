@@ -85,6 +85,7 @@ model User {
 model Session {
   id          String   @id @default(cuid())
   token       String   @unique
+  tokenPrefix String?  // first 16 chars of the session token, indexed for fast lookup
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt   DateTime
@@ -94,7 +95,7 @@ model Session {
   createdAt   DateTime @default(now())
 
   @@index([userId])
-  @@index([token])
+  @@index([tokenPrefix])
 }
 
 // Optional: candidate userId if candidate is also a portal user

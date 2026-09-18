@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import {
   Users, Search, Filter, X, MessageCircle, PhoneCall, ChevronRight,
@@ -53,6 +53,7 @@ function fmtDateShort(d?: string | null) {
 }
 
 export default function AgentCandidatesPage() {
+  const router = useRouter()
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [search, setSearch] = React.useState('')
 
@@ -141,9 +142,17 @@ export default function AgentCandidatesPage() {
         <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {filtered.map((c) => (
             <StaggerItem key={c.id}>
-              <Link
-                href={`/agent/candidates/${c.id}`}
-                className="block h-full rounded-2xl border border-border bg-card p-4 hover:border-primary/40 hover:shadow-glow transition-all group"
+              <div
+                role="link"
+                tabIndex={0}
+                onClick={() => router.push(`/agent/candidates/${c.id}`)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    router.push(`/agent/candidates/${c.id}`)
+                  }
+                }}
+                className="block h-full rounded-2xl border border-border bg-card p-4 hover:border-primary/40 hover:shadow-glow transition-all group cursor-pointer"
               >
                 <div className="flex items-start gap-3">
                   <Avatar className="h-11 w-11 flex-shrink-0">
@@ -220,7 +229,7 @@ export default function AgentCandidatesPage() {
                     </span>
                   </div>
                 </div>
-              </Link>
+              </div>
             </StaggerItem>
           ))}
         </StaggerContainer>

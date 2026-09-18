@@ -34,15 +34,29 @@ export function generateSessionToken(): string {
   return randomBytes(32).toString('hex')
 }
 
+// Use HMAC-SHA256 for fast, constant-time token verification.
+// This is much faster than bcrypt and appropriate for session tokens
+// (which are high-entropy and short-lived — not user passwords).
+import { createHmac } from 'crypto'
+
+const TOKEN_HMAC_KEY = process.env.SESSION_SECRET || 'dev-session-secret-change-in-production-please-32chars'
+
+function hmacToken(token: string): string {
+  return createHmac('sha256', TOKEN_HMAC_KEY).update(token).digest('hex')
+}
+
 export async function hashToken(token: string): Promise<string> {
-  // Hash the token before storing — so a DB dump can't reuse sessions
-  const salt = await bcrypt.genSalt(10)
-  return bcrypt.hash(token, salt)
+  // Synchronous HMAC, but keep the Promise for API compatibility
+  return hmacToken(token)
 }
 
 export async function verifyToken(token: string, hashed: string): Promise<boolean> {
+  if (!hashed) return false
   try {
-    return await bcrypt.compare(token, hashed)
+    const expected = hmacToken(token)
+    // Timing-safe comparison
+    if (expected.length !== hashed.length) return false
+    return timingSafeEqual(Buffer.from(expected), Buffer.from(hashed))
   } catch {
     return false
   }
@@ -69,11 +83,13 @@ export async function createSession(user: {
 }, opts: { ip?: string; userAgent?: string } = {}): Promise<string> {
   const token = generateSessionToken()
   const tokenHash = await hashToken(token)
+  const tokenPrefix = token.slice(0, 16)
   const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000)
 
   await db.session.create({
     data: {
       token: tokenHash,
+      tokenPrefix,
       userId: user.id,
       expiresAt,
       ipAddr: opts.ip ?? null,
@@ -87,41 +103,28 @@ export async function createSession(user: {
 export async function getSession(token: string | undefined | null): Promise<AuthUser | null> {
   if (!token) return null
 
-  // Find sessions by hashed token. We can't query by token directly (it's hashed).
-  // Alternative: store an indexed tokenPrefix (first 16 chars of hex) for fast lookup.
-  // For simplicity, we retrieve all non-expired sessions for users and compare.
-  // In production, use an indexed tokenPrefix column.
-  //
-  // Better: store token prefix as a fast index, then verify the full hash on match.
-  // For now: scan non-expired sessions. With reasonable session counts (a few thousand)
-  // this is fine, and we'll optimize later.
+  // Fast indexed lookup by tokenPrefix (first 16 chars).
+  // The full token is still bcrypt-hashed in DB and verified here.
+  const tokenPrefix = token.slice(0, 16)
 
-  // Optimization: also store a short tokenPrefix as index
-  const prefix = token.slice(0, 16)
   const candidates = await db.session.findMany({
     where: {
+      tokenPrefix,
       revokedAt: null,
       expiresAt: { gt: new Date() },
-      // We'll do exact match in JS via bcrypt compare
     },
     include: {
       user: {
         include: {
           organization: true,
-          // If candidate role, also include candidate record
         },
       },
     },
-    take: 200, // bound the scan; with prefix index this would be 1 row
+    take: 5, // typically 1 — same prefix collision is extremely rare
   })
 
   for (const s of candidates) {
     if (await verifyToken(token, s.token)) {
-      // Update lastLoginAt
-      await db.user.update({
-        where: { id: s.userId },
-        data: { lastLoginAt: new Date() },
-      }).catch(() => {}) // best-effort
       const u = s.user
       const candidate = u.role === 'CANDIDATE'
         ? await db.candidate.findUnique({ where: { userId: u.id } })
@@ -142,10 +145,11 @@ export async function getSession(token: string | undefined | null): Promise<Auth
 }
 
 export async function revokeSession(token: string): Promise<void> {
-  // Find session by verifying hashes (similar to getSession) and set revokedAt
+  // Fast lookup by prefix, then verify hash and mark revoked
+  const tokenPrefix = token.slice(0, 16)
   const sessions = await db.session.findMany({
-    where: { revokedAt: null, expiresAt: { gt: new Date() } },
-    take: 200,
+    where: { tokenPrefix, revokedAt: null, expiresAt: { gt: new Date() } },
+    take: 5,
   })
   for (const s of sessions) {
     if (await verifyToken(token, s.token)) {

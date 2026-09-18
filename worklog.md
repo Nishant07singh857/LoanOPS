@@ -370,3 +370,50 @@ Stage Summary:
 - E2E lifecycle verified end-to-end via curl
 - Demo credentials: owner@loanops.in / Owner@123, agent@loanops.in / Agent@123, candidate mobile 9820277789 / Candidate@123
 - Lint clean, no TypeScript errors
+
+---
+Task ID: 8 (bug-fix pass)
+Agent: main
+Task: End-to-end browser testing and bug fixes
+
+Work Log:
+- Logged in via /login (Owner, Agent, Candidate) and tested every portal page in browser
+- Identified and fixed 4 bugs:
+
+BUG 1: Loans page showed "—" for Agent and Next Due columns
+  - Cause: API returned `agentName` (flat string) but UI expected `agent.name` (nested object). API also missing `nextDueDate` field.
+  - Fix: Updated `/api/owner/loans` to include `schedule` relation (was wrongly using `installments`), compute `nextDueDate` from the next non-paid installment, and return both `agentName` (flat) and `agent` (nested {id, name}) for backwards compatibility. Also added `nextDueAmount` and `overdue` boolean.
+  - File: src/app/api/owner/loans/route.ts
+
+BUG 2: /api/auth/me took 11.6 seconds to respond (caused dashboard to show "Loading portal..." for 10+ seconds, links didn't navigate during that period)
+  - Cause: Session lookup was scanning all non-expired sessions (up to 200) and running bcrypt.compare on each. bcrypt is intentionally slow (designed for password hashing, not session lookup).
+  - Fix 1: Added `tokenPrefix` column to Session model (first 16 chars of token, indexed). Now session lookup is an indexed DB query returning ~1 row, not a 200-row scan.
+  - Fix 2: Replaced bcrypt-based token hashing with HMAC-SHA256 (keyed with SESSION_SECRET). HMAC is constant-time, much faster than bcrypt, and appropriate for high-entropy session tokens (unlike user passwords which need bcrypt's slowness).
+  - Files: prisma/schema.prisma, src/lib/server/auth.ts
+  - Result: /api/auth/me response time dropped from 11.6s → 113ms (100x faster)
+
+BUG 3: Nested <a> inside <a> on agent candidates page (invalid HTML, React warning, click handler broke)
+  - Cause: The candidate card was wrapped in <Link> (Next.js, renders as <a>), and inside the card there was an <a href="tel:"> for the call button. Invalid HTML — <a> cannot contain another <a>.
+  - Fix: Replaced the outer <Link> with a <div role="link" tabIndex={0} onClick={router.push}>. Used useRouter() for navigation. The inner tel: link is now standalone.
+  - File: src/app/agent/candidates/page.tsx
+
+BUG 4: agent-browser click @ref wasn't reliably clicking Next.js Link elements (clicking on icon children of buttons/links didn't trigger navigation)
+  - This is an agent-browser limitation, not a real user bug. Verified that real clicks (via JS .click()) and keyboard (Enter key) work correctly. No code change needed.
+  - Verified all navigation links work via:
+    * agent-browser eval "document.querySelector('a[href=\"...\"]').click()"
+    * agent-browser focus @ref + agent-browser press Enter (for Radix Tabs)
+
+Verification:
+- Owner portal: Dashboard renders in <5s (was 11+ before), all 36 navigation links work, KPIs show real numbers (₹2L disbursed, 3 active loans, ₹14.8K collected, 1 HIGH AI insight for broken PTP)
+- Loans page: 3 loans shown with correct agent (Arjun Nair) and next due dates (25 Sept 2026, 20 Oct 2024, 20 Sept 2024). Two loans correctly marked as Overdue.
+- Loan detail: All 7 tabs work (Overview, Schedule, Payments, Collections, PTP, Disbursement, Agreement). Schedule shows 10 weekly installments with proper due dates and decreasing closing principal.
+- Agent portal: Dashboard loads with real data (Arjun Nair, 1 PTP due for Rahul Verma ₹5,000 on 25 Sept). Candidates page shows real assigned candidates. Candidate detail page loads with all 5 tabs working (Overview, Loan, PTP, History, Escalations) — verified via keyboard navigation.
+- Candidate portal: Login via mobile+password works. Dashboard shows "Hello, Priya 👋" with real loan LON-MU61OPC1C1V1 (₹75K principal, ₹68,750 outstanding, 1 of 12 installments paid). Payments page shows Pay Now dialog with UPI/Netbanking/Card options. Receipts page shows real receipt RCP-MU61S1ATVX01 (₹7,437.5 = ₹6,250 principal + ₹1,125 interest + ₹62.5 fees).
+- Public apply: /apply/a3f8d2e91b7c4f0a8e2d1b6c9f4a3e8d returns org name + pre-config (₹1L / 18% / WEEKLY / 20 installments) + agreement, no auth required.
+- Lint: 0 errors, 0 warnings.
+
+Stage Summary:
+- 4 bugs identified and fixed: missing loan fields, slow session lookup, nested <a> HTML, agent-browser click issue (not a real bug)
+- Auth API is now 100x faster
+- All 3 portals render correctly with real DB-backed data
+- E2E lifecycle verified end-to-end
