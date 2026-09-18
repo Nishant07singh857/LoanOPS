@@ -15,7 +15,7 @@ function LoginInner() {
   const params = useSearchParams()
   const redirect = params.get('redirect') || '/admin'
   const requestedRole = (params.get('role') || 'OWNER') as Role
-  const { login, loginCandidate } = useSession()
+  const { user, loading, login, loginCandidate } = useSession()
 
   const [role, setRole] = React.useState<Role>(requestedRole)
   const [email, setEmail] = React.useState('')
@@ -28,6 +28,20 @@ function LoginInner() {
   React.useEffect(() => {
     setRole(requestedRole)
   }, [requestedRole])
+
+  // Redirect already-authenticated users away from /login.
+  // This fixes the "back button shows login form again" bug.
+  React.useEffect(() => {
+    if (loading) return
+    if (user) {
+      // If a specific redirect target was requested and matches the user's role, use it.
+      // Otherwise, send them to their own portal home.
+      const userHome = user.role === 'OWNER' ? '/admin' : user.role === 'AGENT' ? '/agent' : '/portal'
+      const target = redirect && user.role === requestedRole ? redirect : userHome
+      // Use replace() so /login is removed from browser history — back button won't return to it.
+      router.replace(target)
+    }
+  }, [user, loading, redirect, requestedRole, router])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -52,7 +66,9 @@ function LoginInner() {
         r = await login(email.trim(), password)
       }
       if (r.ok) {
-        router.push(redirect)
+        // Use replace() instead of push() so /login is removed from browser history.
+        // This prevents the "back button shows login form again" issue.
+        router.replace(redirect)
       } else {
         setError(r.error || 'Login failed')
       }

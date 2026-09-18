@@ -70,9 +70,10 @@ function LandingInner() {
 
   const enter = (role: Role) => {
     if (user && user.role === role) {
-      // Already authenticated — go straight to portal
+      // Already authenticated — go straight to portal.
+      // Use replace() so / is removed from history (back button won't bounce back here).
       const target = role === 'OWNER' ? '/admin' : role === 'AGENT' ? '/agent' : '/portal'
-      router.push(target)
+      router.replace(target)
       return
     }
     // Go to login with the desired role preselected

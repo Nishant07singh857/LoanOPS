@@ -1,27 +1,32 @@
 'use client'
 
 import * as React from 'react'
+import { useRouter } from 'next/navigation'
 import { useSession, type Role } from '@/lib/session'
 
 // Ensures the user has the given role before rendering children.
-// - If no session: redirects to /login (real auth page).
-// - If session with wrong role: shows Forbidden screen.
+// - If no session: redirects to /login (real auth page) using replace()
+//   so the protected URL is not added to browser history (prevents back-button loops).
+// - If session with wrong role: shows Forbidden screen with link back to home.
 // - If session with right role: renders children.
 // This is REAL access control — not auto-login.
 export function EnsureRole({ role, children }: { role: Role; children: React.ReactNode }) {
   const { user, loading } = useSession()
+  const router = useRouter()
   const [handled, setHandled] = React.useState(false)
 
   React.useEffect(() => {
     if (loading) return
     if (!user) {
-      // Redirect to login with return path
+      // Redirect to login with return path. Use replace() so the protected URL
+      // is replaced by /login in history — back button won't bounce back to /admin
+      // and trigger another redirect loop.
       const path = role === 'OWNER' ? '/admin' : role === 'AGENT' ? '/agent' : '/portal'
-      window.location.href = `/login?redirect=${encodeURIComponent(path)}&role=${role}`
+      router.replace(`/login?redirect=${encodeURIComponent(path)}&role=${role}`)
       return
     }
     setHandled(true)
-  }, [user, loading, role])
+  }, [user, loading, role, router])
 
   if (loading || !handled) {
     return (
@@ -35,6 +40,8 @@ export function EnsureRole({ role, children }: { role: Role; children: React.Rea
   }
 
   if (user!.role !== role) {
+    const userHome = user!.role === 'OWNER' ? '/admin' : user!.role === 'AGENT' ? '/agent' : '/portal'
+    const roleLabel = user!.role === 'OWNER' ? 'Owner' : user!.role === 'AGENT' ? 'Agent' : 'Candidate'
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <div className="max-w-md w-full text-center">
@@ -47,12 +54,20 @@ export function EnsureRole({ role, children }: { role: Role; children: React.Rea
           <p className="text-sm text-muted-foreground mt-2">
             You are signed in as <strong>{user!.role}</strong> but this area requires <strong>{role}</strong> access.
           </p>
-          <a
-            href="/"
-            className="inline-flex items-center gap-2 mt-5 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium"
-          >
-            Return home
-          </a>
+          <div className="mt-5 flex flex-col sm:flex-row gap-2 justify-center">
+            <a
+              href={userHome}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium"
+            >
+              Go to {roleLabel} Portal
+            </a>
+            <a
+              href="/"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-border text-sm font-medium hover:bg-muted transition-colors"
+            >
+              Return home
+            </a>
+          </div>
         </div>
       </div>
     )
