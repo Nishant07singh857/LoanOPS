@@ -2,8 +2,9 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireOwner } from '@/lib/server/auth'
-import { apiHandler, success } from '@/lib/server/api'
-
+import { z } from 'zod'
+import bcrypt from 'bcryptjs'
+import { apiHandler, success, validate } from '@/lib/server/api'
 export const GET = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()
   const orgId = ctx.user.organizationId
@@ -57,4 +58,46 @@ export const GET = apiHandler(async (req: NextRequest) => {
   }))
 
   return success({ items })
+})
+
+const createAgentSchema = z.object({
+  name: z.string().min(2).max(100),
+  email: z.string().email(),
+  phone: z.string().regex(/^\+?[1-9]\d{9,14}$/, 'Invalid phone'),
+  password: z.string().min(10),
+  employeeCode: z.string().min(2),
+  zone: z.string().min(2),
+}).strict()
+
+export const POST = apiHandler(async (req: NextRequest) => {
+  const ctx = await requireOwner()
+  const body = await req.json().catch(() => ({}))
+  const input = validate(createAgentSchema, body)
+
+  const passwordHash = await bcrypt.hash(input.password, 12)
+
+  const newAgent = await db.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        organizationId: ctx.user.organizationId,
+        email: input.email.toLowerCase(),
+        passwordHash,
+        name: input.name,
+        phone: input.phone,
+        role: 'AGENT',
+      },
+    })
+    const agent = await tx.agentProfile.create({
+      data: {
+        userId: user.id,
+        organizationId: ctx.user.organizationId,
+        employeeCode: input.employeeCode,
+        zone: input.zone,
+        isActive: true,
+      },
+    })
+    return { user, agent }
+  })
+
+  return success({ id: newAgent.agent.id, userId: newAgent.user.id })
 })

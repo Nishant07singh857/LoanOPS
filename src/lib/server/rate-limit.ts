@@ -16,6 +16,7 @@ export type RateLimitScope =
   | 'pii_reveal'
   | 'cash_collection'
   | 'data_request'
+  | 'public_api'
   | 'api_global'
 
 export interface RateLimitPolicy {
@@ -35,6 +36,7 @@ export const RATE_LIMIT_POLICIES: Record<RateLimitScope, RateLimitPolicy> = {
   cash_collection: { maxRequests: 30, windowMs: 60 * 1000 }, // 30 cash collections per minute
   data_request: { maxRequests: 5, windowMs: 60 * 60 * 1000 }, // 5 DSR requests per hour
   api_global: { maxRequests: 300, windowMs: 60 * 1000 }, // 300 API calls per minute per IP
+  public_api: { maxRequests: 50, windowMs: 15 * 60 * 1000 }, // 50 requests per 15 min
 }
 
 interface BucketRecord {

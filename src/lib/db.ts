@@ -39,9 +39,9 @@ loadEnvFile()
 // Validate critical env vars (crashes in production if missing/weak)
 validateEnv()
 
-let databaseUrl = process.env.DATABASE_URL
+let databaseUrl = process.env.NODE_ENV === 'test' ? process.env.DATABASE_URL_TEST : process.env.DATABASE_URL
 if (!databaseUrl) {
-  throw new Error('DATABASE_URL is not set. Check your .env file.')
+  throw new Error(`DATABASE_URL${process.env.NODE_ENV === 'test' ? '_TEST' : ''} is not set. Check your .env file.`)
 }
 if (!databaseUrl.startsWith('postgres')) {
   // Refuse to use a non-PostgreSQL URL — the schema is PostgreSQL-only.

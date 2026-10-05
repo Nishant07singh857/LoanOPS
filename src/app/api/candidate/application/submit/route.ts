@@ -77,15 +77,8 @@ export const POST = apiHandler(async (req: NextRequest) => {
   }
 
   // Validate uploaded KYC documents (magic-byte check + EXIF stripping + private storage)
-  let storedAadhaarUrl: string | undefined
-  if (input.aadhaarBase64) {
-    const check = await validateAndStoreDataUrlUpload(input.aadhaarBase64, {
-      maxBytes: 5 * 1024 * 1024,
-      allowPdf: true,
-    })
-    if (!check.ok) return badRequest(check.error)
-    storedAadhaarUrl = check.storedRef ?? undefined
-  }
+  // SECURITY: Aadhaar images are no longer accepted or stored to comply with data minimization.
+  let storedAadhaarUrl: string | undefined = undefined
 
   let storedPanUrl: string | undefined
   if (input.panBase64) {

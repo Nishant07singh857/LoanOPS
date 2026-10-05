@@ -29,80 +29,52 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
   if (data.action === 'REJECT') {
     if (!data.rejectionReason) return badRequest('rejectionReason is required when rejecting')
 
-    await db.$transaction(async (tx) => {
-      await tx.payment.update({
-        where: { id: cc.id },
-        data: {
-          status: 'REJECTED',
-          rejectionReason: data.rejectionReason,
-          verifiedById: ctx.user.id,
-          verifiedAt: new Date(),
-        },
-      })
-      // Notify the agent who recorded it
-      await tx.notification.create({
-        data: {
-          organizationId: ctx.user.organizationId,
-          userId: cc.recordedById,
-          type: 'AI_INSIGHT',
-          title: 'Cash collection rejected',
-          message: `Cash collection of ₹${cc.amount / 100} for ${cc.candidate.fullName} (${cc.loan.loanNumber}) was rejected: ${data.rejectionReason}`,
-          isRead: false,
-          metadata: { cashCollectionId: cc.id },
-        },
-      })
+    const { reverseCashPayment } = await import('@/lib/server/payments')
+    await reverseCashPayment({
+      paymentId: cc.id,
+      organizationId: ctx.user.organizationId,
+      ownerUserId: ctx.user.id,
+      rejectionReason: data.rejectionReason,
     })
 
-    await audit(ctx, 'REJECT', 'CashCollection', cc.id, `Rejected cash collection ₹${cc.amount / 100} for ${cc.candidate.fullName} (${cc.loan.loanNumber}): ${data.rejectionReason}`)
+    // Notify the agent who recorded it
+    await db.notification.create({
+      data: {
+        organizationId: ctx.user.organizationId,
+        userId: cc.recordedById!,
+        type: 'AI_INSIGHT',
+        title: 'Cash collection rejected',
+        message: `Cash collection of ₹${cc.amount / 100} for ${cc.candidate.fullName} (${cc.loan.loanNumber}) was rejected: ${data.rejectionReason}`,
+        isRead: false,
+        metadata: { cashCollectionId: cc.id },
+      },
+    })
+
+    await audit(ctx, 'REJECT', 'Payment', cc.id, `Rejected cash collection ₹${cc.amount / 100} for ${cc.candidate.fullName} (${cc.loan.loanNumber}): ${data.rejectionReason}`)
 
     return success({ id: cc.id, status: 'REJECTED' })
   }
 
-  // VERIFY → create a Payment (method=CASH, status=ALLOCATED), run capturePayment
-  const paymentNumber = genNumber('PAY')
-  const payment = await db.payment.create({
-    data: {
-      organizationId: ctx.user.organizationId,
-      paymentNumber,
-      loanId: cc.loanId,
-      candidateId: cc.candidateId,
-      method: 'CASH',
-      amount: cc.amount,
-      reference: cc.reference,
-      status: 'PENDING_VERIFICATION',
-      verifiedById: ctx.user.id,
-      verifiedAt: new Date(),
-    },
-  })
-
-  // Capture payment (allocates against installments + posts ledger + receipt)
-  const capture = await capturePayment({
-    paymentId: payment.id,
-    organizationId: ctx.user.organizationId,
-    userId: ctx.user.id,
-    channel: 'CASH_VERIFICATION',
-  })
-
-  // Mark cash collection as verified/allocated
+  // VERIFY -> just mark it as VERIFIED
   await db.payment.update({
     where: { id: cc.id },
     data: {
-      status: 'ALLOCATED',
+      status: 'VERIFIED',
       verifiedById: ctx.user.id,
       verifiedAt: new Date(),
     },
   })
 
-  await audit(ctx, 'VERIFY', 'CashCollection', cc.id, `Verified cash collection ₹${cc.amount / 100} for ${cc.candidate.fullName} (${cc.loan.loanNumber}). Payment ${paymentNumber}, receipt ${capture.receiptNumber}.`)
+  await audit(ctx, 'VERIFY', 'Payment', cc.id, `Verified cash collection ₹${cc.amount / 100} for ${cc.candidate.fullName} (${cc.loan.loanNumber}). Payment ${cc.paymentNumber}.`)
 
   return success({
     id: cc.id,
-    status: 'ALLOCATED',
-    paymentId: payment.id,
-    paymentNumber,
-    receiptNumber: capture.receiptNumber,
-    allocatedFees: String(capture.allocatedFees),
-    allocatedInterest: String(capture.allocatedInterest),
-    allocatedPrincipal: String(capture.allocatedPrincipal),
+    status: 'VERIFIED',
+    paymentId: cc.id,
+    paymentNumber: cc.paymentNumber,
+    receiptNumber: cc.receiptNumber,
+    allocatedFees: String(cc.allocatedFees),
+    allocatedInterest: String(cc.allocatedInterest),
+    allocatedPrincipal: String(cc.allocatedPrincipal),
   })
 })

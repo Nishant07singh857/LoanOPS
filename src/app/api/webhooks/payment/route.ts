@@ -14,7 +14,13 @@ const WEBHOOK_SECRET = process.env.PAYMENT_WEBHOOK_SECRET
 // Whether signature verification is required.
 const SIGNATURE_REQUIRED = true
 
-const schema = z.object({}).strict()
+const schema = z.object({
+  paymentId: z.string(),
+  providerEventId: z.string(),
+  signature: z.string().optional(),
+  status: z.enum(['CAPTURED', 'FAILED']),
+  reason: z.string().optional(),
+}).strict()
 
 function verifySignature(providerEventId: string, signature: string | undefined): boolean {
   if (!SIGNATURE_REQUIRED) return true // dev mode — accept any payload

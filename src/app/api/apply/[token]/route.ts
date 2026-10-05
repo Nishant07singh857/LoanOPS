@@ -80,9 +80,12 @@ const submitSchema = z.object({
   agreementTemplateId: z.string().optional(),
   agreementVersion: z.string().optional(),
   agreementAccepted: z.boolean(),
-})
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest, { params }: { params: Promise<{ token: string }> }) => {
+  const { enforceRateLimit } = await import('@/lib/server/rate-limit')
+  await enforceRateLimit(req, 'public_api')
+
   const { token } = await params
   const body = await req.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON')
@@ -252,7 +255,7 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
     }
 
     return { application, candidate }
-  })
+  }, { maxWait: 15000, timeout: 30000 })
 
   return success({
     applicationNumber: result.application.applicationNumber,

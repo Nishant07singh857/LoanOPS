@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import 'dotenv/config';
 
 // Playwright E2E tests MUST use DATABASE_URL_TEST.
 // The standalone server is started with DATABASE_URL overridden to DATABASE_URL_TEST.
@@ -13,8 +14,8 @@ if (process.env.DATABASE_URL) {
   try {
     const mainUrl = new URL(process.env.DATABASE_URL);
     const testUrl = new URL(testDbUrl);
-    if (mainUrl.host === testUrl.host && mainUrl.pathname === testUrl.pathname) {
-      throw new Error('❌ DATABASE_URL_TEST must point to a different database or host than DATABASE_URL.');
+    if (mainUrl.host === testUrl.host && mainUrl.pathname === testUrl.pathname && mainUrl.username === testUrl.username) {
+      throw new Error('❌ DATABASE_URL_TEST must point to a different database or host or project-ref than DATABASE_URL.');
     }
   } catch (e: any) {
     throw new Error('❌ Invalid Database URLs provided: ' + e.message);

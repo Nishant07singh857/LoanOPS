@@ -22,8 +22,8 @@ if (process.env.DATABASE_URL) {
   try {
     const mainUrl = new URL(process.env.DATABASE_URL)
     const testUrlParsed = new URL(testUrl)
-    if (mainUrl.host === testUrlParsed.host && mainUrl.pathname === testUrlParsed.pathname) {
-      console.error('❌ DATABASE_URL_TEST must point to a different database or host than DATABASE_URL.')
+    if (mainUrl.host === testUrlParsed.host && mainUrl.pathname === testUrlParsed.pathname && mainUrl.username === testUrlParsed.username) {
+      console.error('❌ DATABASE_URL_TEST must point to a different database or host or project-ref than DATABASE_URL.')
       process.exit(1)
     }
   } catch (e: any) {

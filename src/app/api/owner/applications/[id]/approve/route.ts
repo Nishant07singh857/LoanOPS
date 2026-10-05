@@ -120,6 +120,7 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
     await tx.notification.create({
       data: {
         organizationId: ctx.user.organizationId,
+        userId: app.candidate.userId ?? null,
         candidateId: app.candidateId,
         type: 'APPLICATION_APPROVED',
         title: 'Application approved',
