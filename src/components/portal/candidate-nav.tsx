@@ -7,7 +7,7 @@ import type { PortalNavGroup } from './layout'
 export const CANDIDATE_BRAND = {
   name: 'Sterling Lending',
   subtitle: 'My Loan',
-  accentClass: 'bg-success',
+  accentClass: 'bg-gradient-to-br from-purple-950 via-purple-800 to-amber-600 shadow-glow',
 } as const
 
 export const CANDIDATE_NAV: PortalNavGroup[] = [

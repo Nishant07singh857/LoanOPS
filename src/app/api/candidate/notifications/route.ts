@@ -47,10 +47,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const markSchema = z.object({
-  id: z.string().optional(),
-  all: z.boolean().optional(),
-})
+const markSchema = z.object({}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireCandidate()

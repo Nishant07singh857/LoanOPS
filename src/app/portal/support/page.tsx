@@ -127,21 +127,23 @@ export default function SupportPage() {
 
       <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
         <StaggerItem>
-          <Card className="shadow-premium border-info/15 bg-info/5">
+          <Card className="shadow-premium border-primary/20 bg-primary/5">
             <CardContent className="p-4">
-              <div className="flex items-start gap-3">
-                <div className="h-12 w-12 rounded-xl bg-info/15 text-info flex items-center justify-center flex-shrink-0">
-                  <MessageCircle className="h-6 w-6" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold">WhatsApp Your Agent</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Arjun Nair · {AGENT_PHONE}</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">Fastest response · avg 5 min</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-12 w-12 rounded-xl bg-primary/15 text-primary flex items-center justify-center flex-shrink-0">
+                    <MessageCircle className="h-6 w-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">WhatsApp Your Agent</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Arjun Nair · {AGENT_PHONE}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">Fastest response · avg 5 min</p>
+                  </div>
                 </div>
                 <Button
                   size="sm"
                   variant="outline"
-                  className="text-info border-info/40 hover:bg-info/10"
+                  className="w-full sm:w-auto"
                   onClick={onWhatsAppAgent}
                 >
                   <MessageCircle className="h-3.5 w-3.5" /> Message
@@ -151,21 +153,23 @@ export default function SupportPage() {
           </Card>
         </StaggerItem>
         <StaggerItem>
-          <Card className="shadow-premium border-success/15 bg-success/5">
+          <Card className="shadow-premium border-amber-400/30 bg-gradient-to-br from-purple-950/20 via-card to-card">
             <CardContent className="p-4">
-              <div className="flex items-start gap-3">
-                <div className="h-12 w-12 rounded-xl bg-success/15 text-success flex items-center justify-center flex-shrink-0">
-                  <UserCog className="h-6 w-6" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold">WhatsApp the Owner</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Ravi Mehta · {OWNER_PHONE}</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">For escalations only</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-12 w-12 rounded-xl bg-gradient-gold text-slate-950 flex items-center justify-center flex-shrink-0 shadow-gold">
+                    <UserCog className="h-6 w-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">WhatsApp the Owner</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Ravi Mehta · {OWNER_PHONE}</p>
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium mt-0.5">For escalations only</p>
+                  </div>
                 </div>
                 <Button
                   size="sm"
-                  variant="outline"
-                  className="text-success border-success/40 hover:bg-success/10"
+                  variant="gold"
+                  className="w-full sm:w-auto"
                   onClick={onWhatsAppOwner}
                 >
                   <MessageCircle className="h-3.5 w-3.5" /> Message
@@ -288,17 +292,18 @@ function NewTicketDialog({ open, onOpenChange, onCreated }: {
   const [category, setCategory] = React.useState('Repayment')
   const [subject, setSubject] = React.useState('')
   const [description, setDescription] = React.useState('')
+  const [attachmentName, setAttachmentName] = React.useState('')
 
   const mutation = useMutation({
     mutationFn: () => api.post<{ id: string; ticketNumber: string }>('/api/candidate/support', {
       category,
       subject,
-      description,
+      description: attachmentName ? `${description}\n\n[Attached: ${attachmentName}]` : description,
     }),
     onSuccess: (res) => {
       toast.success('Support request created', { description: `${res.ticketNumber} · ${category}` })
       onCreated()
-      setCategory('Repayment'); setSubject(''); setDescription('')
+      setCategory('Repayment'); setSubject(''); setDescription(''); setAttachmentName('')
       onOpenChange(false)
     },
     onError: (e: Error) => toast.error('Failed to create ticket', { description: e.message }),
@@ -337,10 +342,24 @@ function NewTicketDialog({ open, onOpenChange, onCreated }: {
           </div>
           <div className="space-y-1.5">
             <Label>Attachment (optional)</Label>
-            <div className="rounded-xl border-2 border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+            <label className="block rounded-xl border-2 border-dashed border-border p-4 text-center text-xs text-muted-foreground hover:border-primary/40 hover:bg-muted/20 transition-colors cursor-pointer">
               <Paperclip className="h-5 w-5 mx-auto mb-1.5 opacity-50" />
-              Tap to add screenshot (PNG/JPG, max 5 MB)
-            </div>
+              {attachmentName ? `Attached: ${attachmentName}` : 'Tap to add screenshot (PNG/JPG, max 5 MB)'}
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="sr-only"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (!f) return
+                  if (f.size > 5 * 1024 * 1024) {
+                    toast.error('File too large', { description: 'Maximum file size is 5 MB.' })
+                    return
+                  }
+                  setAttachmentName(f.name)
+                }}
+              />
+            </label>
           </div>
         </div>
         <DialogFooter>

@@ -1,0 +1,89 @@
+name: LoanOps CI — Typecheck, Lint, Unit Tests, Audit, Build & Playwright E2E
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  NODE_ENV: test
+  SESSION_SECRET: "ci-test-session-secret-at-least-32-characters-long-0123456789"
+  PII_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+jobs:
+  verify:
+    name: Quality, Security & E2E Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+          POSTGRES_DB: loanops_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Supply chain security check (npm audit)
+        run: npm audit --audit-level=critical || true
+
+      - name: Generate Prisma Client & Apply Migrations
+        env:
+          DATABASE_URL: "postgresql://postgres:postgrespassword@localhost:5432/loanops_ci"
+          DIRECT_URL: "postgresql://postgres:postgrespassword@localhost:5432/loanops_ci"
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+
+      - name: TypeScript typecheck (tsc)
+        run: npx tsc --noEmit
+
+      - name: ESLint check
+        run: npx eslint .
+
+      - name: Run Unit & Security Tests
+        run: npm run test:unit
+
+      - name: Build Production Standalone Bundle
+        env:
+          DATABASE_URL: "postgresql://postgres:postgrespassword@localhost:5432/loanops_ci"
+          DIRECT_URL: "postgresql://postgres:postgrespassword@localhost:5432/loanops_ci"
+        run: npm run build
+
+      - name: Seed CI Database & Run Playwright E2E Suite
+        env:
+          DATABASE_URL: "postgresql://postgres:postgrespassword@localhost:5432/loanops_ci"
+          DIRECT_URL: "postgresql://postgres:postgrespassword@localhost:5432/loanops_ci"
+          ALLOW_PROD_SEED: "true"
+        run: |
+          npx tsx scripts/seed.ts
+          npx playwright install --with-deps chromium
+          node .next/standalone/server.js &
+          sleep 4
+          npx playwright test --reporter=list
+
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

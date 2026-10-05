@@ -19,7 +19,7 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
   const body = await req.json().catch(() => ({}))
   const data = validate(schema, body)
 
-  const cc = await db.cashCollection.findFirst({
+  const cc = await db.payment.findFirst({
     where: { id, loan: { organizationId: ctx.user.organizationId } },
     include: { loan: true, candidate: true, recordedBy: true },
   })
@@ -30,7 +30,7 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
     if (!data.rejectionReason) return badRequest('rejectionReason is required when rejecting')
 
     await db.$transaction(async (tx) => {
-      await tx.cashCollection.update({
+      await tx.payment.update({
         where: { id: cc.id },
         data: {
           status: 'REJECTED',
@@ -84,7 +84,7 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
   })
 
   // Mark cash collection as verified/allocated
-  await db.cashCollection.update({
+  await db.payment.update({
     where: { id: cc.id },
     data: {
       status: 'ALLOCATED',

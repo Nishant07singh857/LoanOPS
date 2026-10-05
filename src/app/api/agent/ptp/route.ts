@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requireAgent, audit } from '@/lib/server/auth'
-import { apiHandler, success, created, badRequest, notFound, validate, paginate, paginationSchema } from '@/lib/server/api'
+import { apiHandler, success, created, badRequest, notFound, forbidden, validate, paginate, paginationSchema } from '@/lib/server/api'
 import { parsePaise } from '@/lib/server/financial'
 
 const listSchema = paginationSchema.extend({
@@ -14,6 +14,9 @@ const listSchema = paginationSchema.extend({
 
 export const GET = apiHandler(async (req: NextRequest) => {
   const ctx = await requireAgent()
+  const agentProfile = await db.agentProfile.findUnique({ where: { userId: ctx.user.id } })
+  if (!agentProfile) return notFound('Agent profile not found')
+
   const url = new URL(req.url)
   const params = Object.fromEntries(url.searchParams.entries())
   const { page, pageSize, status, candidateId } = validate(listSchema, params)
@@ -54,16 +57,13 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const schema = z.object({
-  candidateId: z.string(),
-  loanId: z.string(),
-  promisedAmount: z.union([z.string(), z.number()]),
-  promiseDate: z.string(),
-  notes: z.string().optional().nullable(),
-})
+const schema = z.object({}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireAgent()
+  const agentProfile = await db.agentProfile.findUnique({ where: { userId: ctx.user.id } })
+  if (!agentProfile) return forbidden('Agent profile not found')
+
   const body = await req.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON body')
   const data = validate(schema, body)
@@ -73,6 +73,19 @@ export const POST = apiHandler(async (req: NextRequest) => {
     include: { candidate: true },
   })
   if (!loan) return notFound('Loan not found')
+
+  if (loan.candidate.assignedAgentId !== agentProfile.id) {
+    const taskCount = await db.collectionTask.count({
+      where: {
+        candidateId: loan.candidateId,
+        assignedToId: agentProfile.id,
+        organizationId: ctx.user.organizationId,
+      },
+    })
+    if (taskCount === 0) {
+      return forbidden('You do not have access to this candidate')
+    }
+  }
 
   const promisedAmountPaise = parsePaise(data.promisedAmount)
   if (promisedAmountPaise <= BigInt(0)) return badRequest('Promised amount must be positive')

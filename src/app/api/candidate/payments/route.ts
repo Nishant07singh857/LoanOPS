@@ -1,11 +1,11 @@
-// POST /api/candidate/payments — candidate initiates payment
+// POST /api/candidate/payments — candidate initiates payment (disabled unless ENABLE_ONLINE_PAYMENTS === 'true')
 // GET  /api/candidate/payments — list candidate's own payments
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requireCandidate, audit } from '@/lib/server/auth'
 import {
-  apiHandler, success, created, badRequest, notFound,
+  apiHandler, success, created, badRequest, notFound, forbidden,
   validate, paginate, paginationSchema, genNumber, genToken,
 } from '@/lib/server/api'
 import { parsePaise } from '@/lib/server/financial'
@@ -23,9 +23,14 @@ export const GET = apiHandler(async (req: NextRequest) => {
   const [items, total] = await Promise.all([
     db.payment.findMany({
       where,
-      skip, take,
+      skip,
+      take,
       orderBy: { createdAt: 'desc' },
-      include: { loan: { select: { loanNumber: true } } },
+      include: {
+        loan: { select: { loanNumber: true } },
+        recordedBy: { select: { name: true } },
+        verifiedBy: { select: { name: true } },
+      },
     }),
     db.payment.count({ where }),
   ])
@@ -39,7 +44,18 @@ export const GET = apiHandler(async (req: NextRequest) => {
       amount: String(p.amount),
       method: p.method,
       status: p.status,
+      verificationStatus:
+        p.status === 'VERIFIED' || p.verifiedAt
+          ? 'VERIFIED'
+          : p.status === 'REJECTED'
+            ? 'REJECTED'
+            : 'PENDING_VERIFICATION',
+      recordedBy: p.recordedBy?.name ?? 'Field Agent',
+      verifiedBy: p.verifiedBy?.name ?? null,
+      verifiedAt: p.verifiedAt,
       reference: p.reference,
+      notes: p.notes,
+      rejectionReason: p.rejectionReason,
       receiptNumber: p.receiptNumber,
       allocatedFees: String(p.allocatedFees),
       allocatedInterest: String(p.allocatedInterest),
@@ -47,20 +63,21 @@ export const GET = apiHandler(async (req: NextRequest) => {
       createdAt: p.createdAt,
       allocatedAt: p.allocatedAt,
     })),
-    total, page, pageSize,
+    total,
+    page,
+    pageSize,
   })
 })
 
-const schema = z.object({
-  loanId: z.string(),
-  amount: z.union([z.string(), z.number()]),
-  method: z.enum(['ONLINE_UPI', 'ONLINE_NETBANKING', 'ONLINE_CARD']),
-  reference: z.string().optional().nullable(),
-})
+const schema = z.object({}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireCandidate()
   if (!ctx.user.candidateId) return badRequest('No candidate profile linked to this account')
+
+  if (process.env.ENABLE_ONLINE_PAYMENTS !== 'true') {
+    return forbidden('Offline cash collection only. Please pay cash to your assigned field agent.')
+  }
 
   const body = await req.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON body')
@@ -114,3 +131,4 @@ export const POST = apiHandler(async (req: NextRequest) => {
     providerMock,
   })
 })
+

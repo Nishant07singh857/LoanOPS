@@ -77,6 +77,21 @@ export default function AgentPerformancePage() {
     { name: 'Broken', value: p.ptpBroken, color: 'var(--destructive)' },
   ] : ptpDataFallback
 
+  const dailyTasksData = React.useMemo(() => {
+    if (!p || p.tasksAssigned === 0) return taskCompletion
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const baseTotal = Math.max(1, Math.ceil(p.tasksAssigned / 6))
+    const baseDone = Math.floor(p.tasksCompleted / 6)
+    return days.map((label, i) => ({
+      label,
+      total: i === 5 ? Math.max(0, p.tasksAssigned - baseTotal * 5) : baseTotal,
+      completed: Math.min(
+        i === 5 ? Math.max(0, p.tasksAssigned - baseTotal * 5) : baseTotal,
+        i === 5 ? Math.max(0, p.tasksCompleted - baseDone * 5) : baseDone
+      ),
+    }))
+  }, [p])
+
   const teamCompare = [
     { name: 'You', value: p?.successRate ?? 0 },
     { name: 'Team Avg', value: p ? Math.round(p.successRate * 0.9) : 0 },
@@ -90,11 +105,11 @@ export default function AgentPerformancePage() {
         icon={<Trophy className="h-5 w-5" />}
       />
 
-      {isLoading || !p ? (
+      {isLoading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
           {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
         </div>
-      ) : (
+      ) : p ? (
         <>
           <StaggerContainer className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
             <StaggerItem>
@@ -123,7 +138,7 @@ export default function AgentPerformancePage() {
             <FadeIn delay={0.1}><Card className="shadow-premium border-destructive/15"><CardContent className="p-4"><p className="text-xs text-muted-foreground">PTP Broken</p><p className="text-2xl font-bold tabular-nums mt-1 text-destructive">{p.ptpBroken}</p><p className="text-[11px] text-muted-foreground mt-1">Fulfillment rate: <span className="font-semibold text-success">{p.ptpFulfillmentRate}%</span></p></CardContent></Card></FadeIn>
           </div>
         </>
-      )}
+      ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <FadeIn>
@@ -165,7 +180,7 @@ export default function AgentPerformancePage() {
             <CardContent>
               <div className="h-[260px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={taskCompletion} margin={{ top: 10, right: 8, left: -10, bottom: 0 }}>
+                  <BarChart data={dailyTasksData} margin={{ top: 10, right: 8, left: -10, bottom: 0 }}>
                     <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />

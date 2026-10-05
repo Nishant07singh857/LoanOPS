@@ -78,9 +78,9 @@ interface AuditItem {
 }
 
 const alertColor: Record<string, string> = {
-  HIGH: 'text-destructive',
-  MEDIUM: 'text-warning',
-  LOW: 'text-info',
+  HIGH: 'bg-destructive text-destructive',
+  MEDIUM: 'bg-warning text-warning',
+  LOW: 'bg-info text-info',
 }
 
 const activityIcon: Record<string, React.ReactNode> = {
@@ -115,7 +115,6 @@ const activityTint: Record<string, string> = {
   PTP_UPDATE: 'bg-warning/15 text-warning',
   ESCALATE: 'bg-destructive/15 text-destructive',
   REVOKE: 'bg-warning/15 text-warning',
-  CREATE: 'bg-info/15 text-info',
   SUBMIT: 'bg-info/15 text-info',
   VERIFY: 'bg-success/15 text-success',
 }
@@ -137,30 +136,33 @@ function timeAgo(dateStr: string): string {
 export default function AdminDashboardPage() {
   const spark = (arr: number[]) => arr
 
-  const { data: kpis, isLoading: kpiLoading } = useQuery({
+  const { data: kpis, isLoading: kpiLoading, isError: kpiError, refetch: refetchKpis } = useQuery({
     queryKey: ['owner-dashboard'],
     queryFn: () => api.get<DashboardKPIs>('/api/owner/dashboard'),
   })
 
-  const { data: aiData } = useQuery({
+  const { data: aiData, isLoading: aiLoading, isError: aiError, refetch: refetchAi } = useQuery({
     queryKey: ['owner-ai-insights'],
     queryFn: () => api.get<{ items: AIInsight[]; total: number; highCount: number; mediumCount: number; lowCount: number }>('/api/owner/ai-insights'),
   })
 
-  const { data: analyticsData } = useQuery({
+  const { data: analyticsData, isLoading: analyticsLoading, isError: analyticsError, refetch: refetchAnalytics } = useQuery({
     queryKey: ['owner-analytics'],
     queryFn: () => api.get<AnalyticsData>('/api/owner/analytics'),
   })
 
-  const { data: auditData } = useQuery({
+  const { data: auditData, isLoading: auditLoading, isError: auditError, refetch: refetchAudit } = useQuery({
     queryKey: ['owner-audit-recent'],
     queryFn: () => api.get<{ items: AuditItem[]; total: number }>('/api/owner/audit?page=1&pageSize=8'),
   })
 
   const aiAlerts = aiData?.items ?? []
-  const recentActivity = (auditData?.items ?? []).slice(0, 8).map((a) => ({
+  const recentActivity = (auditData?.items ?? [])
+    .filter((a) => a.action !== 'LOGIN')
+    .slice(0, 6).map((a) => ({
     id: a.id,
     type: a.entityType,
+    action: a.action,
     title: a.description.split(' ').slice(0, 6).join(' '),
     description: a.description,
     actor: a.user?.name ?? 'System',
@@ -195,20 +197,15 @@ export default function AdminDashboardPage() {
         description="Portfolio pulse, disbursement & collections health, AI signals and recent activity."
         icon={<Activity className="h-5 w-5" />}
         action={
-          <>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/admin/reports"><FileCheck className="h-4 w-4" /> Reports</Link>
-            </Button>
-            <Button asChild size="sm">
-              <Link href="/admin/create-loan"><Plus className="h-4 w-4" /> Create Loan</Link>
-            </Button>
-          </>
+          <Button asChild variant="outline" size="sm" className="min-h-[44px] sm:min-h-8">
+            <Link href="/admin/reports"><FileCheck className="h-4 w-4" /> Reports</Link>
+          </Button>
         }
       />
 
       {/* Quick actions strip */}
       <FadeIn>
-        <Card className="overflow-hidden border-success/15 bg-gradient-to-br from-success/5 via-primary/5 to-transparent">
+        <Card className="overflow-hidden border-border shadow-premium">
           <CardContent className="p-4 sm:p-5">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex items-start gap-3">
@@ -223,13 +220,13 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button asChild size="sm">
+                <Button asChild size="sm" className="min-h-[44px] sm:min-h-8">
                   <Link href="/admin/create-loan"><Plus className="h-4 w-4" /> Create Loan</Link>
                 </Button>
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/admin/qr-links"><QrCode className="h-4 w-4" /> Generate QR Link</Link>
+                <Button asChild variant="outline" size="sm" className="min-h-[44px] sm:min-h-8">
+                  <Link href="/admin/create-loan"><QrCode className="h-4 w-4" /> Generate QR Link</Link>
                 </Button>
-                <Button asChild variant="outline" size="sm">
+                <Button asChild variant="outline" size="sm" className="min-h-[44px] sm:min-h-8">
                   <Link href="/admin/applications"><FileText className="h-4 w-4" /> Review Applications</Link>
                 </Button>
               </div>
@@ -239,7 +236,23 @@ export default function AdminDashboardPage() {
       </FadeIn>
 
       {/* KPI grid */}
-      <StaggerContainer className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+      {kpiError ? (
+        <Card className="border-destructive/40 bg-destructive/5 shadow-premium">
+          <CardContent className="p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0" />
+              <div>
+                <p className="text-sm font-semibold">Failed to load dashboard metrics</p>
+                <p className="text-xs text-muted-foreground">Please check your connection and try again.</p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => refetchKpis()} className="min-h-[44px] sm:min-h-8">
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+      <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4" role={kpiLoading ? 'status' : undefined} aria-label={kpiLoading ? 'Loading dashboard KPIs' : undefined}>
         {kpiLoading || !kpis ? (
           Array.from({ length: 8 }).map((_, i) => (
             <StaggerItem key={i}>
@@ -331,17 +344,18 @@ export default function AdminDashboardPage() {
           </>
         )}
       </StaggerContainer>
+      )}
 
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <FadeIn className="lg:col-span-2">
           <Card className="border-border shadow-premium">
-            <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-2">
+            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 space-y-0 pb-2">
               <div>
                 <CardTitle className="text-base sm:text-lg">Portfolio Trend</CardTitle>
                 <CardDescription className="text-xs sm:text-sm">Disbursed vs Collected vs Outstanding (₹)</CardDescription>
               </div>
-              <div className="flex items-center gap-3 text-[10px] sm:text-xs">
+              <div className="flex flex-wrap items-center gap-3 text-[10px] sm:text-xs">
                 <Legend4 color="var(--chart-1)" label="Disbursed" />
                 <Legend4 color="var(--chart-2)" label="Collected" />
                 <Legend4 color="var(--chart-3)" label="Outstanding" />
@@ -349,8 +363,19 @@ export default function AdminDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="h-[260px] sm:h-[300px]">
-                {portfolioTrend.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Loading chart…</div>
+                {analyticsLoading ? (
+                  <div className="h-full flex items-center justify-center text-sm text-muted-foreground" role="status" aria-label="Loading portfolio trend chart">
+                    Loading chart…
+                  </div>
+                ) : analyticsError ? (
+                  <div className="h-full flex flex-col items-center justify-center gap-2 text-center">
+                    <p className="text-sm text-destructive font-medium">Failed to load analytics</p>
+                    <Button variant="outline" size="sm" onClick={() => refetchAnalytics()} className="min-h-[44px] sm:min-h-8">
+                      Retry
+                    </Button>
+                  </div>
+                ) : portfolioTrend.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-sm text-muted-foreground">No trend data available yet</div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={portfolioTrend} margin={{ top: 10, right: 8, left: -10, bottom: 0 }}>
@@ -431,7 +456,7 @@ export default function AdminDashboardPage() {
         <FadeIn>
           <Card className="border-border shadow-premium h-full">
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2.5">
                   <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
                     <Sparkles className="h-5 w-5" />
@@ -445,7 +470,20 @@ export default function AdminDashboardPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-3 max-h-[440px] overflow-y-auto no-scrollbar">
-              {aiAlerts.length === 0 ? (
+              {aiLoading ? (
+                <div className="space-y-3" role="status" aria-label="Loading AI alerts">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <Skeleton key={i} className="h-24 w-full rounded-2xl" />
+                  ))}
+                </div>
+              ) : aiError ? (
+                <div className="py-8 flex flex-col items-center justify-center gap-2 text-center">
+                  <p className="text-sm text-destructive font-medium">Failed to load AI insights</p>
+                  <Button variant="outline" size="sm" onClick={() => refetchAi()} className="min-h-[44px] sm:min-h-8">
+                    Retry
+                  </Button>
+                </div>
+              ) : aiAlerts.length === 0 ? (
                 <EmptyState
                   icon={<Sparkles className="h-6 w-6" />}
                   title="No AI alerts"
@@ -461,7 +499,7 @@ export default function AdminDashboardPage() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-1.5">
+                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                           <StatusBadge variant={statusToVariant(a.level) as any} dot={false}>{a.level}</StatusBadge>
                           <p className="text-sm font-semibold truncate">{a.title}</p>
                         </div>
@@ -475,7 +513,7 @@ export default function AdminDashboardPage() {
                         <ul className="space-y-1 mb-3">
                           {a.reasons.map((r, i) => (
                             <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
-                              <span className={cn('mt-1 h-1 w-1 rounded-full flex-shrink-0', alertColor[a.level] || 'bg-muted-foreground')} />
+                              <span className={cn('mt-1.5 h-1.5 w-1.5 rounded-full flex-shrink-0', alertColor[a.level] || 'bg-muted-foreground')} />
                               <span>{r}</span>
                             </li>
                           ))}
@@ -488,13 +526,13 @@ export default function AdminDashboardPage() {
                         )}
                       </div>
                     </div>
-                    <div className="mt-3 flex justify-end gap-2">
+                    <div className="mt-3 flex flex-wrap justify-end gap-2">
                       {a.loanId && (
-                        <Button size="sm" variant="outline" asChild>
+                        <Button size="sm" variant="outline" asChild className="min-h-[44px] sm:min-h-8">
                           <Link href={`/admin/loans/${a.loanId}`}>View loan</Link>
                         </Button>
                       )}
-                      <Button size="sm" onClick={() => onAssign(a.candidateName)}>Assign agent</Button>
+                      <Button size="sm" onClick={() => onAssign(a.candidateName)} className="min-h-[44px] sm:min-h-8">Assign agent</Button>
                     </div>
                   </motion.div>
                 ))
@@ -510,15 +548,28 @@ export default function AdminDashboardPage() {
               <CardDescription className="text-xs sm:text-sm">Live audit log across the platform</CardDescription>
             </CardHeader>
             <CardContent className="max-h-[440px] overflow-y-auto no-scrollbar">
-              {recentActivity.length === 0 ? (
+              {auditLoading ? (
+                <div className="space-y-3" role="status" aria-label="Loading recent activity">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-14 w-full rounded-xl" />
+                  ))}
+                </div>
+              ) : auditError ? (
+                <div className="py-8 flex flex-col items-center justify-center gap-2 text-center">
+                  <p className="text-sm text-destructive font-medium">Failed to load recent activity</p>
+                  <Button variant="outline" size="sm" onClick={() => refetchAudit()} className="min-h-[44px] sm:min-h-8">
+                    Retry
+                  </Button>
+                </div>
+              ) : recentActivity.length === 0 ? (
                 <EmptyState icon={<Activity className="h-6 w-6" />} title="No activity yet" description="Audit log events will appear here as actions occur." />
               ) : (
                 <div className="relative">
                   <div className="absolute left-[18px] top-2 bottom-2 w-px bg-border" />
-                  <ul className="space-y-4">
+                  <ul className="space-y-3">
                     {recentActivity.map((a) => (
                       <li key={a.id} className="flex items-start gap-3">
-                        <div className={cn('relative z-10 h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0 ring-4 ring-background', activityTint[a.type] || 'bg-muted text-muted-foreground')}>
+                        <div className={cn('relative z-10 h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 ring-4 ring-background', activityTint[a.action] || activityTint[a.type] || 'bg-muted text-muted-foreground')}>
                           {activityIcon[a.type] || <Activity className="h-3.5 w-3.5" />}
                         </div>
                         <div className="min-w-0 flex-1 pt-0.5">
@@ -553,10 +604,10 @@ export default function AdminDashboardPage() {
             <CardDescription className="text-xs sm:text-sm">Workflow counters across teams</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
               {[
                 { label: 'Apps awaiting review', value: kpis?.appsWaitingReview ?? 0, href: '/admin/applications', tint: 'text-warning' },
-                { label: 'Loans ready for disb.', value: kpis?.loansReadyForDisbursement ?? 0, href: '/admin/disbursements', tint: 'text-info' },
+                { label: 'Loans ready for disb.', value: kpis?.loansReadyForDisbursement ?? 0, href: '/admin/loans?status=PENDING_DISBURSEMENT', tint: 'text-info' },
                 { label: 'Payments due today', value: kpis?.paymentsDueToday ?? 0, href: '/admin/payments', tint: 'text-info' },
                 { label: 'PTP due today', value: kpis?.ptpDueToday ?? 0, href: '/admin/collections', tint: 'text-warning' },
                 { label: 'Broken PTPs', value: kpis?.brokenPtp ?? 0, href: '/admin/collections', tint: 'text-destructive' },
@@ -565,12 +616,12 @@ export default function AdminDashboardPage() {
                 <Link
                   key={s.label}
                   href={s.href}
-                  className="rounded-2xl border border-border bg-card p-4 hover:border-primary/40 hover:shadow-premium transition-all group"
+                  className="rounded-2xl border border-border bg-card p-4 hover:border-primary/40 hover:shadow-premium transition-all group flex flex-col justify-between min-h-[44px]"
                 >
                   <p className="text-xs text-muted-foreground">{s.label}</p>
                   <p className={cn('text-2xl font-bold tabular-nums mt-1', s.tint)}>{s.value}</p>
-                  <div className="flex items-center gap-1 mt-2 text-[11px] text-primary opacity-0 group-hover:opacity-100 transition-opacity">
-                    View <ArrowRight className="h-3 w-3" />
+                  <div className="flex items-center gap-1 mt-3 text-xs font-medium text-primary group-hover:underline">
+                    View <ArrowRight className="h-3.5 w-3.5" />
                   </div>
                 </Link>
               ))}

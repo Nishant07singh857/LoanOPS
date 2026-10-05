@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requireAgent, audit } from '@/lib/server/auth'
-import { apiHandler, success, created, badRequest, notFound, validate, paginate, paginationSchema } from '@/lib/server/api'
+import { apiHandler, success, created, badRequest, notFound, forbidden, validate, paginate, paginationSchema } from '@/lib/server/api'
 
 const listSchema = paginationSchema.extend({
   status: z.string().optional(),
@@ -12,6 +12,9 @@ const listSchema = paginationSchema.extend({
 
 export const GET = apiHandler(async (req: NextRequest) => {
   const ctx = await requireAgent()
+  const agentProfile = await db.agentProfile.findUnique({ where: { userId: ctx.user.id } })
+  if (!agentProfile) return notFound('Agent profile not found')
+
   const url = new URL(req.url)
   const params = Object.fromEntries(url.searchParams.entries())
   const { page, pageSize, status } = validate(listSchema, params)
@@ -50,18 +53,13 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const schema = z.object({
-  candidateId: z.string(),
-  loanId: z.string(),
-  reason: z.enum([
-    'REPEATED_MISSED_PAYMENT', 'BROKEN_PTP', 'LONG_OVERDUE',
-    'FAILED_CONTACT', 'HIGH_OUTSTANDING', 'OTHER',
-  ]),
-  description: z.string().optional().nullable(),
-})
+const schema = z.object({}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireAgent()
+  const agentProfile = await db.agentProfile.findUnique({ where: { userId: ctx.user.id } })
+  if (!agentProfile) return forbidden('Agent profile not found')
+
   const body = await req.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON body')
   const data = validate(schema, body)
@@ -71,6 +69,19 @@ export const POST = apiHandler(async (req: NextRequest) => {
     include: { candidate: true },
   })
   if (!loan) return notFound('Loan not found')
+
+  if (loan.candidate.assignedAgentId !== agentProfile.id) {
+    const taskCount = await db.collectionTask.count({
+      where: {
+        candidateId: loan.candidateId,
+        assignedToId: agentProfile.id,
+        organizationId: ctx.user.organizationId,
+      },
+    })
+    if (taskCount === 0) {
+      return forbidden('You do not have access to this candidate')
+    }
+  }
 
   const escalation = await db.escalation.create({
     data: {
@@ -86,10 +97,11 @@ export const POST = apiHandler(async (req: NextRequest) => {
   // Notify owners
   const owners = await db.user.findMany({
     where: { organizationId: ctx.user.organizationId, role: 'OWNER', isActive: true },
+    select: { id: true }
   })
-  for (const owner of owners) {
-    await db.notification.create({
-      data: {
+  if (owners.length > 0) {
+    await db.notification.createMany({
+      data: owners.map(owner => ({
         organizationId: ctx.user.organizationId,
         userId: owner.id,
         type: 'ESCALATION',
@@ -97,7 +109,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
         message: `${ctx.user.name} escalated ${loan.candidate.fullName} (${loan.loanNumber}): ${data.reason}`,
         isRead: false,
         metadata: { escalationId: escalation.id, loanId: loan.id, candidateId: loan.candidateId },
-      },
+      }))
     })
   }
 

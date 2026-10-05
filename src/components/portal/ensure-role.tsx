@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useSession, type Role } from '@/lib/session'
 
@@ -13,8 +14,6 @@ import { useSession, type Role } from '@/lib/session'
 export function EnsureRole({ role, children }: { role: Role; children: React.ReactNode }) {
   const { user, loading } = useSession()
   const router = useRouter()
-  const [handled, setHandled] = React.useState(false)
-
   React.useEffect(() => {
     if (loading) return
     if (!user) {
@@ -23,14 +22,12 @@ export function EnsureRole({ role, children }: { role: Role; children: React.Rea
       // and trigger another redirect loop.
       const path = role === 'OWNER' ? '/admin' : role === 'AGENT' ? '/agent' : '/portal'
       router.replace(`/login?redirect=${encodeURIComponent(path)}&role=${role}`)
-      return
     }
-    setHandled(true)
   }, [user, loading, role, router])
 
-  if (loading || !handled) {
+  if (loading || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="min-h-screen flex items-center justify-center bg-background" role="status" aria-live="polite">
         <div className="flex flex-col items-center gap-3">
           <div className="h-10 w-10 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
           <p className="text-sm text-muted-foreground">Loading portal...</p>
@@ -55,18 +52,18 @@ export function EnsureRole({ role, children }: { role: Role; children: React.Rea
             You are signed in as <strong>{user!.role}</strong> but this area requires <strong>{role}</strong> access.
           </p>
           <div className="mt-5 flex flex-col sm:flex-row gap-2 justify-center">
-            <a
+            <Link
               href={userHome}
               className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium"
             >
               Go to {roleLabel} Portal
-            </a>
-            <a
+            </Link>
+            <Link
               href="/"
               className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-border text-sm font-medium hover:bg-muted transition-colors"
             >
               Return home
-            </a>
+            </Link>
           </div>
         </div>
       </div>

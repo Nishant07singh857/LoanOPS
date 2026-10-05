@@ -7,8 +7,8 @@ import { apiHandler, success, badRequest, notFound, validate, genNumber } from '
 import { generateSchedule } from '@/lib/server/financial'
 
 const schema = z.object({
-  reviewNotes: z.string().max(2000).optional(),
-})
+  reviewNotes: z.string().max(2000).optional().nullable(),
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const ctx = await requireOwner()

@@ -1,15 +1,10 @@
 // GET /api/owner/applications — list
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
-import { requireOwner } from '@/lib/server/auth'
+import { requireOwner, audit } from '@/lib/server/auth'
 import { apiHandler, success, validate, paginate } from '@/lib/server/api'
 
-const querySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  status: z.string().optional(),
-  search: z.string().optional(),
-})
+const querySchema = z.object({}).strict()
 
 export const GET = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()
@@ -17,7 +12,13 @@ export const GET = apiHandler(async (req: NextRequest) => {
   const params = validate(querySchema, Object.fromEntries(url.searchParams))
 
   const where: any = { organizationId: ctx.user.organizationId }
-  if (params.status) where.status = params.status
+  if (params.status) {
+    where.status = params.status
+  } else {
+    // Default view: exclude APPROVED applications since they are now Loans
+    where.status = { not: 'APPROVED' }
+  }
+  
   if (params.search) {
     where.OR = [
       { applicationNumber: { contains: params.search, mode: 'insensitive' } },
@@ -70,7 +71,12 @@ export const GET = apiHandler(async (req: NextRequest) => {
 import { genNumber, genToken } from '@/lib/server/api'
 
 const createSchema = z.object({
-  candidateId: z.string().min(1),
+  candidateId: z.string().optional(),
+  newCandidate: z.object({
+    fullName: z.string().min(2).max(100),
+    mobile: z.string().min(10).max(15),
+    secondaryMobile: z.string().optional(),
+  }).strict().optional(),
   principalAmount: z.string().regex(/^\d+$/),
   currency: z.string().default('INR'),
   purpose: z.string().min(3).max(500),
@@ -83,7 +89,7 @@ const createSchema = z.object({
   firstDueDate: z.string().datetime(),
   processingFee: z.string().regex(/^\d+$/).optional(),
   otherFees: z.string().regex(/^\d+$/).optional(),
-})
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()
@@ -91,11 +97,35 @@ export const POST = apiHandler(async (req: NextRequest) => {
   if (!body) return badRequest('Invalid JSON')
   const input = validate(createSchema, body)
 
-  // Verify candidate belongs to org
-  const candidate = await ctx.db.candidate.findFirst({
-    where: { id: input.candidateId, organizationId: ctx.user.organizationId },
-  })
-  if (!candidate) return notFound('Candidate not found')
+  if (!input.candidateId && !input.newCandidate) {
+    return badRequest('candidateId or newCandidate is required')
+  }
+
+  let candidate;
+  if (input.candidateId) {
+    // Verify candidate belongs to org
+    candidate = await ctx.db.candidate.findFirst({
+      where: { id: input.candidateId, organizationId: ctx.user.organizationId },
+    })
+    if (!candidate) return notFound('Candidate not found')
+  } else if (input.newCandidate) {
+    // Best effort: find existing by mobile
+    candidate = await ctx.db.candidate.findFirst({
+      where: { mobile: input.newCandidate.mobile, organizationId: ctx.user.organizationId },
+    })
+    if (!candidate) {
+      candidate = await ctx.db.candidate.create({
+        data: {
+          organizationId: ctx.user.organizationId,
+          fullName: input.newCandidate.fullName,
+          mobile: input.newCandidate.mobile,
+          secondaryMobile: input.newCandidate.secondaryMobile || null,
+          status: 'ACTIVE',
+        }
+      })
+      await audit(ctx, 'CREATE', 'Candidate', candidate.id, `Created candidate ${candidate.fullName} via application`)
+    }
+  }
 
   // Compute schedule preview using backend financial engine
   const { generateSchedule } = await import('@/lib/server/financial')
@@ -131,7 +161,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
       totalRepayable: Number(schedule.totalRepayable),
       installmentAmount: Number(schedule.installmentAmount),
       finalDueDate: schedule.finalDueDate,
-      status: 'SUBMITTED', // owner-created apps go straight to submitted
+      status: 'DRAFT', // owner-created apps go to DRAFT for candidate acceptance
       submittedAt: new Date(),
     },
   })

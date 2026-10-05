@@ -24,21 +24,21 @@ export function SectionHeading({ title, description, action, className, icon }: 
       )}
     >
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex items-start gap-2">
           {icon && (
-            <div className="flex-shrink-0 h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+            <div className="flex-shrink-0 h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center mt-0.5">
               {icon}
             </div>
           )}
           <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate">{title}</h1>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate leading-9">{title}</h1>
             {description && (
               <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">{description}</p>
             )}
           </div>
         </div>
       </div>
-      {action && <div className="flex-shrink-0 flex items-center gap-2">{action}</div>}
+      {action && <div className="flex-shrink-0 flex items-center gap-2 flex-wrap w-full sm:w-auto">{action}</div>}
     </motion.div>
   )
 }

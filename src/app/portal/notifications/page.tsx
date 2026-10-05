@@ -76,17 +76,18 @@ export default function NotificationsPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['candidate-notifications-list'],
-    queryFn: () => api.get<{ items: NotificationRow[]; total: number; unreadCount: number }>('/api/notifications?pageSize=100'),
+    queryFn: () => api.get<{ items: NotificationRow[]; total: number; unreadCount: number }>('/api/candidate/notifications?pageSize=100'),
   })
   const items = data?.items ?? []
   const filtered = items.filter((n) => matchFilter(n, filter))
   const unreadCount = data?.unreadCount ?? items.filter((n) => !n.isRead).length
 
   const markReadMutation = useMutation({
-    mutationFn: (id: string) => api.post(`/api/notifications/${id}/read`),
+    mutationFn: (id: string) => api.post('/api/candidate/notifications', { id }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['candidate-notifications-list'] })
       queryClient.invalidateQueries({ queryKey: ['candidate-notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['candidate-notifications-count'] })
     },
   })
 
@@ -96,13 +97,17 @@ export default function NotificationsPage() {
   }
 
   const onMarkAllRead = async () => {
-    // Sequentially mark all unread as read
-    const unread = items.filter((n) => !n.isRead)
-    for (const n of unread) {
-      try { await api.post(`/api/notifications/${n.id}/read`) } catch {}
+    try {
+      await api.post('/api/candidate/notifications', { all: true })
+    } catch {
+      const unread = items.filter((n) => !n.isRead)
+      for (const n of unread) {
+        try { await api.post(`/api/notifications/${n.id}/read`) } catch {}
+      }
     }
     queryClient.invalidateQueries({ queryKey: ['candidate-notifications-list'] })
     queryClient.invalidateQueries({ queryKey: ['candidate-notifications'] })
+    queryClient.invalidateQueries({ queryKey: ['candidate-notifications-count'] })
     toast.success('All notifications marked as read')
   }
 
@@ -129,9 +134,11 @@ export default function NotificationsPage() {
             return (
               <button
                 key={f.key}
+                type="button"
+                aria-pressed={active}
                 onClick={() => setFilter(f.key)}
                 className={cn(
-                  'text-xs px-3 py-1.5 rounded-full border transition-all flex-shrink-0 min-h-[32px]',
+                  'text-xs px-3 py-1.5 rounded-full border transition-all flex-shrink-0 min-h-[36px]',
                   active ? 'bg-primary text-primary-foreground border-primary shadow-glow' :
                   'bg-card border-border hover:border-primary/40'
                 )}

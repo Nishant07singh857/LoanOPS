@@ -24,17 +24,26 @@ export class ApiRequestError extends Error {
 }
 
 async function request<T>(
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   url: string,
   body?: any
 ): Promise<T> {
   const init: RequestInit = {
     method,
     credentials: 'same-origin',
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   }
-  const r = await fetch(url, init)
+  let r: Response
+  try {
+    r = await fetch(url, init)
+  } catch (networkErr: any) {
+    throw new ApiRequestError(
+      'NETWORK_ERROR',
+      networkErr?.message || 'Network request failed. Please check your connection.',
+      0
+    )
+  }
   const text = await r.text()
   let json: any = null
   if (text) {
@@ -45,15 +54,29 @@ async function request<T>(
     }
   }
   if (!r.ok) {
-    const err = (json?.error as ApiError) || { code: 'UNKNOWN', message: r.statusText }
+    const rawErr = json?.error
+    const err: ApiError =
+      rawErr && typeof rawErr === 'object'
+        ? {
+            code: String(rawErr.code || 'UNKNOWN'),
+            message: String(rawErr.message || r.statusText || 'Request failed'),
+            details: rawErr.details,
+          }
+        : {
+            code: 'UNKNOWN',
+            message: typeof rawErr === 'string' ? rawErr : r.statusText || 'Request failed',
+          }
     throw new ApiRequestError(err.code, err.message, r.status, err.details)
   }
-  return (json?.data ?? json) as T
+  return (json && typeof json === 'object' && 'data' in json ? json.data : json) as T
 }
+
 
 export const api = {
   get: <T>(url: string) => request<T>('GET', url),
   post: <T>(url: string, body?: any) => request<T>('POST', url, body),
+  put: <T>(url: string, body?: any) => request<T>('PUT', url, body),
   patch: <T>(url: string, body?: any) => request<T>('PATCH', url, body),
   delete: <T>(url: string) => request<T>('DELETE', url),
 }
+

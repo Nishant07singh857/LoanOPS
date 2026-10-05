@@ -2,30 +2,30 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import {
-  CreditCard, Banknote, Smartphone, Wallet, Lock, CheckCircle2,
+  CreditCard, Banknote, Smartphone, Wallet, CheckCircle2,
   Clock, ChevronRight, Receipt, AlertCircle, PiggyBank, Building,
-  ShieldCheck,
+  ShieldCheck, MessageCircle, UserCheck, Phone,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
 import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR } from '@/lib/money'
+import { openWhatsApp } from '@/lib/whatsapp'
+import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
-type Method = 'ONLINE_UPI' | 'ONLINE_NETBANKING' | 'ONLINE_CARD'
+const DEFAULT_AGENT_PHONE = '+91 98201 44556'
+const DEFAULT_AGENT_NAME = 'Arjun Nair'
 
 const METHOD_BADGE_VARIANT: Record<string, string> = {
   ONLINE_UPI: 'info',
@@ -55,7 +55,11 @@ interface CandidateLoan {
   id: string
   loanNumber?: string
   installmentAmount: string
+  outstandingPrincipal?: string
+  outstandingInterest?: string
+  outstandingFees?: string
   status: string
+  assignedAgent?: { id?: string; name?: string; phone?: string | null } | null
   nextDue?: { installmentNumber: number; dueDate: string; totalDue: string } | null
 }
 
@@ -66,6 +70,7 @@ interface PaymentRow {
   amount: string
   method: string
   status: string
+  verificationStatus?: string
   reference?: string | null
   receiptNumber?: string | null
   allocatedFees: string
@@ -81,7 +86,8 @@ function fmtDate(d?: string | null) {
 }
 
 export default function PaymentsPage() {
-  const queryClient = useQueryClient()
+  const { user } = useSession()
+  const candidateName = user?.name || 'Candidate'
   const [payOpen, setPayOpen] = React.useState(false)
 
   const { data: loan } = useQuery({
@@ -95,38 +101,63 @@ export default function PaymentsPage() {
     queryFn: () => api.get<{ items: PaymentRow[]; total: number }>('/api/candidate/payments?pageSize=100'),
   })
   const payments = paymentsData?.items ?? []
-  const lastPayment = payments.find((p) => p.status === 'ALLOCATED')
+  const lastPayment = payments.find((p) => p.status === 'ALLOCATED' || p.status === 'VERIFIED')
   const nextInstallmentAmount = loan?.nextDue?.totalDue ?? loan?.installmentAmount ?? '0'
   const nextDue = loan?.nextDue
+
+  const agentName = loan?.assignedAgent?.name || DEFAULT_AGENT_NAME
+  const agentPhone = loan?.assignedAgent?.phone || DEFAULT_AGENT_PHONE
+
+  const handleWhatsAppPickup = () => {
+    const amountFormatted = (Number(nextInstallmentAmount) / 100).toLocaleString('en-IN')
+    const msg = `Hello ${agentName}, I would like to schedule a cash pickup of ₹${amountFormatted} for my loan ${loan?.loanNumber ?? ''} (Installment #${nextDue?.installmentNumber ?? '—'}). - ${candidateName}`
+    openWhatsApp(agentPhone, msg)
+    toast.success('WhatsApp opened', { description: `Pickup request drafted for ${agentName}.` })
+  }
 
   return (
     <div className="space-y-6">
       <SectionHeading
         title="Payments"
-        description="Pay your next installment and track every payment you've made."
-        icon={<CreditCard className="h-5 w-5" />}
+        description="Coordinate offline cash repayments with your assigned field agent and view every digital receipt."
+        icon={<Banknote className="h-5 w-5" />}
       />
 
       {loan && loan.loanNumber ? (
         <FadeIn>
-          <Card className="shadow-premium overflow-hidden border-success/15 bg-gradient-to-br from-success/10 via-card to-card">
+          <Card className="shadow-premium overflow-hidden border-amber-400/30 bg-gradient-to-br from-amber-500/10 via-card to-card">
             <CardContent className="p-4 sm:p-6">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div className="flex items-start gap-3.5">
-                  <div className="h-12 w-12 rounded-2xl bg-success/15 text-success flex items-center justify-center flex-shrink-0">
-                    <CreditCard className="h-6 w-6" />
+                  <div className="h-12 w-12 rounded-2xl bg-gradient-gold text-slate-950 flex items-center justify-center flex-shrink-0 shadow-gold">
+                    <Banknote className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Pay Next Installment</p>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Next Installment Due (Cash Collection)</p>
                     <p className="text-2xl sm:text-3xl font-bold mt-0.5 tabular-nums">{formatPaiseToINR(Number(nextInstallmentAmount))}</p>
                     <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1.5">
                       <Clock className="h-3.5 w-3.5" /> Due {fmtDate(nextDue?.dueDate)} · Installment #{nextDue?.installmentNumber ?? '—'}
                     </p>
                   </div>
                 </div>
-                <Button size="lg" onClick={() => setPayOpen(true)} className="min-h-[44px]">
-                  <CreditCard className="h-4 w-4" /> Pay Now
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    onClick={handleWhatsAppPickup}
+                    className="min-h-[44px] text-info border-info/40 hover:bg-info/10"
+                  >
+                    <MessageCircle className="h-4 w-4" /> WhatsApp Agent
+                  </Button>
+                  <Button
+                    size="lg"
+                    variant="gold"
+                    onClick={() => setPayOpen(true)}
+                    className="min-h-[44px] shadow-gold"
+                  >
+                    <Banknote className="h-4 w-4" /> Request Agent Collection
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -149,8 +180,13 @@ export default function PaymentsPage() {
                   <AllocRow label="Towards Principal" amount={Number(lastPayment.allocatedPrincipal)} icon={<Wallet className="h-4 w-4" />} tint="text-primary" />
                   <AllocRow label="Towards Interest" amount={Number(lastPayment.allocatedInterest)} icon={<Banknote className="h-4 w-4" />} tint="text-info" />
                   <AllocRow label="Towards Fees" amount={Number(lastPayment.allocatedFees)} icon={<Receipt className="h-4 w-4" />} tint="text-warning" />
-                  <div className="pt-2 mt-2 border-t border-border">
-                    <p className="text-[11px] text-muted-foreground">Allocation order: Fees → Interest → Principal</p>
+                  <div className="pt-2 mt-2 border-t border-border flex items-center justify-between gap-2">
+                    <p className="text-[11px] text-muted-foreground">Allocation: Fees → Interest → Principal</p>
+                    <Button asChild size="sm" variant="ghost" className="h-7 text-xs">
+                      <Link href={`/portal/receipts/${lastPayment.id}`}>
+                        Receipt <ChevronRight className="h-3 w-3" />
+                      </Link>
+                    </Button>
                   </div>
                 </>
               ) : (
@@ -174,7 +210,7 @@ export default function PaymentsPage() {
                   </div>
                 </div>
                 <Button asChild variant="ghost" size="sm">
-                  <Link href="/portal/receipts">Receipts <ChevronRight className="h-3.5 w-3.5" /></Link>
+                  <Link href="/portal/receipts">All Receipts <ChevronRight className="h-3.5 w-3.5" /></Link>
                 </Button>
               </div>
             </CardHeader>
@@ -184,54 +220,72 @@ export default function PaymentsPage() {
                   {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}
                 </div>
               ) : payments.length === 0 ? (
-                <EmptyState icon={<Receipt className="h-6 w-6" />} title="No payments yet" description="Your payment history will appear here." />
+                <EmptyState icon={<Receipt className="h-6 w-6" />} title="No payments yet" description="Your payment history will appear here once cash is collected by your agent." />
               ) : (
                 <StaggerContainer className="space-y-3">
-                  {payments.map((p) => (
-                    <StaggerItem key={p.id}>
-                      <div className="rounded-xl border border-border bg-card p-3.5 hover:border-primary/40 hover:shadow-premium transition-all">
-                        <div className="flex items-start gap-3">
-                          <div className="h-10 w-10 rounded-xl bg-success/10 text-success flex items-center justify-center flex-shrink-0">
-                            <CheckCircle2 className="h-5 w-5" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-start justify-between gap-2 flex-wrap">
-                              <div>
-                                <p className="font-mono text-xs text-muted-foreground font-semibold">{p.paymentNumber}</p>
-                                <p className="text-sm font-bold mt-0.5 tabular-nums">{formatPaiseToINR(Number(p.amount))}</p>
+                  {payments.map((p) => {
+                    const verStatus = p.verificationStatus ?? (p.status === 'PENDING_VERIFICATION' ? 'PENDING_VERIFICATION' : 'VERIFIED')
+                    return (
+                      <StaggerItem key={p.id}>
+                        <div className="rounded-xl border border-border bg-card p-3.5 hover:border-primary/40 hover:shadow-premium transition-all">
+                          <div className="flex items-start gap-3">
+                            <div className="h-10 w-10 rounded-xl bg-success/10 text-success flex items-center justify-center flex-shrink-0">
+                              <CheckCircle2 className="h-5 w-5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-2 flex-wrap">
+                                <div>
+                                  <p className="font-mono text-xs text-muted-foreground font-semibold">
+                                    {p.receiptNumber ? `${p.receiptNumber} · ${p.paymentNumber}` : p.paymentNumber}
+                                  </p>
+                                  <p className="text-sm font-bold mt-0.5 tabular-nums">{formatPaiseToINR(Number(p.amount))}</p>
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge>
+                                  {p.verificationStatus && p.verificationStatus !== p.status && (
+                                    <StatusBadge variant={p.verificationStatus}>
+                                      {formatStatus(p.verificationStatus)}
+                                    </StatusBadge>
+                                  )}
+                                </div>
                               </div>
-                              <StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge>
+                              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                                  <Clock className="h-3 w-3" /> {fmtDate(p.allocatedAt ?? p.createdAt)}
+                                </span>
+                                <span
+                                  className={cn(
+                                    'inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full',
+                                    METHOD_BADGE_VARIANT[p.method] === 'warning' ? 'bg-warning/15 text-warning' : 'bg-info/15 text-info'
+                                  )}
+                                >
+                                  {METHOD_ICON[p.method]} {METHOD_LABEL[p.method] ?? p.method}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-border/60 flex-wrap">
+                                <div className="text-[11px] text-muted-foreground">
+                                  {verStatus === 'PENDING_VERIFICATION' ? (
+                                    <span className="text-warning inline-flex items-center gap-1">
+                                      <AlertCircle className="h-3 w-3" /> Cash deposit pending Owner verification
+                                    </span>
+                                  ) : (
+                                    <span className="text-success inline-flex items-center gap-1">
+                                      <ShieldCheck className="h-3 w-3" /> Verified payment
+                                    </span>
+                                  )}
+                                </div>
+                                <Button asChild size="sm" variant="outline" className="h-8">
+                                  <Link href={`/portal/receipts/${p.id}`}>
+                                    <Receipt className="h-3.5 w-3.5" /> View Receipt
+                                  </Link>
+                                </Button>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2 mt-2 flex-wrap">
-                              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                                <Clock className="h-3 w-3" /> {fmtDate(p.allocatedAt ?? p.createdAt)}
-                              </span>
-                              <span
-                                className={cn(
-                                  'inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full',
-                                  METHOD_BADGE_VARIANT[p.method] === 'warning' ? 'bg-warning/15 text-warning' : 'bg-info/15 text-info'
-                                )}
-                              >
-                                {METHOD_ICON[p.method]} {METHOD_LABEL[p.method] ?? p.method}
-                              </span>
-                            </div>
-                            {(p.status === 'ALLOCATED' || p.status === 'VERIFIED') && p.receiptNumber && (
-                              <Button asChild size="sm" variant="outline" className="h-7 mt-3">
-                                <Link href="/portal/receipts">
-                                  <Receipt className="h-3.5 w-3.5" /> View Receipt
-                                </Link>
-                              </Button>
-                            )}
-                            {p.status === 'PENDING_VERIFICATION' && (
-                              <p className="text-[11px] text-warning mt-2 inline-flex items-center gap-1">
-                                <AlertCircle className="h-3 w-3" /> Awaiting verification by supervisor
-                              </p>
-                            )}
                           </div>
                         </div>
-                      </div>
-                    </StaggerItem>
-                  ))}
+                      </StaggerItem>
+                    )
+                  })}
                 </StaggerContainer>
               )}
             </CardContent>
@@ -239,17 +293,16 @@ export default function PaymentsPage() {
         </FadeIn>
       </div>
 
-      <PayNowDialog
+      <OfflineCashCollectionDialog
         open={payOpen}
         onOpenChange={setPayOpen}
         amount={nextInstallmentAmount}
-        loanId={loan?.id}
+        loanNumber={loan?.loanNumber}
         dueDate={nextDue?.dueDate}
         installmentNumber={nextDue?.installmentNumber}
-        onPaid={() => {
-          queryClient.invalidateQueries({ queryKey: ['candidate-payments'] })
-          queryClient.invalidateQueries({ queryKey: ['candidate-loan'] })
-        }}
+        agentName={agentName}
+        agentPhone={agentPhone}
+        onWhatsAppPickup={handleWhatsAppPickup}
       />
     </div>
   )
@@ -267,102 +320,89 @@ function AllocRow({ label, amount, icon, tint, highlight }: { label: string; amo
   )
 }
 
-function PayNowDialog({ open, onOpenChange, amount, loanId, dueDate, installmentNumber, onPaid }: {
+function OfflineCashCollectionDialog({
+  open,
+  onOpenChange,
+  amount,
+  loanNumber,
+  dueDate,
+  installmentNumber,
+  agentName,
+  agentPhone,
+  onWhatsAppPickup,
+}: {
   open: boolean
   onOpenChange: (v: boolean) => void
   amount: string
-  loanId?: string
+  loanNumber?: string
   dueDate?: string
   installmentNumber?: number
-  onPaid?: () => void
+  agentName: string
+  agentPhone: string
+  onWhatsAppPickup: () => void
 }) {
-  const [method, setMethod] = React.useState<Method>('ONLINE_UPI')
-  const [upiId, setUpiId] = React.useState('')
-
-  const mutation = useMutation({
-    mutationFn: () => {
-      if (!loanId) throw new Error('No active loan')
-      return api.post<{ id: string; paymentNumber: string; status: string }>('/api/candidate/payments', {
-        loanId,
-        amount,
-        method,
-        reference: method === 'ONLINE_UPI' && upiId ? `UPI-${upiId}` : null,
-      })
-    },
-    onSuccess: (res) => {
-      toast.success('Payment initiated', {
-        description: `${formatPaiseToINR(Number(amount))} via ${METHOD_LABEL[method]} · ${res.paymentNumber}. You'll receive a confirmation shortly.`,
-      })
-      onPaid?.()
-      setUpiId(''); setMethod('ONLINE_UPI')
-      onOpenChange(false)
-    },
-    onError: (e: Error) => toast.error('Failed to initiate payment', { description: e.message }),
-  })
-
-  const submit = () => {
-    if (method === 'ONLINE_UPI' && !upiId.trim()) {
-      toast.error('Enter your UPI ID')
-      return
-    }
-    mutation.mutate()
-  }
-
-  const METHODS: { key: Method; label: string; desc: string; icon: React.ReactNode }[] = [
-    { key: 'ONLINE_UPI', label: 'UPI', desc: 'Google Pay · PhonePe · Paytm', icon: <Smartphone className="h-5 w-5" /> },
-    { key: 'ONLINE_NETBANKING', label: 'Netbanking', desc: 'Direct bank transfer', icon: <Building className="h-5 w-5" /> },
-    { key: 'ONLINE_CARD', label: 'Card', desc: 'Debit / Credit card', icon: <CreditCard className="h-5 w-5" /> },
-  ]
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><CreditCard className="h-4 w-4" /> Pay Installment</DialogTitle>
-          <DialogDescription>Installment #{installmentNumber ?? '—'} due {dueDate ? new Date(dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</DialogDescription>
+          <DialogTitle className="flex items-center gap-2">
+            <Banknote className="h-5 w-5 text-success" /> Offline Cash Payment / Request Agent Collection
+          </DialogTitle>
+          <DialogDescription>
+            {loanNumber ? `${loanNumber} · ` : ''}Installment #{installmentNumber ?? '—'} due {dueDate ? fmtDate(dueDate) : '—'}
+          </DialogDescription>
         </DialogHeader>
+
         <div className="space-y-4">
-          <div className="rounded-xl bg-muted/40 p-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">Amount Payable</p>
+          <div className="rounded-xl bg-muted/40 border border-border p-4">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">Installment Amount Due</p>
             <p className="text-2xl font-bold mt-1 tabular-nums">{formatPaiseToINR(Number(amount))}</p>
-            <p className="text-[11px] text-muted-foreground mt-1">Read-only · This is your scheduled installment amount</p>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Allocated automatically upon collection: Fees → Interest → Principal
+            </p>
           </div>
 
-          <div className="space-y-2">
-            <Label>Payment Method</Label>
-            <RadioGroup value={method} onValueChange={(v) => setMethod(v as Method)} className="grid grid-cols-1 gap-2">
-              {METHODS.map((m) => (
-                <label key={m.key} className={cn('rounded-xl border-2 p-3 cursor-pointer transition-all flex items-center gap-3', method === m.key ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40')}>
-                  <RadioGroupItem value={m.key} className="flex-shrink-0" />
-                  <div className={cn('h-9 w-9 rounded-lg flex items-center justify-center flex-shrink-0', method === m.key ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground')}>
-                    {m.icon}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{m.label}</p>
-                    <p className="text-[11px] text-muted-foreground">{m.desc}</p>
-                  </div>
-                </label>
-              ))}
-            </RadioGroup>
+          <div className="rounded-xl border border-info/30 bg-info/10 p-3.5 text-xs text-foreground space-y-1.5">
+            <p className="font-semibold text-info flex items-center gap-1.5">
+              <ShieldCheck className="h-4 w-4 flex-shrink-0" /> How Offline Cash Collection Works
+            </p>
+            <p className="leading-relaxed text-muted-foreground">
+              Repayments are collected in cash by your assigned field agent. Upon collection, your schedule updates immediately and a digital receipt is issued.
+            </p>
           </div>
 
-          {method === 'ONLINE_UPI' && (
-            <div className="space-y-1.5">
-              <Label htmlFor="upi">UPI ID</Label>
-              <Input id="upi" value={upiId} onChange={(e) => setUpiId(e.target.value)} placeholder="yourname@bank" />
-              <p className="text-[11px] text-muted-foreground">e.g. priya@okhdfcbank, 9876543210@paytm</p>
+          <div className="rounded-xl border border-border bg-card p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+                  <UserCheck className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Assigned Field Agent</p>
+                  <p className="text-sm font-semibold">{agentName}</p>
+                  <p className="text-xs font-mono text-muted-foreground">{agentPhone}</p>
+                </div>
+              </div>
+              <Button asChild size="sm" variant="outline" className="h-9">
+                <a href={`tel:${agentPhone.replace(/\s/g, '')}`}>
+                  <Phone className="h-3.5 w-3.5" /> Call
+                </a>
+              </Button>
             </div>
-          )}
 
-          <div className="rounded-lg bg-success/5 border border-success/15 p-3 flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-success flex-shrink-0" />
-            <p className="text-[11px] text-muted-foreground">256-bit encrypted · PCI DSS compliant · Powered by Razorpay</p>
+            <Button
+              type="button"
+              onClick={onWhatsAppPickup}
+              className="w-full h-11 bg-success text-success-foreground hover:bg-success/90"
+            >
+              <MessageCircle className="h-4 w-4" /> WhatsApp Assigned Agent for Pickup
+            </Button>
           </div>
         </div>
+
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit} disabled={mutation.isPending}>
-            <Lock className="h-4 w-4" /> Pay Securely
+          <Button variant="outline" onClick={() => onOpenChange(false)} className="w-full sm:w-auto">
+            Close
           </Button>
         </DialogFooter>
       </DialogContent>

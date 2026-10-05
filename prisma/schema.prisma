@@ -23,23 +23,25 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users          User[]
-  candidates     Candidate[]
-  applications   Application[]
-  loans          Loan[]
-  agents         AgentProfile[]
-  agreements     AgreementTemplate[]
-  auditLogs      AuditLog[]
-  notifications  Notification[]
-  supportTickets SupportTicket[]
-  ledgerEntries  LedgerEntry[]
-  qrLinks        QrLink[]
-  payments       Payment[]
-  collectionTasks CollectionTask[]
-  webhookEvents  WebhookEvent[]
-  reconciliationRuns ReconciliationRun[]
+  users                    User[]
+  candidates               Candidate[]
+  applications             Application[]
+  loans                    Loan[]
+  agents                   AgentProfile[]
+  agreements               AgreementTemplate[]
+  auditLogs                AuditLog[]
+  notifications            Notification[]
+  supportTickets           SupportTicket[]
+  ledgerEntries            LedgerEntry[]
+  qrLinks                  QrLink[]
+  payments                 Payment[]
+  collectionTasks          CollectionTask[]
+  webhookEvents            WebhookEvent[]
+  reconciliationRuns       ReconciliationRun[]
   reconciliationExceptions ReconciliationException[]
-  aiInsights    AiInsight[]
+  aiInsights               AiInsight[]
+  consentRecords           ConsentRecord[]
+  dataSubjectRequests      DataSubjectRequest[]
 }
 
 enum UserRole {
@@ -49,53 +51,75 @@ enum UserRole {
 }
 
 model User {
-  id             String   @id @default(cuid())
-  organizationId String
-  email          String   @unique
-  passwordHash   String
-  name           String
-  phone          String?
-  role           UserRole
-  isActive       Boolean  @default(true)
-  failedLoginAttempts Int @default(0)
-  lockedUntil    DateTime?
-  lastLoginAt    DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                  String    @id @default(cuid())
+  organizationId      String
+  email               String    @unique
+  passwordHash        String
+  name                String
+  phone               String?
+  role                UserRole
+  isActive            Boolean   @default(true)
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
+  passwordChangedAt   DateTime?
+  totpSecret          String?
+  totpEnabled         Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  organization       Organization      @relation(fields: [organizationId], references: [id])
-  agentProfile       AgentProfile?
-  sessions           Session[]
-  auditLogs          AuditLog[]
-  notifications      Notification[]
-  qrLinks            QrLink[]
-  cashCollections    CashCollection[]
-  cashVerifications  CashCollection[]  @relation("VerifiedBy")
-  followUps          FollowUp[]
-  ptps               Ptp[]
-  escalations        Escalation[]
-  disbursements      Disbursement[]
-  refunds            Refund[]
-  corrections        FinancialCorrection[]
+  organization         Organization          @relation(fields: [organizationId], references: [id])
+  agentProfile         AgentProfile?
+  sessions             Session[]
+  passwordResetTokens  PasswordResetToken[]
+  consentRecords       ConsentRecord[]
+  auditLogs            AuditLog[]
+  notifications        Notification[]
+  qrLinks              QrLink[]
+  paymentRecords       Payment[]             @relation("PaymentRecordedBy")
+  paymentVerifications Payment[]             @relation("PaymentVerifiedBy")
+  followUps            FollowUp[]
+  ptps                 Ptp[]
+  escalations          Escalation[]
+  disbursements        Disbursement[]
+  refunds              Refund[]
+  corrections          FinancialCorrection[]
 
   @@index([organizationId])
   @@index([role])
+  @@index([organizationId, role])
 }
 
 model Session {
-  id          String   @id @default(cuid())
-  token       String   @unique
-  tokenPrefix String?  // first 16 chars of the session token, indexed for fast lookup
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expiresAt   DateTime
-  ipAddr      String?
-  userAgent   String?
-  revokedAt   DateTime?
-  createdAt   DateTime @default(now())
+  id           String    @id @default(cuid())
+  token        String    @unique
+  tokenPrefix  String? // first 16 chars of the session token, indexed for fast lookup
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt    DateTime
+  lastActiveAt DateTime  @default(now())
+  ipAddr       String?
+  userAgent    String?
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
 
   @@index([userId])
   @@index([tokenPrefix])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  ipAddress String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 // Optional: candidate userId if candidate is also a portal user
@@ -111,8 +135,8 @@ model AgentProfile {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  user         User         @relation(fields: [userId], references: [id])
-  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User             @relation(fields: [userId], references: [id])
+  organization Organization     @relation(fields: [organizationId], references: [id])
   candidates   Candidate[]
   tasks        CollectionTask[] @relation("AssignedAgent")
 
@@ -124,43 +148,48 @@ model AgentProfile {
 // ============================================================
 
 model Candidate {
-  id             String   @id @default(cuid())
-  organizationId String
-  userId        String?  @unique  // link to User for candidate portal login
-  fullName       String
-  mobile         String
-  email          String?
-  dob            DateTime?
-  address        String?
-  occupation     String?
-  employer       String?
-  monthlyIncome  Int? // in paise
+  id                  String          @id @default(cuid())
+  organizationId      String
+  userId              String?         @unique // link to User for candidate portal login
+  fullName            String
+  mobile              String
+  secondaryMobile     String?
+  email               String?
+  dob                 DateTime?
+  address             String?
+  occupation          String?
+  employer            String?
+  monthlyIncome       Int? // in paise
   existingObligations Int? // in paise
-  bankName       String?
-  bankAccount    String?
-  bankIfsc       String?
-  upiId          String?
-  aadhaarMasked  String?
-  panMasked      String?
-  assignedAgentId String?
-  status         CandidateStatus @default(ACTIVE)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  bankName            String?
+  bankAccount         String?
+  bankIfsc            String?
+  upiId               String?
+  aadhaarMasked       String?
+  aadhaarLast4        String?
+  aadhaarHash         String?
+  panMasked           String?
+  assignedAgentId     String?
+  status              CandidateStatus @default(ACTIVE)
+  deletedAt           DateTime?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  assignedAgent   AgentProfile? @relation(fields: [assignedAgentId], references: [id])
-  applications    Application[]
-  loans           Loan[]
-  kycDocs         KycDocument[]
-  documents       Document[]
-  payments        Payment[]
-  cashCollections CashCollection[]
-  followUps       FollowUp[]
-  ptps            Ptp[]
-  escalations     Escalation[]
-  collectionTasks CollectionTask[]
-  supportTickets  SupportTicket[]
-  notifications   Notification[]
+  organization        Organization         @relation(fields: [organizationId], references: [id])
+  assignedAgent       AgentProfile?        @relation(fields: [assignedAgentId], references: [id])
+  applications        Application[]
+  loans               Loan[]
+  kycDocs             KycDocument[]
+  documents           Document[]
+  payments            Payment[]
+  followUps           FollowUp[]
+  ptps                Ptp[]
+  escalations         Escalation[]
+  collectionTasks     CollectionTask[]
+  supportTickets      SupportTicket[]
+  notifications       Notification[]
+  consentRecords      ConsentRecord[]
+  dataSubjectRequests DataSubjectRequest[]
 
   @@index([organizationId])
   @@index([mobile])
@@ -199,56 +228,57 @@ enum RepaymentFrequency {
 }
 
 model Application {
-  id             String   @id @default(cuid())
-  organizationId String
-  candidateId    String
-  qrLinkId       String?  @unique
-  applicationNumber String @unique
+  id                  String             @id @default(cuid())
+  organizationId      String
+  candidateId         String
+  qrLinkId            String?            @unique
+  applicationNumber   String             @unique
   // Loan configuration
-  principalAmount Int // in paise
-  currency       String  @default("INR")
-  purpose        String
-  interestType   InterestType
-  interestRate   Int? // basis points (1% = 100)
-  fixedInterest  Int? // in paise
-  frequency      RepaymentFrequency
-  tenureCount    Int // number of units
-  installments   Int
-  firstDueDate   DateTime
-  processingFee  Int? // in paise
-  otherFees      Int? // in paise
-  totalRepayable Int? // in paise (preview, backend authoritative)
-  installmentAmount Int? // in paise (preview)
-  finalDueDate   DateTime?
-  status         ApplicationStatus @default(DRAFT)
+  principalAmount     Int // in paise
+  currency            String             @default("INR")
+  purpose             String
+  interestType        InterestType
+  interestRate        Int? // basis points (1% = 100)
+  fixedInterest       Int? // in paise
+  frequency           RepaymentFrequency
+  tenureCount         Int // number of units
+  installments        Int
+  firstDueDate        DateTime
+  processingFee       Int? // in paise
+  otherFees           Int? // in paise
+  totalRepayable      Int? // in paise (preview, backend authoritative)
+  installmentAmount   Int? // in paise (preview)
+  finalDueDate        DateTime?
+  status              ApplicationStatus  @default(DRAFT)
   // KYC snapshot
-  kycAadhaar     String?
-  kycPan         String?
-  kycStatus      String? // PENDING/VERIFIED/REJECTED
+  kycAadhaar          String?
+  kycPan              String?
+  kycStatus           String? // PENDING/VERIFIED/REJECTED
   // Agreement
   agreementTemplateId String?
-  agreementVersion     String?
-  agreementAcceptedAt  DateTime?
-  agreementSnapshot    Json?
+  agreementVersion    String?
+  agreementAcceptedAt DateTime?
+  agreementSnapshot   Json?
   // Review
-  reviewedById   String?
-  reviewedAt     DateTime?
-  reviewNotes    String?
-  rejectionReason String?
-  infoRequested  String?
+  reviewedById        String?
+  reviewedAt          DateTime?
+  reviewNotes         String?
+  rejectionReason     String?
+  infoRequested       String?
   // Audit
-  submittedAt    DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  submittedAt         DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id])
-  candidate     Candidate    @relation(fields: [candidateId], references: [id])
-  qrLink        QrLink?      @relation(fields: [qrLinkId], references: [id])
-  loan          Loan?
+  candidate    Candidate    @relation(fields: [candidateId], references: [id])
+  qrLink       QrLink?      @relation(fields: [qrLinkId], references: [id])
+  loan         Loan?
 
   @@index([organizationId])
   @@index([candidateId])
   @@index([status])
+  @@index([organizationId, status])
 }
 
 // ============================================================
@@ -256,27 +286,35 @@ model Application {
 // ============================================================
 
 model QrLink {
-  id             String   @id @default(cuid())
-  organizationId String
-  token          String   @unique
-  createdById     String
-  // Pre-configured loan parameters (optional)
-  prePrincipal   Int?
-  preInterestType InterestType?
-  preInterestRate Int?
+  id               String              @id @default(cuid())
+  organizationId   String
+  token            String              @unique
+  // Pre-configured loan parameters
+  prePrincipal     Int? // in paise
+  preInterestType  InterestType?
+  preInterestRate  Int?
   preFixedInterest Int?
-  preFrequency   RepaymentFrequency?
-  preTenure      Int?
-  preInstallments Int?
-  preFirstDueDate DateTime?
-  prePurpose     String?
+  preFrequency     RepaymentFrequency?
+  preTenure        Int?
+  preInstallments  Int?
+  preFirstDueDate  DateTime?
+  prePurpose       String?
+  preProcessingFee Int?
+  preOtherFees     Int?
+  // Pre-configured Borrower details
+  preFullName      String?
+  preMobile        String?
+  preAadhaar       String?
+  prePan           String?
+
+  createdById String
   // Meta
-  expiresAt      DateTime?
-  isRevoked      Boolean  @default(false)
-  isUsed         Boolean  @default(false)
-  submittedAt    DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  expiresAt   DateTime?
+  isRevoked   Boolean   @default(false)
+  isUsed      Boolean   @default(false)
+  submittedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id])
   createdBy    User         @relation(fields: [createdById], references: [id])
@@ -297,14 +335,14 @@ model AgreementTemplate {
   version        String
   body           String // markdown / html
   effectiveDate  DateTime
-  isActive       Boolean @default(true)
+  isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id])
 
-  @@index([organizationId])
   @@unique([organizationId, version])
+  @@index([organizationId])
 }
 
 // ============================================================
@@ -320,53 +358,54 @@ enum LoanStatus {
 }
 
 model Loan {
-  id             String   @id @default(cuid())
-  organizationId String
-  loanNumber     String   @unique
-  candidateId    String
-  applicationId  String?  @unique
+  id                   String             @id @default(cuid())
+  organizationId       String
+  loanNumber           String             @unique
+  candidateId          String
+  applicationId        String?            @unique
   // Immutable term snapshot
-  principalAmount Int // paise
-  interestType   InterestType
-  interestRate   Int?
-  fixedInterest  Int?
-  frequency      RepaymentFrequency
-  installments   Int
-  firstDueDate   DateTime
-  finalDueDate   DateTime
-  processingFee  Int?
-  otherFees      Int?
-  totalRepayable Int
-  installmentAmount Int
-  termsSnapshot  Json
-  status         LoanStatus @default(PENDING_DISBURSEMENT)
-  disbursedAt    DateTime?
-  closedAt       DateTime?
-  outstandingPrincipal Int @default(0)
-  outstandingInterest  Int @default(0)
-  outstandingFees      Int @default(0)
-  totalCollected  Int @default(0)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  principalAmount      Int // paise
+  interestType         InterestType
+  interestRate         Int?
+  fixedInterest        Int?
+  frequency            RepaymentFrequency
+  installments         Int
+  firstDueDate         DateTime
+  finalDueDate         DateTime
+  processingFee        Int?
+  otherFees            Int?
+  totalRepayable       Int
+  installmentAmount    Int
+  termsSnapshot        Json
+  status               LoanStatus         @default(PENDING_DISBURSEMENT)
+  disbursedAt          DateTime?
+  closedAt             DateTime?
+  outstandingPrincipal Int                @default(0)
+  outstandingInterest  Int                @default(0)
+  outstandingFees      Int                @default(0)
+  totalCollected       Int                @default(0)
+  version              Int                @default(1)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
 
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  candidate      Candidate    @relation(fields: [candidateId], references: [id])
-  application    Application? @relation(fields: [applicationId], references: [id])
-  schedule       Installment[]
-  payments       Payment[]
-  cashCollections CashCollection[]
-  ptps           Ptp[]
-  escalations    Escalation[]
+  organization    Organization          @relation(fields: [organizationId], references: [id])
+  candidate       Candidate             @relation(fields: [candidateId], references: [id])
+  application     Application?          @relation(fields: [applicationId], references: [id])
+  schedule        Installment[]
+  payments        Payment[]
+  ptps            Ptp[]
+  escalations     Escalation[]
   collectionTasks CollectionTask[]
-  followUps      FollowUp[]
-  disbursements  Disbursement[]
-  refunds        Refund[]
-  documents      Document[]
-  corrections    FinancialCorrection[]
+  followUps       FollowUp[]
+  disbursements   Disbursement[]
+  refunds         Refund[]
+  documents       Document[]
+  corrections     FinancialCorrection[]
 
   @@index([organizationId])
   @@index([candidateId])
   @@index([status])
+  @@index([organizationId, status])
 }
 
 enum InstallmentStatus {
@@ -378,26 +417,26 @@ enum InstallmentStatus {
 }
 
 model Installment {
-  id              String   @id @default(cuid())
-  loanId          String
-  installmentNumber Int
-  dueDate         DateTime
-  openingPrincipal Int // paise
+  id                 String            @id @default(cuid())
+  loanId             String
+  installmentNumber  Int
+  dueDate            DateTime
+  openingPrincipal   Int // paise
   principalComponent Int
-  interestComponent Int
-  feesComponent   Int
-  totalDue        Int
-  closingPrincipal Int
-  paidFees        Int @default(0)
-  paidInterest    Int @default(0)
-  paidPrincipal   Int @default(0)
-  paidAmount      Int @default(0)
-  status          InstallmentStatus @default(UPCOMING)
-  paidAt          DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  interestComponent  Int
+  feesComponent      Int
+  totalDue           Int
+  closingPrincipal   Int
+  paidFees           Int               @default(0)
+  paidInterest       Int               @default(0)
+  paidPrincipal      Int               @default(0)
+  paidAmount         Int               @default(0)
+  status             InstallmentStatus @default(UPCOMING)
+  paidAt             DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
-  loan    Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
 
   @@unique([loanId, installmentNumber])
   @@index([loanId])
@@ -422,21 +461,23 @@ enum DisbursementStatus {
 }
 
 model Disbursement {
-  id             String   @id @default(cuid())
-  loanId         String
-  method         DisbursementMethod
-  amount         Int // paise
-  reference      String?
-  notes          String?
-  proofUrl       String?
-  status         DisbursementStatus @default(INITIATED)
-  initiatedById   String
-  initiatedAt    DateTime @default(now())
-  completedAt    DateTime?
+  id            String             @id @default(cuid())
+  loanId        String
+  method        DisbursementMethod
+  amount        Int // paise
+  reference     String?
+  notes         String?
+  proofUrl      String?
+  status        DisbursementStatus @default(INITIATED)
+  initiatedById String
+  initiatedAt   DateTime           @default(now())
+  completedAt   DateTime?
 
-  loan      Loan @relation(fields: [loanId], references: [id])
+  loan        Loan @relation(fields: [loanId], references: [id])
   initiatedBy User @relation(fields: [initiatedById], references: [id])
 
+  // Partial unique index via raw SQL in migration (only one COMPLETED per loan)
+  // Failed/cancelled retries are allowed.
   @@index([loanId])
 }
 
@@ -462,77 +503,47 @@ enum PaymentStatus {
 }
 
 model Payment {
-  id             String   @id @default(cuid())
-  organizationId String
-  paymentNumber  String   @unique
-  loanId         String
-  candidateId    String
-  method         PaymentMethod
-  amount         Int // paise
-  reference      String?
-  proofUrl       String?
-  status         PaymentStatus @default(INITIATED)
-  idempotencyKey String?  @unique
-  providerEventId String? @unique
+  id                 String        @id @default(cuid())
+  organizationId     String
+  paymentNumber      String        @unique
+  loanId             String
+  candidateId        String
+  method             PaymentMethod
+  amount             Int // paise
+  reference          String?
+  proofUrl           String?
+  status             PaymentStatus @default(INITIATED)
+  idempotencyKey     String?       @unique
+  providerEventId    String?       @unique
   // Allocation breakdown
-  allocatedFees      Int @default(0)
-  allocatedInterest Int @default(0)
-  allocatedPrincipal Int @default(0)
-  unallocated       Int @default(0)
-  allocatedAt       DateTime?
-  verifiedById      String?
-  verifiedAt        DateTime?
-  receiptNumber     String?
-  receiptUrl        String?
-  notes             String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  allocatedFees      Int           @default(0)
+  allocatedInterest  Int           @default(0)
+  allocatedPrincipal Int           @default(0)
+  unallocated        Int           @default(0)
+  allocatedAt        DateTime?
+  recordedById       String?
+  verifiedById       String?
+  verifiedAt         DateTime?
+  rejectionReason    String?
+  receiptNumber      String?       @unique
+  receiptUrl         String?
+  notes              String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id])
-  loan         Loan          @relation(fields: [loanId], references: [id])
-  candidate    Candidate     @relation(fields: [candidateId], references: [id])
+  loan         Loan         @relation(fields: [loanId], references: [id])
+  candidate    Candidate    @relation(fields: [candidateId], references: [id])
+  recordedBy   User?        @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
+  verifiedBy   User?        @relation("PaymentVerifiedBy", fields: [verifiedById], references: [id])
 
   @@index([organizationId])
   @@index([loanId])
   @@index([candidateId])
+  @@index([recordedById])
   @@index([status])
-}
-
-enum CashCollectionStatus {
-  RECORDED
-  PENDING_VERIFICATION
-  VERIFIED
-  ALLOCATED
-  REJECTED
-}
-
-model CashCollection {
-  id             String   @id @default(cuid())
-  loanId         String
-  candidateId    String
-  recordedById   String
-  verifiedById   String?
-  amount         Int // paise
-  collectionDate DateTime
-  collectionTime String
-  installmentNumber Int?
-  reference      String?
-  notes          String?
-  proofUrl       String?
-  status         CashCollectionStatus @default(PENDING_VERIFICATION)
-  rejectionReason String?
-  createdAt      DateTime @default(now())
-  verifiedAt     DateTime?
-  updatedAt      DateTime @updatedAt
-
-  loan        Loan      @relation(fields: [loanId], references: [id])
-  candidate   Candidate @relation(fields: [candidateId], references: [id])
-  recordedBy  User      @relation(fields: [recordedById], references: [id])
-  verifiedBy  User?     @relation("VerifiedBy", fields: [verifiedById], references: [id])
-
-  @@index([loanId])
-  @@index([candidateId])
-  @@index([status])
+  @@index([createdAt])
+  @@index([organizationId, status])
 }
 
 // ============================================================
@@ -554,7 +565,7 @@ enum TaskPriority {
 }
 
 model CollectionTask {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String
   candidateId    String
   loanId         String
@@ -564,15 +575,15 @@ model CollectionTask {
   amount         Int?
   dueDate        DateTime
   priority       TaskPriority @default(MEDIUM)
-  status         TaskStatus @default(OPEN)
+  status         TaskStatus   @default(OPEN)
   outcome        String?
   notes          String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id])
-  candidate    Candidate    @relation(fields: [candidateId], references: [id])
-  loan         Loan         @relation(fields: [loanId], references: [id])
+  organization Organization  @relation(fields: [organizationId], references: [id])
+  candidate    Candidate     @relation(fields: [candidateId], references: [id])
+  loan         Loan          @relation(fields: [loanId], references: [id])
   assignedTo   AgentProfile? @relation("AssignedAgent", fields: [assignedToId], references: [id])
 
   @@index([organizationId])
@@ -588,20 +599,20 @@ enum ContactMethod {
 }
 
 model FollowUp {
-  id             String   @id @default(cuid())
-  candidateId    String
-  loanId         String?
-  agentId        String
-  contactDate    DateTime
-  contactMethod   ContactMethod
-  outcome        String?
-  notes          String?
-  nextFollowUp   DateTime?
-  createdAt      DateTime @default(now())
+  id            String        @id @default(cuid())
+  candidateId   String
+  loanId        String?
+  agentId       String
+  contactDate   DateTime
+  contactMethod ContactMethod
+  outcome       String?
+  notes         String?
+  nextFollowUp  DateTime?
+  createdAt     DateTime      @default(now())
 
   candidate Candidate @relation(fields: [candidateId], references: [id])
-  loan      Loan?    @relation(fields: [loanId], references: [id])
-  agent     User     @relation(fields: [agentId], references: [id])
+  loan      Loan?     @relation(fields: [loanId], references: [id])
+  agent     User      @relation(fields: [agentId], references: [id])
 
   @@index([candidateId])
   @@index([agentId])
@@ -615,7 +626,7 @@ enum PtpStatus {
 }
 
 model Ptp {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   candidateId    String
   loanId         String
   agentId        String
@@ -625,12 +636,12 @@ model Ptp {
   notes          String?
   fulfilledAt    DateTime?
   brokenAt       DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   candidate Candidate @relation(fields: [candidateId], references: [id])
-  loan      Loan     @relation(fields: [loanId], references: [id])
-  agent     User     @relation(fields: [agentId], references: [id])
+  loan      Loan      @relation(fields: [loanId], references: [id])
+  agent     User      @relation(fields: [agentId], references: [id])
 
   @@index([candidateId])
   @@index([loanId])
@@ -654,21 +665,21 @@ enum EscalationReason {
 }
 
 model Escalation {
-  id             String   @id @default(cuid())
-  candidateId    String
-  loanId         String
-  agentId        String
-  reason         EscalationReason
-  description    String?
-  status         EscalationStatus @default(OPEN)
-  resolvedAt     DateTime?
+  id              String           @id @default(cuid())
+  candidateId     String
+  loanId          String
+  agentId         String
+  reason          EscalationReason
+  description     String?
+  status          EscalationStatus @default(OPEN)
+  resolvedAt      DateTime?
   resolutionNotes String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   candidate Candidate @relation(fields: [candidateId], references: [id])
-  loan      Loan     @relation(fields: [loanId], references: [id])
-  agent     User     @relation(fields: [agentId], references: [id])
+  loan      Loan      @relation(fields: [loanId], references: [id])
+  agent     User      @relation(fields: [agentId], references: [id])
 
   @@index([candidateId])
   @@index([status])
@@ -690,16 +701,16 @@ enum LedgerEntryType {
 }
 
 model LedgerEntry {
-  id             String   @id @default(cuid())
+  id             String          @id @default(cuid())
   organizationId String
-  entryNumber    String   @unique
+  entryNumber    String          @unique
   type           LedgerEntryType
   debitAccount   String
   creditAccount  String
   amount         Int // paise
   description    String?
   reference      String?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime        @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
 
@@ -715,18 +726,18 @@ enum RefundStatus {
 }
 
 model Refund {
-  id             String   @id @default(cuid())
-  loanId         String
-  amount         Int // paise
-  reason         String
-  status         RefundStatus @default(REQUESTED)
-  initiatedById  String
-  processedAt    DateTime?
-  notes          String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id            String       @id @default(cuid())
+  loanId        String
+  amount        Int // paise
+  reason        String
+  status        RefundStatus @default(REQUESTED)
+  initiatedById String
+  processedAt   DateTime?
+  notes         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
-  loan      Loan @relation(fields: [loanId], references: [id])
+  loan        Loan @relation(fields: [loanId], references: [id])
   initiatedBy User @relation(fields: [initiatedById], references: [id])
 
   @@index([loanId])
@@ -741,21 +752,21 @@ enum CorrectionStatus {
 }
 
 model FinancialCorrection {
-  id             String   @id @default(cuid())
-  loanId         String
-  paymentId      String?
-  requestedById  String
-  reason         String
-  evidenceUrl    String?
-  status         CorrectionStatus @default(REQUESTED)
-  reviewedById   String?
-  reviewNotes    String?
-  appliedAt      DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id            String           @id @default(cuid())
+  loanId        String
+  paymentId     String?
+  requestedById String
+  reason        String
+  evidenceUrl   String?
+  status        CorrectionStatus @default(REQUESTED)
+  reviewedById  String?
+  reviewNotes   String?
+  appliedAt     DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 
-  loan         Loan     @relation(fields: [loanId], references: [id])
-  requestedBy  User     @relation(fields: [requestedById], references: [id])
+  loan        Loan @relation(fields: [loanId], references: [id])
+  requestedBy User @relation(fields: [requestedById], references: [id])
 }
 
 // ============================================================
@@ -779,7 +790,7 @@ enum DocumentStatus {
 }
 
 model Document {
-  id             String   @id @default(cuid())
+  id             String         @id @default(cuid())
   organizationId String
   candidateId    String?
   loanId         String?
@@ -789,10 +800,10 @@ model Document {
   fileSize       Int?
   mimeType       String?
   status         DocumentStatus @default(PENDING)
-  version        Int      @default(1)
+  version        Int            @default(1)
   notes          String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   candidate Candidate? @relation(fields: [candidateId], references: [id])
   loan      Loan?      @relation(fields: [loanId], references: [id])
@@ -802,17 +813,17 @@ model Document {
 }
 
 model KycDocument {
-  id             String   @id @default(cuid())
-  candidateId    String
-  aadhaarNumber  String?
-  panNumber      String?
-  aadhaarUrl     String?
-  panUrl         String?
-  status         String @default("PENDING") // PENDING/VERIFIED/REJECTED
-  verifiedAt     DateTime?
-  notes          String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id            String    @id @default(cuid())
+  candidateId   String
+  aadhaarNumber String?
+  panNumber     String?
+  aadhaarUrl    String?
+  panUrl        String?
+  status        String    @default("PENDING") // PENDING/VERIFIED/REJECTED
+  verifiedAt    DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   candidate Candidate @relation(fields: [candidateId], references: [id])
 
@@ -845,16 +856,16 @@ enum NotificationType {
 }
 
 model Notification {
-  id             String   @id @default(cuid())
+  id             String           @id @default(cuid())
   organizationId String
   userId         String?
   candidateId    String?
   type           NotificationType
   title          String
   message        String
-  isRead         Boolean  @default(false)
+  isRead         Boolean          @default(false)
   metadata       Json?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime         @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
   user         User?        @relation(fields: [userId], references: [id])
@@ -873,18 +884,18 @@ enum SupportStatus {
 }
 
 model SupportTicket {
-  id             String   @id @default(cuid())
+  id             String        @id @default(cuid())
   organizationId String
   candidateId    String
-  ticketNumber  String @unique
-  category      String
-  subject       String
-  description   String
-  attachmentUrl String?
-  status        SupportStatus @default(OPEN)
-  resolution    String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  ticketNumber   String        @unique
+  category       String
+  subject        String
+  description    String
+  attachmentUrl  String?
+  status         SupportStatus @default(OPEN)
+  resolution     String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id])
   candidate    Candidate    @relation(fields: [candidateId], references: [id])
@@ -908,10 +919,20 @@ enum AuditAction {
   ALLOCATE
   DISBURSE
   REFUND
+  RESTRUCTURE
   CORRECT
   REVOKE
   LOGIN
   LOGOUT
+  LOGIN_FAILED
+  PASSWORD_RESET
+  REVEAL_PII
+  ROLE_CHANGE
+  SETTINGS_CHANGE
+  CONSENT_GIVEN
+  DATA_REQUEST
+  FILE_UPLOAD
+  FILE_ACCESS
   PTP_CREATE
   PTP_UPDATE
   ESCALATE
@@ -919,7 +940,7 @@ enum AuditAction {
 }
 
 model AuditLog {
-  id             String   @id @default(cuid())
+  id             String      @id @default(cuid())
   organizationId String
   userId         String?
   action         AuditAction
@@ -929,7 +950,7 @@ model AuditLog {
   metadata       Json?
   ipAddress      String?
   userAgent      String?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime    @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
   user         User?        @relation(fields: [userId], references: [id])
@@ -944,17 +965,17 @@ model AuditLog {
 // ============================================================
 
 model WebhookEvent {
-  id             String   @id @default(cuid())
-  organizationId String?
-  provider       String  // e.g. "razorpay", "stripe", "mock"
-  eventId        String?  // provider's event id
-  signature      String?
-  rawPayload     Json
-  processed      Boolean  @default(false)
+  id              String        @id @default(cuid())
+  organizationId  String?
+  provider        String // e.g. "razorpay", "stripe", "mock"
+  eventId         String? // provider's event id
+  signature       String?
+  rawPayload      Json
+  processed       Boolean       @default(false)
   processingError String?
-  receivedAt     DateTime @default(now())
-  processedAt    DateTime?
-  organization   Organization? @relation(fields: [organizationId], references: [id])
+  receivedAt      DateTime      @default(now())
+  processedAt     DateTime?
+  organization    Organization? @relation(fields: [organizationId], references: [id])
 
   @@index([provider, eventId])
   @@index([organizationId])
@@ -965,17 +986,17 @@ model WebhookEvent {
 // ============================================================
 
 model ReconciliationRun {
-  id             String   @id @default(cuid())
-  organizationId String
-  runNumber      String
-  periodStart    DateTime
-  periodEnd      DateTime
-  totalExpected  Int
+  id              String   @id @default(cuid())
+  organizationId  String
+  runNumber       String
+  periodStart     DateTime
+  periodEnd       DateTime
+  totalExpected   Int
   totalCaptured   Int
   totalAllocated  Int
-  exceptionsCount Int @default(0)
-  status         String @default("COMPLETED") // COMPLETED / FAILED
-  createdAt      DateTime @default(now())
+  exceptionsCount Int      @default(0)
+  status          String   @default("COMPLETED") // COMPLETED / FAILED
+  createdAt       DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
 
@@ -983,16 +1004,16 @@ model ReconciliationRun {
 }
 
 model ReconciliationException {
-  id             String   @id @default(cuid())
-  organizationId String
-  runId          String?
-  type          String   // DUPLICATE_PROVIDER_EVENT, MISSING_PAYMENT, etc.
-  severity      String   // LOW / MEDIUM / HIGH
-  description   String
-  reference     String?
-  resolvedAt    DateTime?
+  id              String    @id @default(cuid())
+  organizationId  String
+  runId           String?
+  type            String // DUPLICATE_PROVIDER_EVENT, MISSING_PAYMENT, etc.
+  severity        String // LOW / MEDIUM / HIGH
+  description     String
+  reference       String?
+  resolvedAt      DateTime?
   resolutionNotes String?
-  createdAt     DateTime @default(now())
+  createdAt       DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
 
@@ -1005,17 +1026,17 @@ model ReconciliationException {
 // ============================================================
 
 model AiInsight {
-  id             String   @id @default(cuid())
-  organizationId String
-  candidateId    String?
-  loanId         String?
-  signalType     String   // PAYMENT_DELAY, REPEATED_MISSED_INSTALLMENTS, etc.
-  level          String   // LOW / MEDIUM / HIGH
-  title          String
-  reasons        Json
+  id              String   @id @default(cuid())
+  organizationId  String
+  candidateId     String?
+  loanId          String?
+  signalType      String // PAYMENT_DELAY, REPEATED_MISSED_INSTALLMENTS, etc.
+  level           String // LOW / MEDIUM / HIGH
+  title           String
+  reasons         Json
   suggestedAction String?
-  isResolved     Boolean  @default(false)
-  createdAt      DateTime @default(now())
+  isResolved      Boolean  @default(false)
+  createdAt       DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
 
@@ -1024,5 +1045,52 @@ model AiInsight {
   @@index([candidateId])
 }
 
-// Add relations on Organization for new models
-// (already has via above)
+// ============================================================
+// DPDP ACT 2023 & LENDING COMPLIANCE: CONSENTS & DATA REQUESTS
+// ============================================================
+
+model ConsentRecord {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String?
+  candidateId    String?
+  applicationId  String?
+  consentType    String // DATA_PROCESSING, KYC_AADHAAR, CREDIT_CHECK, COMMUNICATION, TERMS_PRIVACY, KFS_DISCLOSURE
+  policyVersion  String   @default("2026.1")
+  granted        Boolean  @default(true)
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User?        @relation(fields: [userId], references: [id])
+  candidate    Candidate?   @relation(fields: [candidateId], references: [id])
+
+  @@index([organizationId])
+  @@index([candidateId])
+  @@index([userId])
+  @@index([applicationId])
+}
+
+model DataSubjectRequest {
+  id             String    @id @default(cuid())
+  organizationId String
+  candidateId    String
+  userId         String?
+  requestType    String // EXPORT, DELETION, CORRECTION, WITHDRAW_CONSENT
+  status         String    @default("PENDING") // PENDING, COMPLETED, REJECTED_LEGAL_RETENTION
+  reason         String?
+  reviewNotes    String?
+  reviewedById   String?
+  reviewedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  candidate    Candidate    @relation(fields: [candidateId], references: [id])
+
+  @@index([organizationId])
+  @@index([candidateId])
+  @@index([status])
+}
+

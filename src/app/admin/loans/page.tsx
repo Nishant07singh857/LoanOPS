@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Search, Landmark, Eye, Filter, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { SectionHeading } from '@/components/ui/section-heading'
@@ -43,10 +44,12 @@ interface LoanRow {
   outstandingPrincipal: string
   status: string
   nextDueDate?: string | null
+  overdue?: boolean
   agent?: { id: string; name: string } | null
 }
 
-function isOverdue(nextDue?: string | null) {
+function isOverdue(nextDue?: string | null, backendOverdue?: boolean) {
+  if (backendOverdue) return true
   if (!nextDue) return false
   const d = new Date(nextDue)
   return d < new Date() && d.toDateString() !== new Date().toDateString()
@@ -64,7 +67,23 @@ export default function LoansPage() {
   const [frequency, setFrequency] = React.useState<string>('all')
   const [search, setSearch] = React.useState('')
 
-  const { data, isLoading } = useQuery({
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return
+    const urlStatus = new URLSearchParams(window.location.search).get('status')
+    if (urlStatus) {
+      const validChips: ChipKey[] = ['ALL', 'ACTIVE', 'PENDING_DISBURSEMENT', 'OVERDUE', 'CLOSED', 'DEFAULTED']
+      if (validChips.includes(urlStatus as ChipKey)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setChip(urlStatus as ChipKey)
+      }
+      if (urlStatus !== 'OVERDUE') {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setStatus(urlStatus)
+      }
+    }
+  }, [])
+
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['owner-loans', search, status, frequency],
     queryFn: () => {
       const params = new URLSearchParams({ pageSize: '100' })
@@ -77,10 +96,11 @@ export default function LoansPage() {
 
   const allLoans = data?.items ?? []
   const filtered = allLoans.filter((l) => {
-    if (chip === 'OVERDUE' && !isOverdue(l.nextDueDate)) return false
+    if (chip === 'OVERDUE' && !isOverdue(l.nextDueDate, l.overdue)) return false
     if (chip !== 'ALL' && chip !== 'OVERDUE' && l.status !== chip) return false
     return true
   })
+  const router = useRouter()
 
   return (
     <div className="space-y-6">
@@ -89,8 +109,8 @@ export default function LoansPage() {
         description="Manage all loans across the portfolio — active, pending disbursement, overdue, and closed."
         icon={<Landmark className="h-5 w-5" />}
         action={
-          <Button asChild size="sm">
-            <Link href="/admin/create-loan">New Loan</Link>
+          <Button asChild size="sm" className="gap-1.5 min-h-[44px] sm:min-h-8">
+            <Link href="/admin/create-loan"><Landmark className="h-4 w-4" /> New Loan</Link>
           </Button>
         }
       />
@@ -102,14 +122,16 @@ export default function LoansPage() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
+                  type="search"
+                  aria-label="Search loans"
                   placeholder="Search loan number, candidate, agent..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
+                  className="pl-9 min-h-[44px] sm:min-h-9"
                 />
               </div>
               <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger className="md:w-[180px]">
+                <SelectTrigger className="w-full md:w-[180px] min-h-[44px] sm:min-h-9" aria-label="Filter by status">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -122,7 +144,7 @@ export default function LoansPage() {
                 </SelectContent>
               </Select>
               <Select value={frequency} onValueChange={setFrequency}>
-                <SelectTrigger className="md:w-[160px]">
+                <SelectTrigger className="w-full md:w-[160px] min-h-[44px] sm:min-h-9" aria-label="Filter by frequency">
                   <SelectValue placeholder="Frequency" />
                 </SelectTrigger>
                 <SelectContent>
@@ -135,7 +157,7 @@ export default function LoansPage() {
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+              <span className="text-xs text-muted-foreground inline-flex items-center gap-1 flex-shrink-0">
                 <Filter className="h-3 w-3" /> Quick filter:
               </span>
               {CHIPS.map((c) => {
@@ -143,15 +165,17 @@ export default function LoansPage() {
                 return (
                   <button
                     key={c.key}
+                    type="button"
+                    aria-pressed={active}
                     onClick={() => setChip(c.key)}
                     className={cn(
-                      'inline-flex items-center gap-1.5 px-3 h-7 rounded-full text-xs font-medium border transition-all',
+                      'inline-flex items-center gap-1.5 px-3 min-h-[44px] sm:min-h-7 sm:h-7 rounded-full text-xs font-medium border transition-all flex-shrink-0',
                       active
-                        ? 'bg-primary text-primary-foreground border-primary shadow-glow'
+                        ? 'bg-primary text-primary-foreground border-primary'
                         : 'bg-card hover:bg-muted border-border text-muted-foreground'
                     )}
                   >
-                    {active && <X className="h-3 w-3" />}
+                    {active && c.key !== 'ALL' && <X className="h-3 w-3" />}
                     {c.label}
                   </button>
                 )
@@ -159,7 +183,7 @@ export default function LoansPage() {
               {(chip !== 'ALL' || status !== 'all' || frequency !== 'all' || search) && (
                 <Button
                   variant="ghost" size="sm"
-                  className="h-7 text-xs"
+                  className="min-h-[44px] sm:min-h-7 sm:h-7 text-xs flex-shrink-0"
                   onClick={() => { setChip('ALL'); setStatus('all'); setFrequency('all'); setSearch('') }}
                 >
                   Clear all
@@ -170,7 +194,7 @@ export default function LoansPage() {
         </Card>
       </FadeIn>
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between py-1">
         <p className="text-sm text-muted-foreground">
           {isLoading
             ? 'Loading…'
@@ -179,9 +203,32 @@ export default function LoansPage() {
       </div>
 
       {isLoading ? (
-        <Card className="shadow-premium hidden md:block"><CardContent className="p-4 space-y-3">
-          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
-        </CardContent></Card>
+        <div className="space-y-3" role="status" aria-label="Loading loans">
+          <Card className="shadow-premium hidden md:block"><CardContent className="p-4 space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+          </CardContent></Card>
+          <div className="md:hidden space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i}><CardContent className="p-4 space-y-2">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-5 w-48" />
+                <Skeleton className="h-3 w-24" />
+              </CardContent></Card>
+            ))}
+          </div>
+        </div>
+      ) : isError ? (
+        <Card className="border-destructive/40 bg-destructive/5 shadow-premium">
+          <CardContent className="p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-destructive">Failed to load loans</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Could not fetch loan portfolio data. Please try again.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => refetch()} className="min-h-[44px] sm:min-h-8">
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<Landmark className="h-6 w-6" />}
@@ -191,6 +238,7 @@ export default function LoansPage() {
       ) : (
         <>
           <Card className="shadow-premium hidden md:block overflow-hidden">
+            <div className="overflow-x-auto w-full">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
@@ -208,9 +256,9 @@ export default function LoansPage() {
               </TableHeader>
               <TableBody>
                 {filtered.map((l) => {
-                  const overdue = isOverdue(l.nextDueDate)
+                  const overdue = isOverdue(l.nextDueDate, l.overdue)
                   return (
-                    <TableRow key={l.id} className="cursor-pointer" onClick={() => { window.location.href = `/admin/loans/${l.id}` }}>
+                    <TableRow key={l.id} className="cursor-pointer" onClick={() => { router.push(`/admin/loans/${l.id}`) }}>
                       <TableCell className="pl-6 font-mono font-semibold text-primary">{l.loanNumber}</TableCell>
                       <TableCell>
                         <p className="font-medium">{l.candidateName}</p>
@@ -231,8 +279,8 @@ export default function LoansPage() {
                       <TableCell className={cn('text-xs', overdue ? 'text-destructive font-medium' : 'text-muted-foreground')}>
                         {fmtDate(l.nextDueDate)}
                       </TableCell>
-                      <TableCell className="text-right pr-6">
-                        <Button variant="ghost" size="sm" asChild>
+                      <TableCell className="text-right pr-6" onClick={(e) => e.stopPropagation()}>
+                        <Button variant="ghost" size="sm" asChild aria-label={`View loan ${l.loanNumber}`}>
                           <Link href={`/admin/loans/${l.id}`}><Eye className="h-4 w-4" /></Link>
                         </Button>
                       </TableCell>
@@ -241,11 +289,12 @@ export default function LoansPage() {
                 })}
               </TableBody>
             </Table>
+            </div>
           </Card>
 
           <StaggerContainer className="md:hidden space-y-3">
             {filtered.map((l) => {
-              const overdue = isOverdue(l.nextDueDate)
+              const overdue = isOverdue(l.nextDueDate, l.overdue)
               return (
                 <StaggerItem key={l.id}>
                   <Link href={`/admin/loans/${l.id}`}>

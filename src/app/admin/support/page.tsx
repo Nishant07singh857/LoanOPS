@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { LifeBuoy, Search, Eye, CheckCircle2, Filter, X } from 'lucide-react'
+import { LifeBuoy, Search, Eye, CheckCircle2, Filter, X, AlertTriangle, RefreshCw } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -59,10 +59,11 @@ export default function SupportPage() {
   const queryClient = useQueryClient()
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [search, setSearch] = React.useState('')
+  const [viewTicket, setViewTicket] = React.useState<SupportTicket | null>(null)
   const [resolveTicket, setResolveTicket] = React.useState<SupportTicket | null>(null)
   const [resolution, setResolution] = React.useState('')
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['owner-support'],
     queryFn: () => api.get<{ items: SupportTicket[]; total: number }>('/api/owner/support?pageSize=100'),
   })
@@ -75,14 +76,18 @@ export default function SupportPage() {
       const q = search.toLowerCase()
       return t.ticketNumber.toLowerCase().includes(q)
         || t.subject.toLowerCase().includes(q)
-        || t.category.toLowerCase().includes(q
-      )
+        || t.category.toLowerCase().includes(q)
+        || t.candidate.fullName.toLowerCase().includes(q)
+        || t.candidate.mobile.toLowerCase().includes(q)
     }
     return true
   })
 
   const resolveMutation = useMutation({
-    mutationFn: () => api.post(`/api/owner/support/${resolveTicket!.id}/resolve`, { resolution }),
+    mutationFn: () =>
+      api.post(`/api/owner/support/${resolveTicket!.id}/resolve`, {
+        resolution: resolution.trim() ? resolution.trim() : undefined,
+      }),
     onSuccess: () => {
       toast.success('Ticket resolved', { description: `${resolveTicket?.ticketNumber} marked RESOLVED.` })
       queryClient.invalidateQueries({ queryKey: ['owner-support'] })
@@ -93,6 +98,10 @@ export default function SupportPage() {
 
   const submitResolve = () => {
     if (!resolveTicket) return
+    if (resolution.trim().length === 1) {
+      toast.error('Resolution note must be at least 2 characters')
+      return
+    }
     resolveMutation.mutate()
   }
 
@@ -118,7 +127,12 @@ export default function SupportPage() {
             <div className="flex flex-col md:flex-row gap-3">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search ticket #, subject, category..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+                <Input
+                  placeholder="Search ticket #, candidate, subject, category..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9 h-11"
+                />
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -130,7 +144,7 @@ export default function SupportPage() {
                     key={c.key}
                     onClick={() => setChip(c.key)}
                     className={cn(
-                      'inline-flex items-center gap-1.5 px-3 h-7 rounded-full text-xs font-medium border transition-all',
+                      'inline-flex items-center gap-1.5 px-3 min-h-[36px] rounded-full text-xs font-medium border transition-all',
                       active ? 'bg-primary text-primary-foreground border-primary shadow-glow' : 'bg-card hover:bg-muted border-border text-muted-foreground'
                     )}
                   >
@@ -148,6 +162,19 @@ export default function SupportPage() {
         <Card className="shadow-premium"><CardContent className="p-4 space-y-3">
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
         </CardContent></Card>
+      ) : isError ? (
+        <Card className="shadow-premium border-destructive/40">
+          <CardContent className="p-6 flex flex-col items-center text-center gap-3">
+            <AlertTriangle className="h-8 w-8 text-destructive" />
+            <div>
+              <p className="font-semibold text-sm">Failed to load support tickets</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Please check your connection and try again.</p>
+            </div>
+            <Button variant="outline" size="sm" className="h-11" onClick={() => refetch()}>
+              <RefreshCw className="h-4 w-4" /> Retry
+            </Button>
+          </CardContent>
+        </Card>
       ) : filtered.length === 0 ? (
         <EmptyState icon={<LifeBuoy className="h-6 w-6" />} title="No tickets match these filters" description="Try adjusting your search or filters." />
       ) : (
@@ -155,7 +182,7 @@ export default function SupportPage() {
           <Card className="shadow-premium">
             <CardHeader className="pb-2"><CardTitle className="text-base">Tickets</CardTitle><CardDescription>{filtered.length} shown</CardDescription></CardHeader>
             <CardContent>
-              <div className="hidden md:block">
+              <div className="hidden md:block overflow-x-auto w-full">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/40">
@@ -185,10 +212,18 @@ export default function SupportPage() {
                         <TableCell><StatusBadge variant={t.status}>{formatStatus(t.status)}</StatusBadge></TableCell>
                         <TableCell className="text-xs text-muted-foreground max-w-[240px] truncate">{t.resolution || '—'}</TableCell>
                         <TableCell className="text-right pr-6">
-                          <div className="flex gap-1 justify-end">
-                            <Button variant="ghost" size="sm" onClick={() => toast.info(`Opening ${t.ticketNumber}`)}><Eye className="h-4 w-4" /></Button>
+                          <div className="flex gap-1 justify-end items-center">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-9 w-9 p-0"
+                              aria-label={`View ticket ${t.ticketNumber}`}
+                              onClick={() => setViewTicket(t)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
                             {(t.status === 'OPEN' || t.status === 'IN_REVIEW') && (
-                              <Button size="sm" onClick={() => { setResolveTicket(t); setResolution(t.resolution ?? '') }}>
+                              <Button size="sm" className="h-9" onClick={() => { setResolveTicket(t); setResolution(t.resolution ?? '') }}>
                                 <CheckCircle2 className="h-3.5 w-3.5" /> Resolve
                               </Button>
                             )}
@@ -206,18 +241,24 @@ export default function SupportPage() {
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <p className="font-mono text-xs text-primary font-semibold">{t.ticketNumber}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">{t.candidate.fullName}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{t.candidate.fullName} · {t.candidate.mobile}</p>
                           <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium mt-1">{t.category}</span>
                         </div>
                         <StatusBadge variant={t.status}>{formatStatus(t.status)}</StatusBadge>
                       </div>
                       <p className="text-sm font-medium mt-2">{t.subject}</p>
-                      <p className="text-xs text-muted-foreground mt-1">{fmtTimestamp(t.createdAt)}{t.resolution ? ` · ${t.resolution}` : ''}</p>
-                      {(t.status === 'OPEN' || t.status === 'IN_REVIEW') && (
-                        <Button size="sm" className="w-full mt-3" onClick={() => { setResolveTicket(t); setResolution(t.resolution ?? '') }}>
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Resolve
+                      {t.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{t.description}</p>}
+                      <p className="text-xs text-muted-foreground mt-1.5">{fmtTimestamp(t.createdAt)}{t.resolution ? ` · ${t.resolution}` : ''}</p>
+                      <div className="flex gap-2 mt-3">
+                        <Button variant="outline" size="sm" className="h-11 flex-1" onClick={() => setViewTicket(t)}>
+                          <Eye className="h-3.5 w-3.5" /> Details
                         </Button>
-                      )}
+                        {(t.status === 'OPEN' || t.status === 'IN_REVIEW') && (
+                          <Button size="sm" className="h-11 flex-1" onClick={() => { setResolveTicket(t); setResolution(t.resolution ?? '') }}>
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Resolve
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </StaggerItem>
                 ))}
@@ -227,8 +268,58 @@ export default function SupportPage() {
         </FadeIn>
       )}
 
+      {/* View Ticket Details Dialog */}
+      <Dialog open={!!viewTicket} onOpenChange={(o) => !o && setViewTicket(null)}>
+        <DialogContent className="max-w-[95vw] sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span>{viewTicket?.ticketNumber}</span>
+              {viewTicket && <StatusBadge variant={viewTicket.status}>{formatStatus(viewTicket.status)}</StatusBadge>}
+            </DialogTitle>
+            <DialogDescription>
+              Submitted by {viewTicket?.candidate.fullName} ({viewTicket?.candidate.mobile}) · {viewTicket ? fmtTimestamp(viewTicket.createdAt) : ''}
+            </DialogDescription>
+          </DialogHeader>
+          {viewTicket && (
+            <div className="space-y-4 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">Category &amp; Subject</p>
+                <p className="font-semibold mt-0.5">[{viewTicket.category}] {viewTicket.subject}</p>
+              </div>
+              <div className="rounded-lg bg-muted/40 border border-border p-3">
+                <p className="text-xs text-muted-foreground mb-1">Description</p>
+                <p className="text-xs sm:text-sm whitespace-pre-wrap">{viewTicket.description || 'No description provided.'}</p>
+              </div>
+              {viewTicket.resolution && (
+                <div className="rounded-lg bg-success/10 border border-success/20 p-3">
+                  <p className="text-xs font-semibold text-success mb-1">Resolution Notes</p>
+                  <p className="text-xs sm:text-sm whitespace-pre-wrap">{viewTicket.resolution}</p>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" className="h-11" onClick={() => setViewTicket(null)}>Close</Button>
+            {viewTicket && (viewTicket.status === 'OPEN' || viewTicket.status === 'IN_REVIEW') && (
+              <Button
+                className="h-11"
+                onClick={() => {
+                  const t = viewTicket
+                  setViewTicket(null)
+                  setResolveTicket(t)
+                  setResolution(t.resolution ?? '')
+                }}
+              >
+                <CheckCircle2 className="h-4 w-4" /> Resolve Ticket
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Resolve Ticket Dialog */}
       <Dialog open={!!resolveTicket} onOpenChange={(o) => { if (!o) { setResolveTicket(null); setResolution('') } }}>
-        <DialogContent>
+        <DialogContent className="max-w-[95vw] sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Resolve {resolveTicket?.ticketNumber}</DialogTitle>
             <DialogDescription>Add resolution notes for this support ticket.</DialogDescription>
@@ -236,12 +327,19 @@ export default function SupportPage() {
           <div className="space-y-3">
             <div>
               <Label htmlFor="resolution">Resolution notes</Label>
-              <Textarea id="resolution" rows={4} value={resolution} onChange={(e) => setResolution(e.target.value)} placeholder="Describe how this ticket was resolved" />
+              <Textarea
+                id="resolution"
+                rows={4}
+                className="mt-1 text-base sm:text-sm"
+                value={resolution}
+                onChange={(e) => setResolution(e.target.value)}
+                placeholder="Describe how this ticket was resolved (optional, min 2 chars)"
+              />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setResolveTicket(null); setResolution('') }}>Cancel</Button>
-            <Button onClick={submitResolve} disabled={resolveMutation.isPending}>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" className="h-11" onClick={() => { setResolveTicket(null); setResolution('') }}>Cancel</Button>
+            <Button className="h-11" onClick={submitResolve} disabled={resolveMutation.isPending}>
               <CheckCircle2 className="h-4 w-4" /> Mark Resolved
             </Button>
           </DialogFooter>

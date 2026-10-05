@@ -28,13 +28,7 @@ interface Note {
   ts: string
 }
 
-const sampleNotes: Note[] = [
-  { id: 'n1', title: 'Sahil Khan — field visit', content: 'Shop was shut. Neighbour said he travelled to hometown. Will return 20 Sep. Try then.', candidate: 'Sahil Khan', tags: ['Field', 'Overdue'], ts: '2 hours ago' },
-  { id: 'n2', title: 'Karthik Iyer PTP context', content: 'Candidate has 2 kids in school. Promised to pay after shop revenue. Will check on 22 Sep.', candidate: 'Karthik Iyer', tags: ['PTP'], ts: '1 day ago' },
-  { id: 'n3', title: 'Meena Desai cash pickup', content: 'Cash ₹2,700 collected from her husband. Receipt signed. Need to upload to cash module.', candidate: 'Meena Desai', tags: ['Cash'], ts: '2 days ago' },
-  { id: 'n4', title: 'Standup — Mumbai South', content: 'Target 90% collection rate this week. Currently at 78%. Need to chase 3 overdue accounts.', tags: ['Standup'], ts: '3 days ago' },
-  { id: 'n5', title: 'Rahul Verma — confirmed payment', content: 'WhatsApp confirmed payment of ₹7,425 due 20 Sep. Will hit by 21st.', candidate: 'Rahul Verma', tags: ['WhatsApp', 'PTP'], ts: '5 days ago' },
-]
+const sampleNotes: Note[] = []
 
 interface CandidateRow {
   id: string
@@ -50,6 +44,19 @@ export default function AgentNotesPage() {
   const [tags, setTags] = React.useState('')
   const [quickNote, setQuickNote] = React.useState('')
 
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem('sterling_agent_notes')
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (saved) setNotes(JSON.parse(saved))
+    } catch {}
+  }, [])
+
+  const updateNotes = (next: Note[]) => {
+    setNotes(next)
+    try { localStorage.setItem('sterling_agent_notes', JSON.stringify(next)) } catch {}
+  }
+
   const { data: candidatesData } = useQuery({
     queryKey: ['agent-candidates-for-notes'],
     queryFn: () => api.get<{ items: CandidateRow[] }>('/api/agent/candidates?pageSize=100'),
@@ -62,14 +69,14 @@ export default function AgentNotesPage() {
       return
     }
     const newNote: Note = {
-      id: `n${notes.length + 1}`,
+      id: `n_${Date.now()}`,
       title: title.trim() || 'Untitled',
       content: content.trim(),
-      candidate: candidate || undefined,
+      candidate: candidate && candidate !== 'none' ? candidate : undefined,
       tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
-      ts: 'Just now',
+      ts: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
     }
-    setNotes([newNote, ...notes])
+    updateNotes([newNote, ...notes])
     setTitle(''); setContent(''); setCandidate(''); setTags('')
     toast.success('Note saved', { description: 'Note saved — visible only to you.' })
   }
@@ -77,19 +84,19 @@ export default function AgentNotesPage() {
   const saveQuick = () => {
     if (!quickNote.trim()) return
     const newNote: Note = {
-      id: `n${notes.length + 1}`,
+      id: `n_${Date.now()}`,
       title: 'Quick note',
       content: quickNote.trim(),
       tags: ['Quick'],
-      ts: 'Just now',
+      ts: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
     }
-    setNotes([newNote, ...notes])
+    updateNotes([newNote, ...notes])
     setQuickNote('')
     toast.success('Quick note saved')
   }
 
   const onDelete = (id: string) => {
-    setNotes(notes.filter((n) => n.id !== id))
+    updateNotes(notes.filter((n) => n.id !== id))
     toast.info('Note deleted')
   }
 
@@ -199,7 +206,7 @@ export default function AgentNotesPage() {
                             </p>
                           )}
                         </div>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => onDelete(n.id)}>
+                        <Button variant="ghost" size="icon" aria-label={`Delete note ${n.title}`} className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => onDelete(n.id)}>
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>

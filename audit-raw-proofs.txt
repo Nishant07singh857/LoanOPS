@@ -1,0 +1,169 @@
+# STEP 1: AUDIT RAW PROOFS
+
+## A1. Build and Tooling
+tsc: 
+eslint: 
+test:unit:
+✓ maskAadhaar, maskPan, and maskBankAccount never leak raw identifiers
+✓ sanitizeText and sanitizeJsonPayload neutralize XSS and prototype pollution
+✓ validateSafeRedirect blocks external URLs and detectMagicBytesMime + stripImageMetadata work
+
+All 13/13 financial & security unit tests passed.
+build:
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+## A2. Prisma Migrate Status
+Prisma schema loaded from prisma\schema.prisma
+Datasource "db": PostgreSQL database "postgres", schema "public" at "aws-0-ap-south-1.pooler.supabase.com:5432"
+
+1 migration found in prisma/migrations
+
+Database schema is up to date!
+Prisma schema loaded from prisma\schema.prisma
+The schema at prisma\schema.prisma is valid 🚀
+
+## A3. npm audit
+# npm audit report
+
+deepmerge-ts  <8.0.0
+Severity: high
+DeepmergeTS has stack exhaustion when merging recursive object graphs - https://github.com/advisories/GHSA-ggr8-5vv4-36mx
+fix available via `npm audit fix`
+node_modules/deepmerge-ts
+  @prisma/config  6.13.0-dev.1 - 8.1.0-dev.4
+  Depends on vulnerable versions of deepmerge-ts
+  node_modules/@prisma/config
+    prisma  6.13.0-dev.1 - 8.1.0-dev.4
+    Depends on vulnerable versions of @prisma/config
+    node_modules/prisma
+
+next  16.2.0 - 16.3.5
+Severity: critical
+Next.js: Remote Code Execution in next/og ImageResponse - https://github.com/advisories/GHSA-vcvr-r3jv-pc5j
+fix available via `npm audit fix`
+node_modules/next
+
+sharp  <=0.35.4-rc.0
+Severity: high
+sharp inherited vulnerabilities in libvips: CVE-2026-33327, CVE-2026-33328, CVE-2026-35590, CVE-2026-35591 - https://github.com/advisories/GHSA-f88m-g3jw-g9cj
+sharp: Vulnerabilities in libheif: GHSA-g89c-p67h-r497 and GHSA-2jg2-4ch7-h545 - https://github.com/advisories/GHSA-rgj7-g3m4-5g8c
+fix available via `npm audit fix`
+node_modules/sharp
+
+5 vulnerabilities (4 high, 1 critical)
+
+To address all issues, run:
+  npm audit fix
+
+## A4. Secrets in Repo
+git check-ignore .env: Command failed: git check-ignore .env
+gitleaks: "gitleaks not found or failed"
+
+## B5. Password Policy & Hashing
+101:export async function hashPassword(plain: string): Promise<string> {
+396:  const passwordHash = await hashPassword(newPassword)
+66:export function validatePasswordPolicy(
+388:  const policy = validatePasswordPolicy(newPassword, {
+
+## B6. Cookie Flags & Session
+300:    httpOnly: true,
+311:    httpOnly: true,
+src/lib/server/auth.ts:227:      if (u.passwordChangedAt && s.createdAt < u.passwordChangedAt) {
+src/lib/server/auth.ts:407:        passwordChangedAt: now,
+src/app/api/auth/signup/route.ts:97:          passwordChangedAt: now,
+
+## C14. Mass Assignment (Strict Zod)
+src/app/api/agent/applications/route.ts:7:const createSchema = z.object({
+src/app/api/agent/applications/route.ts:9:  newCandidate: z.object({
+src/app/api/agent/cash-collections/route.ts:114:const schema = z.object({
+src/app/api/agent/escalations/route.ts:56:const schema = z.object({
+src/app/api/agent/escalations/[id]/route.ts:8:const schema = z.object({
+src/app/api/agent/follow-ups/route.ts:57:const schema = z.object({
+src/app/api/agent/ptp/route.ts:60:const schema = z.object({
+src/app/api/agent/qr-links/route.ts:8:const querySchema = z.object({
+src/app/api/agent/qr-links/route.ts:57:const createSchema = z.object({
+src/app/api/agent/tasks/route.ts:60:const createSchema = z.object({
+src/app/api/agent/tasks/[id]/complete/route.ts:8:const schema = z.object({
+src/app/api/apply/[token]/route.ts:42:const consentItemSchema = z.object({
+src/app/api/apply/[token]/route.ts:48:const submitSchema = z.object({
+src/app/api/auth/signup/route.ts:17:const consentItemSchema = z.object({
+src/app/api/candidate/application/submit/route.ts:20:const consentItemSchema = z.object({
+src/app/api/candidate/application/submit/route.ts:26:const submitSchema = z.object({
+src/app/api/candidate/data-requests/route.ts:161:const createDataRequestSchema = z.object({
+src/app/api/candidate/notifications/route.ts:50:const markSchema = z.object({
+src/app/api/candidate/payments/route.ts:72:const schema = z.object({
+src/app/api/candidate/profile/route.ts:80:const updateProfileSchema = z.object({
+src/app/api/candidate/support/route.ts:9:const schema = z.object({
+src/app/api/consents/route.ts:59:const postConsentSchema = z.object({
+src/app/api/consents/route.ts:62:      z.object({
+src/app/api/notifications/route.ts:78:const markSchema = z.object({
+src/app/api/owner/agents/route.ts:65:const createAgentSchema = z.object({
+src/app/api/owner/agreements/route.ts:28:const schema = z.object({
+src/app/api/owner/agreements/[id]/route.ts:8:const patchSchema = z.object({
+src/app/api/owner/applications/route.ts:7:const querySchema = z.object({
+src/app/api/owner/applications/route.ts:78:const createSchema = z.object({
+src/app/api/owner/applications/route.ts:80:  newCandidate: z.object({
+src/app/api/owner/applications/[id]/approve/route.ts:9:const schema = z.object({
+src/app/api/owner/applications/[id]/reject/route.ts:7:const schema = z.object({
+src/app/api/owner/applications/[id]/request-info/route.ts:7:const schema = z.object({
+src/app/api/owner/candidates/route.ts:99:const createSchema = z.object({
+src/app/api/owner/cash-collections/[id]/verify/route.ts:11:const schema = z.object({
+src/app/api/owner/corrections/route.ts:52:const schema = z.object({
+src/app/api/owner/data-requests/route.ts:31:const reviewSchema = z.object({
+src/app/api/owner/loans/route.ts:7:const querySchema = z.object({
+src/app/api/owner/loans/[id]/restructure/route.ts:7:const restructureSchema = z.object({
+src/app/api/owner/qr-links/route.ts:8:const querySchema = z.object({
+src/app/api/owner/qr-links/route.ts:57:const createSchema = z.object({
+src/app/api/owner/reconciliation/run/route.ts:10:const schema = z.object({
+src/app/api/owner/refunds/route.ts:59:const createSchema = z.object({
+src/app/api/owner/support/[id]/resolve/route.ts:8:const schema = z.object({
+src/app/api/webhooks/payment/route.ts:17:const schema = z.object({
+src/app/api/auth/candidate-login/route.ts:30:  .strict()
+src/app/api/auth/forgot-password/route.ts:13:  .strict()
+src/app/api/auth/login/route.ts:35:  .strict()
+src/app/api/auth/reset-password/route.ts:13:  .strict()
+src/app/api/auth/signup/route.ts:31:  .strict()
+src/app/api/auth/totp/route.ts:33:  .strict()
+src/app/api/owner/loans/[id]/disburse/route.ts:20:  .strict()
+src/app/api/owner/pii/reveal/route.ts:22:  .strict()
+
+## F24. Aadhaar Storage
+
+src/app/api/candidate/application/submit/route.ts:27:  aadhaarBase64: z.string().max(10_000_000, 'Aadhaar document is too large').optional(),
+src/app/api/candidate/application/submit/route.ts:29:  aadhaarNumber: z
+src/app/api/candidate/application/submit/route.ts:77:  if (input.aadhaarBase64) {
+src/app/api/candidate/application/submit/route.ts:78:    const check = await validateAndStoreDataUrlUpload(input.aadhaarBase64, {
+src/app/api/candidate/application/submit/route.ts:117:  const cleanAadhaar = input.aadhaarNumber || undefined
+src/app/api/candidate/application/submit/route.ts:120:  const aadhaarLast4 = cleanAadhaar ? cleanAadhaar.slice(-4) : undefined
+src/app/api/candidate/application/submit/route.ts:121:  const aadhaarHash = cleanAadhaar ? hashPII(cleanAadhaar) : undefined
+src/app/api/candidate/application/submit/route.ts:129:    aadhaarLast4 ||
+src/app/api/candidate/application/submit/route.ts:130:    aadhaarHash ||
+src/app/api/candidate/application/submit/route.ts:140:        ...(maskedAadhaar ? { aadhaarMasked: maskedAadhaar } : {}),
+src/app/api/candidate/application/submit/route.ts:141:        ...(aadhaarLast4 ? { aadhaarLast4 } : {}),
+src/app/api/candidate/application/submit/route.ts:142:        ...(aadhaarHash ? { aadhaarHash } : {}),
+src/app/api/candidate/application/submit/route.ts:157:        aadhaarUrl: storedAadhaarUrl || existingKyc.aadhaarUrl,
+src/app/api/candidate/application/submit/route.ts:159:        aadhaarNumber: encryptedAadhaar || existingKyc.aadhaarNumber,
+src/app/api/candidate/application/submit/route.ts:168:        aadhaarUrl: storedAadhaarUrl,
+src/app/api/candidate/application/submit/route.ts:170:        aadhaarNumber: encryptedAadhaar ?? null,
+168:  aadhaarMasked       String?
+169:  aadhaarLast4        String?
+170:  aadhaarHash         String?
+817:  aadhaarNumber String?
+819:  aadhaarUrl    String?
+
+## G28. Float Math in Financials
+270:  return BigInt(Math.round(n * 100))
+"No Floats"
+
+## I38. TODOs and console.log
+src/lib/server/logger.ts:82:    console.log(serialized)
+src/app/fair-practices/page.tsx:1:// TODO: LEGAL REVIEW REQUIRED — Review Fair Practices Code and Field Agent Code of Conduct with legal counsel prior to production launch.
+src/app/grievance/page.tsx:1:// TODO: LEGAL REVIEW REQUIRED — Ensure Nodal Grievance Officer name, phone, and address are configured via environment variables before production launch.
+src/app/kfs/page.tsx:3:// TODO: LEGAL REVIEW REQUIRED — Key Facts Statement (KFS) format & APR calculation disclosures must be verified with the Regulated Entity (RE) partner and legal counsel before live lending.
+src/app/privacy/page.tsx:1:// TODO: LEGAL REVIEW REQUIRED — Must be reviewed by qualified Indian legal counsel before commercial launch.
+src/app/terms/page.tsx:1:// TODO: LEGAL REVIEW REQUIRED — Must be reviewed by qualified Indian legal counsel before commercial launch.
+src/lib/compliance-config.ts:1:// TODO: LEGAL REVIEW REQUIRED — All legal text, disclosures, KFS templates, and privacy policies must be reviewed by a qualified Indian legal counsel before commercial launch. Operating as a digital lender in India requires RBI registration as an NBFC or a regulated RE-LSP partnership under RBI Digital Lending Guidelines. Do not invent registration/licence numbers.

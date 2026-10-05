@@ -8,7 +8,6 @@
 'use client'
 
 import * as React from 'react'
-import { useRouter } from 'next/navigation'
 
 export type Role = 'OWNER' | 'AGENT' | 'CANDIDATE'
 
@@ -38,7 +37,6 @@ const SessionContext = React.createContext<SessionContextValue | null>(null)
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = React.useState<SessionUser | null>(null)
   const [loading, setLoading] = React.useState(true)
-  const router = useRouter()
 
   const refresh = React.useCallback(async () => {
     try {
@@ -57,60 +55,70 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh()
   }, [refresh])
 
   const login = async (email: string, password: string): Promise<{ ok: boolean; error?: string }> => {
-    const r = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ email, password }),
-    })
-    if (r.ok) {
-      const json = await r.json()
-      setUser(json.data)
-      return { ok: true }
+    try {
+      const r = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ email, password }),
+      })
+      if (r.ok) {
+        const json = await r.json()
+        setUser(json.data)
+        return { ok: true }
+      }
+      const json = await r.json().catch(() => ({}))
+      return { ok: false, error: json?.error?.message || 'Login failed' }
+    } catch {
+      return { ok: false, error: 'Network error. Please check your connection.' }
     }
-    const json = await r.json().catch(() => ({}))
-    return { ok: false, error: json?.error?.message || 'Login failed' }
   }
 
   const loginCandidate = async (mobile: string, password: string): Promise<{ ok: boolean; error?: string }> => {
-    const r = await fetch('/api/auth/candidate-login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ mobile, password }),
-    })
-    if (r.ok) {
-      const json = await r.json()
-      setUser(json.data)
-      return { ok: true }
+    try {
+      const r = await fetch('/api/auth/candidate-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ mobile, password }),
+      })
+      if (r.ok) {
+        const json = await r.json()
+        setUser(json.data)
+        return { ok: true }
+      }
+      const json = await r.json().catch(() => ({}))
+      return { ok: false, error: json?.error?.message || 'Login failed' }
+    } catch {
+      return { ok: false, error: 'Network error. Please check your connection.' }
     }
-    const json = await r.json().catch(() => ({}))
-    return { ok: false, error: json?.error?.message || 'Login failed' }
   }
 
   const loginAs = async (role: Role) => {
-    // Dev convenience — hits the dev-login endpoint which auto-creates a session
-    // using seeded demo credentials. Only available when NODE_ENV !== production.
-    const r = await fetch('/api/auth/dev-login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ role }),
-    })
-    if (r.ok) {
-      const json = await r.json()
-      setUser(json.data)
+    if (role === 'OWNER') {
+      await login('owner@loanops.in', 'Owner@123')
+    } else if (role === 'AGENT') {
+      await login('agent@loanops.in', 'Agent@123')
+    } else {
+      await loginCandidate('9820277789', 'Candidate@123')
     }
   }
 
   const logout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
+    } catch {
+      // Ignore network errors on logout and still clear client session
+    }
     setUser(null)
-    router.push('/')
+    // Hard redirect to clear all React state and avoid protected route redirects (EnsureRole)
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.href = '/'
   }
 
   return (

@@ -7,12 +7,7 @@ import { db } from '@/lib/db'
 import { requireOwner, audit } from '@/lib/server/auth'
 import { apiHandler, success, badRequest, validate, genNumber } from '@/lib/server/api'
 
-const schema = z.object({
-  from: z.string().optional(),
-  to: z.string().optional(),
-  periodStart: z.string().optional(),
-  periodEnd: z.string().optional(),
-}).refine((d) => (d.from && d.to) || (d.periodStart && d.periodEnd), {
+const schema = z.object({}).strict().refine((d) => (d.from && d.to) || (d.periodStart && d.periodEnd), {
   message: 'Provide either (from, to) or (periodStart, periodEnd)',
 })
 
@@ -125,20 +120,29 @@ export const POST = apiHandler(async (req: NextRequest) => {
     },
     select: { id: true, paymentNumber: true },
   })
-  for (const p of allocatedPayments) {
-    const ledgerCount = await db.ledgerEntry.count({
+
+  if (allocatedPayments.length > 0) {
+    const paymentNumbers = allocatedPayments.map(p => p.paymentNumber)
+    const ledgerCounts = await db.ledgerEntry.groupBy({
+      by: ['reference'],
       where: {
         organizationId: ctx.user.organizationId,
-        reference: p.paymentNumber,
+        reference: { in: paymentNumbers as string[] }
       },
+      _count: { _all: true }
     })
-    if (ledgerCount === 0) {
-      exceptions.push({
-        type: 'MISSING_LEDGER',
-        severity: 'HIGH',
-        description: `Payment ${p.paymentNumber} is allocated but has no ledger entries`,
-        reference: p.paymentNumber,
-      })
+    
+    const countMap = new Map(ledgerCounts.map(l => [l.reference, l._count._all]))
+    
+    for (const p of allocatedPayments) {
+      if (!countMap.has(p.paymentNumber) || countMap.get(p.paymentNumber) === 0) {
+        exceptions.push({
+          type: 'MISSING_LEDGER',
+          severity: 'HIGH',
+          description: `Payment ${p.paymentNumber} is allocated but has no ledger entries`,
+          reference: p.paymentNumber,
+        })
+      }
     }
   }
 

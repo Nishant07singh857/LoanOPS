@@ -8,6 +8,7 @@ import {
   ArrowLeft, User, Phone, Mail, MapPin, Building2, MessageCircle,
   Banknote, Handshake, AlertTriangle, Calendar, Clock,
   ScrollText, ChevronRight, Send, Plus, CheckCircle2, XCircle, History,
+  Receipt, Upload, ShieldCheck,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -30,7 +31,7 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { api } from '@/lib/api-client'
+import { api, ApiRequestError } from '@/lib/api-client'
 import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
 import { cn } from '@/lib/utils'
@@ -61,6 +62,8 @@ interface CandidateDetail {
     totalRepayable: string
     outstandingPrincipal: string
     outstandingInterest: string
+    outstandingFees?: string
+    totalOutstanding?: string
     status: string
     frequency: string
     installments: number
@@ -103,6 +106,8 @@ interface CandidateDetail {
     amount: string
     collectionDate: string
     status: string
+    verificationStatus?: string
+    receiptNumber?: string | null
     reference?: string | null
   }>
   kyc: any | null
@@ -114,6 +119,47 @@ const initials = (n: string) => n.split(' ').map((p) => p[0]).join('').slice(0, 
 function fmtDate(d?: string | null) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function generateCashIdempotencyKey() {
+  return `cash_${Date.now()}_${Math.random().toString(36).slice(2)}`
+}
+
+async function postCashCollectionWithIdempotency(payload: Record<string, any>, idempotencyKey: string) {
+  const r = await fetch('/api/agent/cash-collections', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey,
+    },
+    body: JSON.stringify({ ...payload, idempotencyKey }),
+  })
+  const text = await r.text()
+  let json: any = null
+  if (text) {
+    try {
+      json = JSON.parse(text)
+    } catch {
+      // ignore non-JSON
+    }
+  }
+  if (!r.ok) {
+    const rawErr = json?.error
+    const message =
+      rawErr && typeof rawErr === 'object'
+        ? String(rawErr.message || r.statusText || 'Request failed')
+        : typeof rawErr === 'string'
+          ? rawErr
+          : r.statusText || 'Request failed'
+    throw new ApiRequestError(
+      String(rawErr?.code || 'UNKNOWN'),
+      message,
+      r.status,
+      rawErr?.details
+    )
+  }
+  return json && typeof json === 'object' && 'data' in json ? json.data : json
 }
 
 const reasonLabel: Record<string, string> = {
@@ -130,24 +176,70 @@ export default function AgentCandidateDetailPage() {
   const candidateId = params.id
   const queryClient = useQueryClient()
 
+  const [collectOpen, setCollectOpen] = React.useState(false)
+  const [presetInstallment, setPresetInstallment] = React.useState<number | null>(null)
+  const [presetAmountPaise, setPresetAmountPaise] = React.useState<number | null>(null)
+
   const { data: c, isLoading } = useQuery({
     queryKey: ['agent-candidate', candidateId],
     queryFn: () => api.get<CandidateDetail>(`/api/agent/candidates/${candidateId}`),
     enabled: !!candidateId,
   })
 
-  const loan = c?.loans[0]
+  const loan = c?.loans.find((l) => l.status === 'ACTIVE') ?? c?.loans[0]
   const ptps = c?.ptps ?? []
   const escs = c?.escalations ?? []
   const followUps = c?.followUps ?? []
+  const cashCollections = c?.cashCollections ?? []
+
+  const scheduleRemainingPaise = React.useMemo(() => {
+    if (!loan?.schedule) return 0
+    return loan.schedule.reduce(
+      (sum, s) => sum + Math.max(0, Number(s.totalDue || 0) - Number(s.paidAmount || 0)),
+      0
+    )
+  }, [loan])
+
+  const totalOutstandingPaise = React.useMemo(() => {
+    if (!loan) return 0
+    const raw =
+      loan.totalOutstanding !== undefined
+        ? Number(loan.totalOutstanding)
+        : Number(loan.outstandingPrincipal || 0) +
+          Number(loan.outstandingInterest || 0) +
+          Number(loan.outstandingFees || 0)
+    return raw > 0 ? raw : scheduleRemainingPaise
+  }, [loan, scheduleRemainingPaise])
+
+  const nextInstallmentRow = React.useMemo(() => {
+    if (!loan?.schedule) return null
+    return (
+      loan.schedule.find((s) => s.status === 'OVERDUE' || s.status === 'DUE' || s.status === 'PARTIALLY_PAID') ??
+      loan.schedule.find((s) => s.status !== 'PAID') ??
+      null
+    )
+  }, [loan])
+
+  const nextInstallmentDuePaise = React.useMemo(() => {
+    if (nextInstallmentRow) {
+      return Math.max(0, Number(nextInstallmentRow.totalDue || 0) - Number(nextInstallmentRow.paidAmount || 0))
+    }
+    return Number(loan?.installmentAmount || 0)
+  }, [nextInstallmentRow, loan])
+
+  const openCollectCash = (instNum?: number | null, duePaise?: number | null) => {
+    setPresetInstallment(instNum ?? nextInstallmentRow?.installmentNumber ?? null)
+    setPresetAmountPaise(duePaise ?? nextInstallmentDuePaise)
+    setCollectOpen(true)
+  }
 
   const onWhatsApp = () => {
     if (!c) return
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.PAYMENT_REMINDER, {
       candidateName: c.fullName,
       loanNumber: loan?.loanNumber ?? '',
-      amount: loan ? (Number(loan.outstandingPrincipal) / 100).toLocaleString('en-IN') : '0',
-      dueDate: loan ? fmtDate(loan.firstDueDate) : '',
+      amount: loan ? (totalOutstandingPaise / 100).toLocaleString('en-IN') : '0',
+      dueDate: loan ? fmtDate(nextInstallmentRow?.dueDate ?? loan.firstDueDate) : '',
     })
     openWhatsApp(c.mobile, msg)
     toast.success('WhatsApp draft opened')
@@ -161,12 +253,18 @@ export default function AgentCandidateDetailPage() {
         </Link>
       </div>
 
-      {isLoading || !c ? (
+      {isLoading ? (
         <div className="space-y-4">
           <Skeleton className="h-32 w-full" />
           <Skeleton className="h-12 w-full" />
           <Skeleton className="h-64 w-full" />
         </div>
+      ) : !c ? (
+        <EmptyState
+          icon={<User className="h-6 w-6" />}
+          title="Candidate not found"
+          description="This candidate record could not be loaded or is not assigned to you."
+        />
       ) : (
         <>
           {/* Header */}
@@ -194,14 +292,23 @@ export default function AgentCandidateDetailPage() {
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    {loan && totalOutstandingPaise > 0 && (
+                      <Button
+                        size="sm"
+                        onClick={() => openCollectCash(nextInstallmentRow?.installmentNumber ?? null, nextInstallmentDuePaise)}
+                        className="bg-success text-success-foreground hover:bg-success/90 shadow-sm"
+                      >
+                        <Banknote className="h-4 w-4" /> Collect Cash
+                      </Button>
+                    )}
                     <Button variant="outline" size="sm" onClick={onWhatsApp} className="text-info border-info/40 hover:bg-info/10">
                       <MessageCircle className="h-4 w-4" /> WhatsApp
                     </Button>
-                    <a href={`tel:${c.mobile.replace(/\s/g, '')}`} onClick={(e) => e.preventDefault()}>
-                      <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={`tel:${c.mobile.replace(/\s/g, '')}`}>
                         <Phone className="h-4 w-4" /> Call
-                      </Button>
-                    </a>
+                      </a>
+                    </Button>
                   </div>
                 </div>
               </CardContent>
@@ -213,7 +320,7 @@ export default function AgentCandidateDetailPage() {
             <StaggerContainer className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
               <StaggerItem><Card className="shadow-premium"><CardContent className="p-4">
                 <p className="text-xs text-muted-foreground">Outstanding</p>
-                <p className="text-xl font-bold tabular-nums">{formatPaiseToINRShort(Number(loan.outstandingPrincipal))}</p>
+                <p className="text-xl font-bold tabular-nums">{formatPaiseToINRShort(totalOutstandingPaise)}</p>
               </CardContent></Card></StaggerItem>
               <StaggerItem><Card className="shadow-premium"><CardContent className="p-4">
                 <p className="text-xs text-muted-foreground">Installment</p>
@@ -232,7 +339,7 @@ export default function AgentCandidateDetailPage() {
 
           {/* Tabs */}
           <Tabs defaultValue="overview">
-            <TabsList className="w-full overflow-x-auto no-scrollbar">
+            <TabsList className="w-full overflow-x-auto no-scrollbar justify-start sm:justify-center">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="loan">Loan</TabsTrigger>
               <TabsTrigger value="ptp">PTP</TabsTrigger>
@@ -252,6 +359,8 @@ export default function AgentCandidateDetailPage() {
                   <DetailRow icon={<Building2 className="h-4 w-4" />} label="Employer" value={c.employer ?? '—'} />
                   <DetailRow icon={<Banknote className="h-4 w-4" />} label="Monthly Income" value={c.monthlyIncome ? formatPaiseToINR(c.monthlyIncome) : '—'} />
                   <DetailRow icon={<ScrollText className="h-4 w-4" />} label="Aadhaar" value={c.aadhaarMasked ?? '—'} />
+                  <DetailRow icon={<ScrollText className="h-4 w-4" />} label="PAN" value={c.panMasked ?? '—'} />
+                  <DetailRow icon={<Building2 className="h-4 w-4" />} label="Bank Account" value={c.bankAccount ? `•••• •••• ${c.bankAccount.slice(-4)}` : '—'} />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -260,39 +369,101 @@ export default function AgentCandidateDetailPage() {
               {!loan ? (
                 <EmptyState icon={<Banknote className="h-6 w-6" />} title="No active loans" description="This candidate has no loan records." />
               ) : (
-                <Card className="shadow-premium">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base">{loan.loanNumber}</CardTitle>
-                    <CardDescription>{loan.frequency} · {loan.installments} installments · {formatPaiseToINR(Number(loan.principalAmount))}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Schedule</p>
-                    <div className="rounded-lg border border-border overflow-hidden">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/40">
-                            <TableHead className="pl-4">#</TableHead>
-                            <TableHead>Due Date</TableHead>
-                            <TableHead className="text-right">Total Due</TableHead>
-                            <TableHead className="text-right">Paid</TableHead>
-                            <TableHead>Status</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {loan.schedule.map((s) => (
-                            <TableRow key={s.installmentNumber}>
-                              <TableCell className="pl-4 font-mono text-xs">{s.installmentNumber}</TableCell>
-                              <TableCell className="text-xs">{fmtDate(s.dueDate)}</TableCell>
-                              <TableCell className="text-right tabular-nums text-xs">{formatPaiseToINR(Number(s.totalDue))}</TableCell>
-                              <TableCell className="text-right tabular-nums text-xs">{formatPaiseToINR(Number(s.paidAmount))}</TableCell>
-                              <TableCell><StatusBadge variant={s.status}>{formatStatus(s.status)}</StatusBadge></TableCell>
+                <>
+                  <Card className="shadow-premium">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div>
+                          <CardTitle className="text-base">{loan.loanNumber}</CardTitle>
+                          <CardDescription>{loan.frequency} · {loan.installments} installments · {formatPaiseToINR(Number(loan.principalAmount))}</CardDescription>
+                        </div>
+                        {totalOutstandingPaise > 0 && (
+                          <Button
+                            size="sm"
+                            onClick={() => openCollectCash(nextInstallmentRow?.installmentNumber ?? null, nextInstallmentDuePaise)}
+                          >
+                            <Banknote className="h-4 w-4" /> Collect Cash
+                          </Button>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Schedule</p>
+                      <div className="rounded-lg border border-border overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-muted/40">
+                              <TableHead className="pl-4">#</TableHead>
+                              <TableHead>Due Date</TableHead>
+                              <TableHead className="text-right">Total Due</TableHead>
+                              <TableHead className="text-right">Paid</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead className="text-right pr-4">Action</TableHead>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
+                          </TableHeader>
+                          <TableBody>
+                            {loan.schedule.map((s) => {
+                              const remainingRowPaise = Math.max(0, Number(s.totalDue || 0) - Number(s.paidAmount || 0))
+                              const canCollect = s.status !== 'PAID' && remainingRowPaise > 0 && totalOutstandingPaise > 0
+                              return (
+                                <TableRow key={s.installmentNumber}>
+                                  <TableCell className="pl-4 font-mono text-xs">{s.installmentNumber}</TableCell>
+                                  <TableCell className="text-xs whitespace-nowrap">{fmtDate(s.dueDate)}</TableCell>
+                                  <TableCell className="text-right tabular-nums text-xs whitespace-nowrap">{formatPaiseToINR(Number(s.totalDue))}</TableCell>
+                                  <TableCell className="text-right tabular-nums text-xs whitespace-nowrap">{formatPaiseToINR(Number(s.paidAmount))}</TableCell>
+                                  <TableCell><StatusBadge variant={s.status}>{formatStatus(s.status)}</StatusBadge></TableCell>
+                                  <TableCell className="text-right pr-4">
+                                    {canCollect ? (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 text-xs"
+                                        onClick={() => openCollectCash(s.installmentNumber, remainingRowPaise)}
+                                      >
+                                        <Banknote className="h-3.5 w-3.5" /> Collect Cash
+                                      </Button>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">—</span>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {cashCollections.length > 0 && (
+                    <Card className="shadow-premium">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-base flex items-center gap-2"><Receipt className="h-4 w-4" /> Cash Collections & Receipts</CardTitle>
+                        <CardDescription>{cashCollections.length} recorded cash collections</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-2.5">
+                        {cashCollections.map((cc) => (
+                          <div key={cc.id} className="rounded-xl border border-border p-3 flex items-center justify-between gap-3 flex-wrap">
+                            <div>
+                              <p className="text-sm font-bold tabular-nums">{formatPaiseToINR(Number(cc.amount))}</p>
+                              <p className="text-xs text-muted-foreground">{fmtDate(cc.collectionDate)}{cc.reference ? ` · ${cc.reference}` : ''}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <StatusBadge variant={cc.verificationStatus ?? cc.status}>
+                                {formatStatus(cc.verificationStatus ?? cc.status)}
+                              </StatusBadge>
+                              <Button asChild size="sm" variant="outline" className="h-8">
+                                <Link href={`/portal/receipts/${cc.id}`}>
+                                  <Receipt className="h-3.5 w-3.5" /> Receipt
+                                </Link>
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  )}
+                </>
               )}
             </TabsContent>
 
@@ -308,25 +479,303 @@ export default function AgentCandidateDetailPage() {
               <EscalationSection candidateId={c.id} loanId={loan?.id} escalations={escs} />
             </TabsContent>
           </Tabs>
+
+          {loan && collectOpen && (
+            <CollectCashDialog
+              open={collectOpen}
+              onOpenChange={setCollectOpen}
+              candidateId={c.id}
+              candidateName={c.fullName}
+              loanId={loan.id}
+              loanNumber={loan.loanNumber}
+              totalOutstandingPaise={totalOutstandingPaise}
+              nextInstallmentDuePaise={nextInstallmentDuePaise}
+              nextInstallmentNumber={nextInstallmentRow?.installmentNumber ?? null}
+              presetInstallment={presetInstallment}
+              presetAmountPaise={presetAmountPaise}
+            />
+          )}
         </>
       )}
+    </div>
+  )
+}
 
-      {/* Sticky action bar (mobile) */}
-      {c && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 sm:hidden border-t border-border bg-background/95 backdrop-blur px-4 py-3">
-          <div className="flex gap-2">
-            <Button className="flex-1" size="sm" onClick={onWhatsApp}>
-              <MessageCircle className="h-4 w-4" /> WhatsApp
-            </Button>
-            <a href={`tel:${c.mobile.replace(/\s/g, '')}`} className="flex-1">
-              <Button variant="outline" size="sm" className="w-full">
-                <Phone className="h-4 w-4" /> Call
+function CollectCashDialog({
+  open,
+  onOpenChange,
+  candidateId,
+  candidateName,
+  loanId,
+  loanNumber,
+  totalOutstandingPaise,
+  nextInstallmentDuePaise,
+  nextInstallmentNumber,
+  presetInstallment,
+  presetAmountPaise,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  candidateId: string
+  candidateName: string
+  loanId: string
+  loanNumber: string
+  totalOutstandingPaise: number
+  nextInstallmentDuePaise: number
+  nextInstallmentNumber: number | null
+  presetInstallment: number | null
+  presetAmountPaise: number | null
+}) {
+  const queryClient = useQueryClient()
+  const [amountRupees, setAmountRupees] = React.useState(() => {
+    const initialPaise =
+      presetAmountPaise && presetAmountPaise > 0
+        ? Math.min(presetAmountPaise, totalOutstandingPaise)
+        : Math.min(nextInstallmentDuePaise, totalOutstandingPaise)
+    return initialPaise > 0 ? String(initialPaise / 100) : ''
+  })
+  const [collectionDate, setCollectionDate] = React.useState(() => new Date().toISOString().slice(0, 10))
+  const [installmentNumber, setInstallmentNumber] = React.useState<number | null>(
+    () => presetInstallment ?? nextInstallmentNumber
+  )
+  const [notes, setNotes] = React.useState('')
+  const [proofBase64, setProofBase64] = React.useState<string | null>(null)
+  const [proofFileName, setProofFileName] = React.useState('')
+  const [idempotencyKey, setIdempotencyKey] = React.useState(() => generateCashIdempotencyKey())
+
+  const handleAmountChange = (val: string) => {
+    setAmountRupees(val)
+    setIdempotencyKey(generateCashIdempotencyKey())
+  }
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const validMimeTypes = ['image/jpeg', 'image/png', 'image/webp']
+    if (!validMimeTypes.includes(file.type)) {
+      toast.error('Invalid file format', { description: 'Receipt photo must be JPEG, PNG, or WEBP.' })
+      e.target.value = ''
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File too large', { description: 'Receipt photo must be 5 MB or smaller.' })
+      e.target.value = ''
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setProofBase64(reader.result)
+        setProofFileName(file.name)
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const parsedRupees = Number(amountRupees)
+  const amountPaise = !Number.isNaN(parsedRupees) && parsedRupees > 0 ? Math.round(parsedRupees * 100) : 0
+  const isAmountValid = amountPaise > 0 && amountPaise <= totalOutstandingPaise
+
+  const collectMutation = useMutation({
+    mutationFn: () => {
+      if (!isAmountValid) {
+        throw new Error(`Amount must be between ₹1 and ${formatPaiseToINR(totalOutstandingPaise)}`)
+      }
+      return postCashCollectionWithIdempotency(
+        {
+          loanId,
+          candidateId,
+          amount: String(amountPaise),
+          collectionDate,
+          installmentNumber,
+          notes: notes.trim() || null,
+          proofUrl: proofBase64 || null,
+        },
+        idempotencyKey
+      )
+    },
+    onSuccess: (res: any) => {
+      const receiptLabel = res?.receiptNumber || res?.paymentNumber || 'Issued'
+      toast.success('Cash collected & receipt issued', {
+        description: `Receipt ${receiptLabel} · ${formatPaiseToINR(amountPaise)} for ${candidateName} (${loanNumber})`,
+      })
+      const keysToInvalidate = [
+        ['agent-candidate', candidateId],
+        ['agent-candidates'],
+        ['agent-cash'],
+        ['agent-cash-collections'],
+        ['agent-dashboard'],
+        ['agent-tasks'],
+        ['owner-dashboard'],
+        ['owner-loans'],
+        ['owner-payments'],
+        ['owner-cash-collections'],
+        ['owner-ledger'],
+        ['candidate-loan'],
+        ['candidate-payments'],
+        ['candidate-receipts'],
+        ['candidate-schedule'],
+      ]
+      for (const key of keysToInvalidate) {
+        queryClient.invalidateQueries({ queryKey: key })
+      }
+      onOpenChange(false)
+    },
+    onError: (e: Error) => {
+      toast.error('Failed to record cash collection', { description: e.message })
+    },
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Banknote className="h-5 w-5 text-success" /> Collect Cash
+          </DialogTitle>
+          <DialogDescription>
+            Record cash repayment from borrower. Schedule updates immediately and a digital receipt is issued.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* Candidate & Loan summary */}
+          <div className="rounded-xl border border-border bg-muted/40 p-3.5 space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Candidate</span>
+              <span className="font-semibold">{candidateName}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Loan Number</span>
+              <span className="font-mono text-xs font-semibold">{loanNumber}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Total Outstanding</p>
+                <p className="text-sm font-bold tabular-nums">{formatPaiseToINR(totalOutstandingPaise)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Next Installment Due {nextInstallmentNumber ? `(#${nextInstallmentNumber})` : ''}
+                </p>
+                <p className="text-sm font-bold tabular-nums text-primary">{formatPaiseToINR(nextInstallmentDuePaise)}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick-fill buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Quick-fill:</span>
+            {nextInstallmentDuePaise > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                onClick={() => {
+                  const fillPaise = Math.min(nextInstallmentDuePaise, totalOutstandingPaise)
+                  handleAmountChange(String(fillPaise / 100))
+                  if (nextInstallmentNumber) setInstallmentNumber(nextInstallmentNumber)
+                }}
+              >
+                Next Installment ({formatPaiseToINR(Math.min(nextInstallmentDuePaise, totalOutstandingPaise))})
               </Button>
-            </a>
+            )}
+            {totalOutstandingPaise > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                onClick={() => {
+                  handleAmountChange(String(totalOutstandingPaise / 100))
+                  setInstallmentNumber(null)
+                }}
+              >
+                Full Outstanding ({formatPaiseToINR(totalOutstandingPaise)})
+              </Button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="collect-amount">Amount Collected (₹)</Label>
+              <Input
+                id="collect-amount"
+                type="number"
+                min="1"
+                max={totalOutstandingPaise / 100}
+                step="any"
+                placeholder="Enter amount in ₹"
+                value={amountRupees}
+                onChange={(e) => handleAmountChange(e.target.value)}
+              />
+              {amountRupees && !isAmountValid && (
+                <p className="text-[11px] text-destructive">
+                  Enter an amount between ₹1 and {formatPaiseToINR(totalOutstandingPaise)}
+                </p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="collect-date">Collection Date</Label>
+              <Input
+                id="collect-date"
+                type="date"
+                value={collectionDate}
+                onChange={(e) => setCollectionDate(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="collect-notes">Note (optional)</Label>
+            <Textarea
+              id="collect-notes"
+              rows={2}
+              placeholder="e.g. Collected cash at candidate's shop"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Receipt Photo Upload (optional · JPEG/PNG/WEBP ≤ 5 MB)</Label>
+            <label className="block rounded-xl border-2 border-dashed border-border hover:border-primary/40 p-3 text-center text-xs text-muted-foreground cursor-pointer transition-colors">
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="sr-only"
+                onChange={handlePhotoUpload}
+              />
+              <Upload className="h-5 w-5 mx-auto mb-1 opacity-60" />
+              {proofFileName ? (
+                <span className="font-medium text-foreground">{proofFileName}</span>
+              ) : (
+                'Tap to upload receipt photo (JPEG, PNG, WEBP up to 5 MB)'
+              )}
+            </label>
+          </div>
+
+          <div className="rounded-lg bg-info/10 border border-info/20 p-2.5 text-[11px] text-info flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 flex-shrink-0" />
+            <span>Idempotency-protected · Schedule updates immediately &amp; tracks Cash-in-Hand until Owner verification.</span>
           </div>
         </div>
-      )}
-    </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => collectMutation.mutate()}
+            disabled={collectMutation.isPending || !isAmountValid || !collectionDate}
+          >
+            <Banknote className="h-4 w-4" />
+            {collectMutation.isPending ? 'Recording…' : 'Confirm Cash Collection'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

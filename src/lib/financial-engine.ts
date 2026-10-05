@@ -6,6 +6,12 @@
 export type InterestType = 'PERCENTAGE' | 'FIXED' | 'NONE'
 export type RepaymentFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY'
 
+export function calculateInstallmentsFromTenure(tenureMonths: number, frequency: RepaymentFrequency): number {
+  if (frequency === 'DAILY') return tenureMonths * 30;
+  if (frequency === 'WEEKLY') return tenureMonths * 4;
+  return tenureMonths;
+}
+
 export interface ScheduleInput {
   principalPaise: bigint
   interestType: InterestType
@@ -40,27 +46,32 @@ export interface SchedulePreview {
 
 const BPS_BASE = BigInt(10000)
 
-// Compute interest per installment for flat method (simple, common for short-term lending)
-function computeInterestPerInstallment(input: ScheduleInput): bigint {
-  const { interestType, interestRateBps, fixedInterestPaise, principalPaise, installments } = input
+// Compute target total interest for flat method
+function computeTargetTotalInterest(input: ScheduleInput): bigint {
+  const { interestType, interestRateBps, fixedInterestPaise, principalPaise } = input
   if (interestType === 'NONE') return BigInt(0)
   if (interestType === 'FIXED') {
-    return fixedInterestPaise / BigInt(Math.max(1, installments))
+    return fixedInterestPaise > BigInt(0) ? fixedInterestPaise : BigInt(0)
   }
-  // Percentage - flat per installment on principal
-  // interest = principal * rate / 10000 / installments (flat method)
-  const totalInterest = (principalPaise * interestRateBps) / BPS_BASE
-  return totalInterest / BigInt(Math.max(1, installments))
+  return (principalPaise * interestRateBps) / BPS_BASE
+}
+
+// Compute interest per installment for flat method (simple, common for short-term lending)
+function computeInterestPerInstallment(input: ScheduleInput): bigint {
+  const totalInterest = computeTargetTotalInterest(input)
+  return totalInterest / BigInt(Math.max(1, input.installments))
 }
 
 export function generateSchedulePreview(input: ScheduleInput): SchedulePreview {
   const principal = input.principalPaise
   const installmentsCount = Math.max(1, input.installments)
+  const targetInterest = computeTargetTotalInterest(input)
+  const targetFees = input.processingFeePaise + input.otherFeesPaise
   const interestPer = computeInterestPerInstallment(input)
-  const feesPer = (input.processingFeePaise + input.otherFeesPaise) / BigInt(installmentsCount)
+  const feesPer = targetFees / BigInt(installmentsCount)
 
   // Principal per installment (rounded)
-  let principalPer = principal / BigInt(installmentsCount)
+  const principalPer = principal / BigInt(installmentsCount)
   // Last installment takes the residue to avoid rounding drift
   const residuePrincipal = principal - principalPer * BigInt(installmentsCount - 1)
 
@@ -73,8 +84,8 @@ export function generateSchedulePreview(input: ScheduleInput): SchedulePreview {
   for (let i = 0; i < installmentsCount; i++) {
     const isLast = i === installmentsCount - 1
     const principalComponent = isLast ? residuePrincipal : principalPer
-    const interestComponent = interestPer
-    const feesComponent = feesPer
+    const interestComponent = isLast ? (targetInterest - interestPer * BigInt(installmentsCount - 1)) : interestPer
+    const feesComponent = isLast ? (targetFees - feesPer * BigInt(installmentsCount - 1)) : feesPer
     const totalDueInstallment = principalComponent + interestComponent + feesComponent
     const closing = opening - principalComponent
 
@@ -114,9 +125,14 @@ function addInterval(start: Date, frequency: RepaymentFrequency, n: number): Dat
     case 'WEEKLY':
       d.setDate(d.getDate() + n * 7)
       break
-    case 'MONTHLY':
+    case 'MONTHLY': {
+      const anchorDay = d.getDate()
+      d.setDate(1)
       d.setMonth(d.getMonth() + n)
+      const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+      d.setDate(Math.min(anchorDay, daysInMonth))
       break
+    }
   }
   return d
 }
@@ -146,15 +162,15 @@ export function allocatePayment(
     const remainingInterest = inst.interest - inst.paidInterest
     const remainingPrincipal = inst.principal - inst.paidPrincipal
 
-    const toFees = remaining > BigInt(0) ? min(remaining, remainingFees) : BigInt(0)
+    const toFees = remaining > BigInt(0) ? min(remaining, max(remainingFees, BigInt(0))) : BigInt(0)
     remaining -= toFees
     allocatedFees += toFees
 
-    const toInterest = remaining > BigInt(0) ? min(remaining, remainingInterest) : BigInt(0)
+    const toInterest = remaining > BigInt(0) ? min(remaining, max(remainingInterest, BigInt(0))) : BigInt(0)
     remaining -= toInterest
     allocatedInterest += toInterest
 
-    const toPrincipal = remaining > BigInt(0) ? min(remaining, remainingPrincipal) : BigInt(0)
+    const toPrincipal = remaining > BigInt(0) ? min(remaining, max(remainingPrincipal, BigInt(0))) : BigInt(0)
     remaining -= toPrincipal
     allocatedPrincipal += toPrincipal
 
@@ -180,3 +196,8 @@ export function allocatePayment(
 function min(a: bigint, b: bigint): bigint {
   return a < b ? a : b
 }
+
+function max(a: bigint, b: bigint): bigint {
+  return a > b ? a : b
+}
+

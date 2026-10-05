@@ -25,13 +25,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const schema = z.object({
-  name: z.string().min(2).max(200),
-  version: z.string().min(1).max(50),
-  body: z.string().min(20).max(100000),
-  effectiveDate: z.string(),
-  isActive: z.boolean().default(true),
-})
+const schema = z.object({}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()

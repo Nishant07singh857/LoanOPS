@@ -21,6 +21,8 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 
+import { openWhatsApp } from '@/lib/whatsapp'
+
 interface Ticket {
   id: string
   ticketNumber: string
@@ -31,12 +33,7 @@ interface Ticket {
   resolution?: string
 }
 
-const sampleTickets: Ticket[] = [
-  { id: 'st1', ticketNumber: 'SUP-2024-128', category: 'Repayment', subject: 'Need extension for 20 Sep payment for Karthik Iyer', status: 'OPEN', createdAt: '2 hours ago' },
-  { id: 'st2', ticketNumber: 'SUP-2024-119', category: 'Cash Verification', subject: 'Cash record cc3 not auto-verifying', status: 'IN_REVIEW', createdAt: '1 day ago' },
-  { id: 'st3', ticketNumber: 'SUP-2024-112', category: 'App Bug', subject: 'WhatsApp template previews not rendering on Android', status: 'RESOLVED', createdAt: '3 days ago', resolution: 'Bug fixed in v3.2.1 — clear cache and retry.' },
-  { id: 'st4', ticketNumber: 'SUP-2024-105', category: 'Reassignment', subject: 'Reassign Sahil Khan account to senior agent', status: 'CLOSED', createdAt: '1 week ago', resolution: 'Account reassigned to Sneha Kapoor.' },
-]
+const sampleTickets: Ticket[] = []
 
 const CATEGORIES = [
   'App Bug', 'Repayment', 'Cash Verification', 'Reassignment', 'PTP', 'Other',
@@ -46,7 +43,23 @@ export default function AgentSupportPage() {
   const [tickets, setTickets] = React.useState<Ticket[]>(sampleTickets)
   const [newOpen, setNewOpen] = React.useState(false)
 
-  const onResolve = (id: string) => toast.info('Marked resolved', { description: `Ticket ${id} resolved.` })
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem('sterling_agent_tickets')
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (saved) setTickets(JSON.parse(saved))
+    } catch {}
+  }, [])
+
+  const updateTickets = (next: Ticket[]) => {
+    setTickets(next)
+    try { localStorage.setItem('sterling_agent_tickets', JSON.stringify(next)) } catch {}
+  }
+
+  const onResolve = (id: string) => {
+    updateTickets(tickets.map((t) => (t.id === id ? { ...t, status: 'RESOLVED' as const } : t)))
+    toast.success('Marked resolved', { description: `Ticket resolved.` })
+  }
 
   return (
     <div className="space-y-6">
@@ -78,7 +91,10 @@ export default function AgentSupportPage() {
                   size="sm"
                   variant="outline"
                   className="text-info border-info/40 hover:bg-info/10"
-                  onClick={() => toast.success('WhatsApp draft opened', { description: 'Owner Ravi Mehta notified.' })}
+                  onClick={() => {
+                    openWhatsApp('+919820011223', 'Hello Ravi, reaching out from the Sterling Lending Agent Portal.')
+                    toast.success('WhatsApp draft opened', { description: 'Owner Ravi Mehta notified.' })
+                  }}
                 >
                   <MessageCircle className="h-3.5 w-3.5" /> Message
                 </Button>
@@ -162,7 +178,7 @@ export default function AgentSupportPage() {
         open={newOpen}
         onOpenChange={setNewOpen}
         onSubmit={(ticket) => {
-          setTickets([ticket, ...tickets])
+          updateTickets([ticket, ...tickets])
         }}
       />
     </div>
@@ -177,6 +193,7 @@ function NewTicketDialog({ open, onOpenChange, onSubmit }: {
   const [category, setCategory] = React.useState('App Bug')
   const [subject, setSubject] = React.useState('')
   const [description, setDescription] = React.useState('')
+  const [fileName, setFileName] = React.useState('')
 
   const submit = () => {
     if (!subject.trim()) {
@@ -193,7 +210,7 @@ function NewTicketDialog({ open, onOpenChange, onSubmit }: {
     }
     onSubmit(t)
     toast.success('Ticket raised', { description: `${t.ticketNumber} · ${category}` })
-    setCategory('App Bug'); setSubject(''); setDescription('')
+    setCategory('App Bug'); setSubject(''); setDescription(''); setFileName('')
     onOpenChange(false)
   }
 
@@ -223,11 +240,17 @@ function NewTicketDialog({ open, onOpenChange, onSubmit }: {
             <Textarea placeholder="Describe the issue in detail..." value={description} onChange={(e) => setDescription(e.target.value)} className="min-h-[100px]" />
           </div>
           <div className="space-y-1.5">
-            <Label>Attachment (placeholder)</Label>
-            <div className="rounded-xl border-2 border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+            <Label>Attachment (optional)</Label>
+            <label className="block rounded-xl border-2 border-dashed border-border hover:border-primary/40 p-4 text-center text-xs text-muted-foreground cursor-pointer transition-colors">
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={(e) => setFileName(e.target.files?.[0]?.name ?? '')}
+              />
               <Paperclip className="h-5 w-5 mx-auto mb-1.5 opacity-50" />
-              Tap to add screenshot (PNG/JPG)
-            </div>
+              {fileName ? <span className="font-medium text-foreground">{fileName}</span> : 'Tap to add screenshot (PNG/JPG)'}
+            </label>
           </div>
         </div>
         <DialogFooter>

@@ -7,10 +7,32 @@
 //   agent@loanops.in / Agent@123  (AGENT)
 //   9820277789 / Candidate@123    (CANDIDATE — Priya Sharma, mobile login)
 
-import { PrismaClient, UserRole, InterestType, RepaymentFrequency, ApplicationStatus, LoanStatus, InstallmentStatus, PaymentMethod, PaymentStatus, CashCollectionStatus, PtpStatus, EscalationReason, EscalationStatus, TaskStatus, TaskPriority, AuditAction, NotificationType, DocumentType } from '@prisma/client'
+import { PrismaClient, UserRole, InterestType, RepaymentFrequency, ApplicationStatus, LoanStatus, InstallmentStatus, PaymentMethod, PaymentStatus, PtpStatus, EscalationReason, EscalationStatus, TaskStatus, TaskPriority, AuditAction, NotificationType, DocumentType } from '@prisma/client'
 import bcrypt from 'bcryptjs'
+import { encryptPII } from '../src/lib/server/crypto'
+import { maskAadhaar, maskPan } from '../src/lib/utils'
 
-const db = new PrismaClient()
+// --- Safety: seed only against DATABASE_URL_TEST, never the main DB ---
+const testUrl = process.env.DATABASE_URL_TEST
+if (!testUrl) {
+  console.error('❌ DATABASE_URL_TEST is not set. Seed refuses to run without a dedicated test database.')
+  process.exit(1)
+}
+if (process.env.DATABASE_URL) {
+  try {
+    const mainUrl = new URL(process.env.DATABASE_URL)
+    const testUrlParsed = new URL(testUrl)
+    if (mainUrl.host === testUrlParsed.host && mainUrl.pathname === testUrlParsed.pathname) {
+      console.error('❌ DATABASE_URL_TEST must point to a different database or host than DATABASE_URL.')
+      process.exit(1)
+    }
+  } catch (e: any) {
+    console.error('❌ Invalid Database URLs provided: ' + e.message)
+    process.exit(1)
+  }
+}
+
+const db = new PrismaClient({ datasourceUrl: testUrl })
 
 const SEED_PASSWORDS = {
   owner: process.env.SEED_OWNER_PASSWORD || 'Owner@123',
@@ -24,6 +46,11 @@ async function hash(p: string) {
 }
 
 async function main() {
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PROD_SEED !== 'true') {
+    console.error('❌ Refusing to run seed in production without ALLOW_PROD_SEED=true')
+    process.exit(1)
+  }
+
   console.log('🌱 Seeding database...')
 
   // --- Organization ---
@@ -165,7 +192,11 @@ By accepting this Agreement, the Borrower confirms that all information provided
 
   const candidate1 = await db.candidate.upsert({
     where: { id: 'candidate-001' },
-    update: {},
+    update: {
+      bankAccount: encryptPII('50100123456789'),
+      aadhaarMasked: maskAadhaar('234567897892'),
+      panMasked: maskPan('ABCDP1234E'),
+    },
     create: {
       id: 'candidate-001',
       organizationId: org.id,
@@ -180,11 +211,11 @@ By accepting this Agreement, the Borrower confirms that all information provided
       monthlyIncome: 7500000, // ₹75,000 in paise
       existingObligations: 500000, // ₹5,000 in paise
       bankName: 'HDFC Bank',
-      bankAccount: '50100123456789',
+      bankAccount: encryptPII('50100123456789'),
       bankIfsc: 'HDFC0001234',
       upiId: 'priya@hdfcbank',
-      aadhaarMasked: 'XXXX-XXXX-7892',
-      panMasked: 'ABCDP1234E',
+      aadhaarMasked: maskAadhaar('234567897892'),
+      panMasked: maskPan('ABCDP1234E'),
       assignedAgentId: agent1.id,
       status: 'ACTIVE',
     },
@@ -192,7 +223,11 @@ By accepting this Agreement, the Borrower confirms that all information provided
 
   const candidate2 = await db.candidate.upsert({
     where: { id: 'candidate-002' },
-    update: {},
+    update: {
+      bankAccount: encryptPII('ICICI002345678'),
+      aadhaarMasked: maskAadhaar('345678904521'),
+      panMasked: maskPan('BPMPR5678F'),
+    },
     create: {
       id: 'candidate-002',
       organizationId: org.id,
@@ -205,11 +240,11 @@ By accepting this Agreement, the Borrower confirms that all information provided
       employer: 'TCS',
       monthlyIncome: 6800000,
       bankName: 'ICICI Bank',
-      bankAccount: 'ICICI002345678',
+      bankAccount: encryptPII('ICICI002345678'),
       bankIfsc: 'ICIC0000234',
       upiId: 'rahul@icici',
-      aadhaarMasked: 'XXXX-XXXX-4521',
-      panMasked: 'BPMPR5678F',
+      aadhaarMasked: maskAadhaar('345678904521'),
+      panMasked: maskPan('BPMPR5678F'),
       assignedAgentId: agent1.id,
       status: 'ACTIVE',
     },
@@ -217,7 +252,11 @@ By accepting this Agreement, the Borrower confirms that all information provided
 
   const candidate3 = await db.candidate.upsert({
     where: { id: 'candidate-003' },
-    update: {},
+    update: {
+      bankAccount: encryptPII('AXIS99001234'),
+      aadhaarMasked: maskAadhaar('456789011122'),
+      panMasked: maskPan('CPIIK9012G'),
+    },
     create: {
       id: 'candidate-003',
       organizationId: org.id,
@@ -230,11 +269,11 @@ By accepting this Agreement, the Borrower confirms that all information provided
       employer: 'Iyer Trading Co',
       monthlyIncome: 9500000,
       bankName: 'Axis Bank',
-      bankAccount: 'AXIS99001234',
+      bankAccount: encryptPII('AXIS99001234'),
       bankIfsc: 'AXIS0000990',
       upiId: 'karthik@axis',
-      aadhaarMasked: 'XXXX-XXXX-1122',
-      panMasked: 'CPIIK9012G',
+      aadhaarMasked: maskAadhaar('456789011122'),
+      panMasked: maskPan('CPIIK9012G'),
       assignedAgentId: agent2.id,
       status: 'ACTIVE',
     },
@@ -243,15 +282,22 @@ By accepting this Agreement, the Borrower confirms that all information provided
   console.log(`  ✓ Candidates: Priya, Rahul, Karthik`)
 
   // --- KYC documents ---
+  const seedRawKyc: Record<string, { aadhaar: string; pan: string }> = {
+    'candidate-001': { aadhaar: '234567897892', pan: 'ABCDP1234E' },
+    'candidate-002': { aadhaar: '345678904521', pan: 'BPMPR5678F' },
+    'candidate-003': { aadhaar: '456789011122', pan: 'CPIIK9012G' },
+  }
   for (const c of [candidate1, candidate2, candidate3]) {
+    const raw = seedRawKyc[c.id]
     await db.kycDocument.upsert({
       where: { id: `kyc-${c.id}` },
-      update: {},
+      update: {
+        panNumber: encryptPII(raw.pan),
+      },
       create: {
         id: `kyc-${c.id}`,
         candidateId: c.id,
-        aadhaarNumber: c.aadhaarMasked,
-        panNumber: c.panMasked,
+        panNumber: encryptPII(raw.pan),
         status: 'VERIFIED',
         verifiedAt: new Date(),
       },
@@ -262,7 +308,9 @@ By accepting this Agreement, the Borrower confirms that all information provided
   // Application 1: PENDING for candidate1 (Priya, not yet submitted — pending KYC)
   const app1 = await db.application.upsert({
     where: { applicationNumber: 'APP-2024-1024' },
-    update: {},
+    update: {
+      kycPan: encryptPII('ABCDP1234E'),
+    },
     create: {
       id: 'app-001',
       organizationId: org.id,
@@ -280,8 +328,7 @@ By accepting this Agreement, the Borrower confirms that all information provided
       processingFee: 75000,
       otherFees: 0,
       status: ApplicationStatus.SUBMITTED,
-      kycAadhaar: candidate1.aadhaarMasked,
-      kycPan: candidate1.panMasked,
+      kycPan: encryptPII('ABCDP1234E'),
       kycStatus: 'VERIFIED',
       agreementTemplateId: agreement.id,
       agreementVersion: '3.1',
@@ -293,7 +340,9 @@ By accepting this Agreement, the Borrower confirms that all information provided
   // Application 2: APPROVED for candidate2 (Rahul, already approved & has loan)
   const app2 = await db.application.upsert({
     where: { applicationNumber: 'APP-2024-0892' },
-    update: {},
+    update: {
+      kycPan: encryptPII('BPMPR5678F'),
+    },
     create: {
       id: 'app-002',
       organizationId: org.id,
@@ -311,8 +360,7 @@ By accepting this Agreement, the Borrower confirms that all information provided
       processingFee: 75000,
       otherFees: 0,
       status: ApplicationStatus.APPROVED,
-      kycAadhaar: candidate2.aadhaarMasked,
-      kycPan: candidate2.panMasked,
+      kycPan: encryptPII('BPMPR5678F'),
       kycStatus: 'VERIFIED',
       agreementTemplateId: agreement.id,
       agreementVersion: '3.1',
@@ -567,7 +615,6 @@ By accepting this Agreement, the Borrower confirms that all information provided
     where: { token: 'a3f8d2e91b7c4f0a8e2d1b6c9f4a3e8d' },
     update: {},
     create: {
-      id: 'qrl-001',
       organizationId: org.id,
       token: 'a3f8d2e91b7c4f0a8e2d1b6c9f4a3e8d',
       createdById: owner.id,

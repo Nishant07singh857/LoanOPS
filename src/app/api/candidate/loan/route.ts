@@ -20,8 +20,23 @@ export const GET = apiHandler(async (req: NextRequest) => {
     },
   })
 
+  // Check for any ongoing application
+  const draftApplication = await db.application.findFirst({
+    where: { 
+      candidateId: ctx.user.candidateId, 
+      status: { in: ['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'INFORMATION_REQUESTED'] } 
+    },
+    orderBy: { createdAt: 'desc' }
+  })
+  const existingKyc = await db.kycDocument.findFirst({
+    where: { candidateId: ctx.user.candidateId, aadhaarUrl: { not: null }, panUrl: { not: null } }
+  })
+  const hasKyc = !!existingKyc
+
   if (!loan) {
-    // Try any loan
+    if (draftApplication) {
+      return success({ draftApplication, hasKyc })
+    }
     const anyLoan = await db.loan.findFirst({
       where: { candidateId: ctx.user.candidateId },
       orderBy: { createdAt: 'desc' },
@@ -63,6 +78,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
     closedAt: loan.closedAt,
     createdAt: loan.createdAt,
     application: loan.application,
+    draftApplication: draftApplication || null,
     agreement: agreementTemplate ? {
       id: agreementTemplate.id,
       name: agreementTemplate.name,

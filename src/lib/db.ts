@@ -2,6 +2,7 @@
 // Loads .env explicitly and passes the URL to Prisma via datasourceUrl
 // to ensure the right database is used regardless of bundler env propagation.
 import { PrismaClient } from '@prisma/client'
+import { validateEnv } from '@/lib/server/env'
 import fs from 'fs'
 import path from 'path'
 
@@ -35,13 +36,20 @@ function loadEnvFile() {
 
 loadEnvFile()
 
-const databaseUrl = process.env.DATABASE_URL
+// Validate critical env vars (crashes in production if missing/weak)
+validateEnv()
+
+let databaseUrl = process.env.DATABASE_URL
 if (!databaseUrl) {
   throw new Error('DATABASE_URL is not set. Check your .env file.')
 }
 if (!databaseUrl.startsWith('postgres')) {
   // Refuse to use a non-PostgreSQL URL — the schema is PostgreSQL-only.
   throw new Error(`DATABASE_URL must be a postgresql:// URL. Got: ${databaseUrl.slice(0, 40)}...`)
+}
+if (!databaseUrl.includes('connection_limit=')) {
+  const sep = databaseUrl.includes('?') ? '&' : '?'
+  databaseUrl = `${databaseUrl}${sep}connection_limit=5&pool_timeout=30&connect_timeout=15`
 }
 
 const globalForPrisma = globalThis as unknown as {
@@ -55,4 +63,5 @@ export const db =
     datasourceUrl: databaseUrl,
   })
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
+globalForPrisma.prisma = db
+

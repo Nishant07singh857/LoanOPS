@@ -57,6 +57,14 @@ export default function AgentCandidatesPage() {
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [search, setSearch] = React.useState('')
 
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const q = new URLSearchParams(window.location.search).get('q')
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (q) setSearch(q)
+    }
+  }, [])
+
   const { data, isLoading } = useQuery({
     queryKey: ['agent-candidates', search],
     queryFn: () => {
@@ -102,6 +110,7 @@ export default function AgentCandidatesPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search by name or mobile..."
+                aria-label="Search candidates by name or mobile"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9"
@@ -117,8 +126,9 @@ export default function AgentCandidatesPage() {
                   <button
                     key={c.key}
                     onClick={() => setChip(c.key)}
+                    aria-pressed={active}
                     className={cn(
-                      'inline-flex items-center gap-1.5 px-3 h-7 rounded-full text-xs font-medium border transition-all',
+                      'inline-flex items-center gap-1.5 px-3 min-h-[36px] rounded-full text-xs font-medium border transition-all',
                       active ? 'bg-primary text-primary-foreground border-primary shadow-glow' : 'bg-card hover:bg-muted border-border text-muted-foreground'
                     )}
                   >
@@ -211,20 +221,21 @@ export default function AgentCandidatesPage() {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-7 px-2 text-info border-info/40 hover:bg-info/10"
-                      onClick={(e) => { e.preventDefault(); onWhatsApp(c) }}
+                      className="h-8 w-8 p-0 text-info border-info/40 hover:bg-info/10"
+                      aria-label={`WhatsApp ${c.fullName}`}
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onWhatsApp(c) }}
                     >
-                      <MessageCircle className="h-3 w-3" />
+                      <MessageCircle className="h-3.5 w-3.5" />
                     </Button>
                     <a
                       href={`tel:${c.mobile.replace(/\s/g, '')}`}
-                      onClick={(e) => e.preventDefault()}
-                      className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-border hover:bg-muted transition-colors"
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-border hover:bg-muted transition-colors"
                       aria-label={`Call ${c.fullName}`}
                     >
                       <PhoneCall className="h-3.5 w-3.5" />
                     </a>
-                    <span className="inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground group-hover:text-primary transition-colors">
+                    <span className="inline-flex items-center justify-center h-8 w-8 rounded-md text-muted-foreground group-hover:text-primary transition-colors">
                       <ChevronRight className="h-4 w-4" />
                     </span>
                   </div>

@@ -28,8 +28,10 @@ export interface PostEntry {
   reference?: string
 }
 
+let ledgerSeq = 0
+
 // Posts a balanced double-entry. Throws if invalid.
-export async function postLedger(entry: PostEntry): Promise<{ entryNumber: string; id: string }> {
+export async function postLedger(entry: PostEntry, tx: any = db): Promise<{ entryNumber: string; id: string }> {
   if (entry.amount <= BigInt(0)) {
     throw new Error('Ledger entries must be positive')
   }
@@ -40,9 +42,10 @@ export async function postLedger(entry: PostEntry): Promise<{ entryNumber: strin
     throw new Error('Debit and credit accounts must differ')
   }
 
-  const entryNumber = `LED-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 1000).toString(36).toUpperCase()}`
+  ledgerSeq = (ledgerSeq + 1) % 100000
+  const entryNumber = `LED-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 0xffff).toString(36).toUpperCase()}${ledgerSeq.toString(36).toUpperCase()}`
 
-  const created = await db.ledgerEntry.create({
+  const created = await tx.ledgerEntry.create({
     data: {
       organizationId: entry.organizationId,
       entryNumber,
@@ -58,29 +61,55 @@ export async function postLedger(entry: PostEntry): Promise<{ entryNumber: strin
   return { entryNumber: created.entryNumber, id: created.id }
 }
 
+export type ReversalInput =
+  | {
+      organizationId: string
+      loanId?: string
+      paymentId?: string
+      originalEntryNumber: string
+      reason: string
+      amount: bigint
+      debitAccount: string
+      creditAccount: string
+    }
+  | {
+      originalEntryId: string
+      userId?: string | null
+      reason: string
+    }
+
 // Reverse a previous entry (creates a mirror entry with swapped debit/credit)
-export async function postReversal(original: {
-  organizationId: string
-  loanId?: string
-  paymentId?: string
-  originalEntryNumber: string
-  reason: string
-  amount: bigint
-  debitAccount: string
-  creditAccount: string
-}): Promise<{ entryNumber: string; id: string }> {
+export async function postReversal(original: ReversalInput, tx: any = db): Promise<{ entryNumber: string; id: string }> {
+  if ('originalEntryId' in original) {
+    const entry = await tx.ledgerEntry.findUnique({
+      where: { id: original.originalEntryId },
+    })
+    if (!entry) {
+      throw new Error(`Original ledger entry ${original.originalEntryId} not found`)
+    }
+    return postLedger({
+      organizationId: entry.organizationId,
+      type: 'REVERSAL',
+      debitAccount: entry.creditAccount,
+      creditAccount: entry.debitAccount,
+      amount: BigInt(entry.amount),
+      description: `Reversal of ${entry.entryNumber}: ${original.reason}`,
+      reference: entry.entryNumber,
+    }, tx)
+  }
+
   return postLedger({
     organizationId: original.organizationId,
     loanId: original.loanId,
     paymentId: original.paymentId,
     type: 'REVERSAL',
-    // Swap debit and credit
-    debitAccount: original.creditAccount,
-    creditAccount: original.debitAccount,
+    // Callers already pass the reversed accounts (e.g. Debit Income, Credit Bank)
+    debitAccount: original.debitAccount,
+    creditAccount: original.creditAccount,
     amount: original.amount,
     description: `Reversal of ${original.originalEntryNumber}: ${original.reason}`,
     reference: original.originalEntryNumber,
-  })
+  }, tx)
 }
 
 // Standard account names for the demo org

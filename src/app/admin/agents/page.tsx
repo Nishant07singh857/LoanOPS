@@ -1,8 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { UserCog, ArrowUpDown, Target, CheckCircle2, XCircle, Phone, ChevronRight } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { UserCog, ArrowUpDown, Target, CheckCircle2, XCircle, Phone, ChevronRight, Plus } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,11 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
 } from '@/components/ui/sheet'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
@@ -47,21 +52,36 @@ export default function AgentsPage() {
   const [sortKey, setSortKey] = React.useState<SortKey>('collectionAmount')
   const [sortDir, setSortDir] = React.useState<'asc' | 'desc'>('desc')
   const [selected, setSelected] = React.useState<AgentRow | null>(null)
+  
+  const [createOpen, setCreateOpen] = React.useState(false)
+  const queryClient = useQueryClient()
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['owner-agents'],
     queryFn: () => api.get<{ items: AgentRow[] }>('/api/owner/agents'),
+  })
+
+  const createMutation = useMutation({
+    mutationFn: (newAgent: any) => api.post('/api/owner/agents', newAgent),
+    onSuccess: () => {
+      toast.success('Agent created successfully')
+      queryClient.invalidateQueries({ queryKey: ['owner-agents'] })
+      setCreateOpen(false)
+    },
+    onError: (err: any) => {
+      toast.error('Failed to create agent', { description: err.message })
+    }
   })
 
   const agents = data?.items ?? []
 
   const sorted = [...agents].sort((a, b) => {
-    const av = a[sortKey] as number | string
-    const bv = b[sortKey] as number | string
-    if (typeof av === 'string' && typeof bv === 'string') {
-      return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
+    if (sortKey === 'name') {
+      return sortDir === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
     }
-    return sortDir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number)
+    const av = Number(a[sortKey])
+    const bv = Number(b[sortKey])
+    return sortDir === 'asc' ? av - bv : bv - av
   })
 
   const toggleSort = (k: SortKey) => {
@@ -81,10 +101,15 @@ export default function AgentsPage() {
         title="Agent Performance"
         description="Track collection efficiency, PTP fulfillment, and zone-wise workload."
         icon={<UserCog className="h-5 w-5" />}
+        action={
+          <Button size="sm" onClick={() => setCreateOpen(true)} className="min-h-[44px] sm:min-h-8">
+            <Plus className="h-4 w-4 mr-2" /> Create Agent
+          </Button>
+        }
       />
 
       {/* Summary strip */}
-      <StaggerContainer className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+      <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         <StaggerItem>
           <Card className="shadow-premium"><CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Active Agents</p>
@@ -117,14 +142,24 @@ export default function AgentsPage() {
           <CardHeader className="pb-2"><CardTitle className="text-base">Agents</CardTitle><CardDescription>Click an agent to view detailed breakdown</CardDescription></CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="space-y-3">
+              <div className="space-y-3" role="status" aria-label="Loading agents">
                 {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
+              </div>
+            ) : isError ? (
+              <div className="py-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-destructive">Failed to load agents</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Could not fetch agent performance metrics. Please try again.</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => refetch()} className="min-h-[44px] sm:min-h-8">
+                  Retry
+                </Button>
               </div>
             ) : agents.length === 0 ? (
               <EmptyState icon={<UserCog className="h-6 w-6" />} title="No agents found" description="No agent profiles exist for this organization." />
             ) : (
               <>
-                <div className="hidden md:block">
+                <div className="hidden md:block overflow-x-auto w-full">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">
@@ -177,7 +212,7 @@ export default function AgentsPage() {
                             <Sparkline data={Array.from({ length: 8 }, (_, i) => Math.sin(i + a.successRate / 10) * 10 + a.successRate)} className={a.successRate >= 90 ? 'stroke-success' : 'stroke-warning'} />
                           </TableCell>
                           <TableCell className="pr-6 text-right">
-                            <Button variant="ghost" size="sm"><ChevronRight className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="sm" aria-label={`View details for ${a.name}`}><ChevronRight className="h-4 w-4" /></Button>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -188,20 +223,20 @@ export default function AgentsPage() {
                 <StaggerContainer className="md:hidden space-y-3">
                   {sorted.map((a) => (
                     <StaggerItem key={a.id}>
-                      <button onClick={() => setSelected(a)} className="w-full text-left">
+                      <button type="button" onClick={() => setSelected(a)} className="w-full text-left">
                         <Card className="shadow-premium hover:border-primary/40 active:scale-[0.99] transition-all">
                           <CardContent className="p-4">
                             <div className="flex items-start justify-between gap-2">
-                              <div className="flex items-center gap-2.5">
-                                <Avatar className="h-9 w-9">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <Avatar className="h-9 w-9 flex-shrink-0">
                                   <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-semibold">{a.name.split(' ').map(p => p[0]).join('')}</AvatarFallback>
                                 </Avatar>
-                                <div>
-                                  <p className="text-sm font-semibold">{a.name}</p>
-                                  <p className="text-xs text-muted-foreground">{a.zone ?? '—'}</p>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold truncate">{a.name}</p>
+                                  <p className="text-xs text-muted-foreground truncate">{a.zone ?? '—'}</p>
                                 </div>
                               </div>
-                              <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium',
+                              <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium flex-shrink-0',
                                 a.successRate >= 90 ? 'bg-success/15 text-success' : a.successRate >= 75 ? 'bg-warning/15 text-warning' : 'bg-destructive/15 text-destructive')}>
                                 {a.successRate}%
                               </span>
@@ -225,7 +260,7 @@ export default function AgentsPage() {
 
       {/* Detail drawer */}
       <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <SheetContent className="sm:max-w-md overflow-y-auto">
+        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
           {selected && (
             <>
               <SheetHeader>
@@ -270,7 +305,7 @@ export default function AgentsPage() {
 
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Contact</p>
-                  <div className="rounded-xl border border-border p-3 space-y-1 text-sm">
+                  <div className="rounded-xl border border-border p-3 space-y-1 text-sm break-words">
                     <p><span className="text-muted-foreground">Email: </span>{selected.email}</p>
                     <p><span className="text-muted-foreground">Phone: </span>{selected.phone ?? '—'}</p>
                     <p><span className="text-muted-foreground">Code: </span>{selected.employeeCode ?? '—'}</p>
@@ -279,7 +314,7 @@ export default function AgentsPage() {
               </div>
 
               <SheetFooter>
-                <Button className="w-full" onClick={() => toast.success(`Calling ${selected.name}...`)}>
+                <Button className="w-full min-h-[44px] sm:min-h-9" onClick={() => toast.success(`Calling ${selected.name}...`)}>
                   <Phone className="h-4 w-4" /> Call Agent
                 </Button>
               </SheetFooter>
@@ -287,13 +322,77 @@ export default function AgentsPage() {
           )}
         </SheetContent>
       </Sheet>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Agent</DialogTitle>
+            <DialogDescription>Add a new collection agent. They will receive their ID and password.</DialogDescription>
+          </DialogHeader>
+          <CreateAgentForm
+            submitting={createMutation.isPending}
+            onSubmit={(data) => createMutation.mutate(data)}
+            onClose={() => setCreateOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
+  )
+}
+
+function CreateAgentForm({ onSubmit, onClose, submitting }: {
+  onSubmit: (data: any) => void
+  onClose: () => void
+  submitting: boolean
+}) {
+  const [name, setName] = React.useState('')
+  const [email, setEmail] = React.useState('')
+  const [phone, setPhone] = React.useState('')
+  const [zone, setZone] = React.useState('')
+  const [password, setPassword] = React.useState('')
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    onSubmit({ name, email, phone, zone, password })
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <Label htmlFor="name">Full Name</Label>
+        <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required className="min-h-[44px] sm:min-h-9" />
+      </div>
+      <div>
+        <Label htmlFor="email">Email Address</Label>
+        <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="min-h-[44px] sm:min-h-9" />
+      </div>
+      <div>
+        <Label htmlFor="phone">Phone Number</Label>
+        <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="min-h-[44px] sm:min-h-9" />
+      </div>
+      <div>
+        <Label htmlFor="zone">Operating Zone</Label>
+        <Input id="zone" value={zone} onChange={(e) => setZone(e.target.value)} placeholder="e.g., North Mumbai" className="min-h-[44px] sm:min-h-9" />
+      </div>
+      <div>
+        <Label htmlFor="password">Temporary Password</Label>
+        <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} className="min-h-[44px] sm:min-h-9" />
+      </div>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onClose} disabled={submitting} className="min-h-[44px] sm:min-h-9">Cancel</Button>
+        <Button type="submit" disabled={submitting} className="min-h-[44px] sm:min-h-9">{submitting ? 'Creating...' : 'Create Agent'}</Button>
+      </DialogFooter>
+    </form>
   )
 }
 
 function SortBtn({ label, active, dir, onClick }: { label: string; active: boolean; dir: 'asc' | 'desc'; onClick: () => void }) {
   return (
-    <button onClick={onClick} className={cn('inline-flex items-center gap-1 hover:text-foreground transition-colors', active ? 'text-primary' : 'text-muted-foreground')}>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`Sort by ${label}`}
+      className={cn('inline-flex items-center gap-1 hover:text-foreground transition-colors', active ? 'text-primary' : 'text-muted-foreground')}
+    >
       {label}
       <ArrowUpDown className={cn('h-3 w-3', active && 'text-primary')} />
       {active && <span className="text-[10px]">{dir === 'asc' ? '↑' : '↓'}</span>}
@@ -316,7 +415,7 @@ function Sparkline({ data, className }: { data: number[]; className?: string }) 
   const range = max - min || 1
   const points = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * h}`).join(' ')
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className={cn('w-16 h-5 fill-none', className)} preserveAspectRatio="none">
+    <svg viewBox={`0 0 ${w} ${h}`} className={cn('w-16 h-5 fill-none', className)} preserveAspectRatio="none" aria-hidden="true">
       <polyline points={points} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )

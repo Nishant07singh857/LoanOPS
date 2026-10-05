@@ -4,6 +4,8 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requireAgent } from '@/lib/server/auth'
 import { apiHandler, success, notFound, validate, paginate, paginationSchema } from '@/lib/server/api'
+import { decryptPII } from '@/lib/server/crypto'
+import { maskAadhaar, maskPan, maskBankAccount } from '@/lib/utils'
 
 const schema = paginationSchema.extend({
   search: z.string().trim().optional().default(''),
@@ -20,6 +22,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
   const { skip, take } = paginate(page, pageSize)
 
   const where = {
+    organizationId: ctx.user.organizationId,
     assignedAgentId: agentProfile.id,
     ...(search ? {
       OR: [
@@ -56,6 +59,9 @@ export const GET = apiHandler(async (req: NextRequest) => {
         fullName: c.fullName,
         mobile: c.mobile,
         email: c.email,
+        aadhaarMasked: c.aadhaarMasked ? maskAadhaar(decryptPII(c.aadhaarMasked)) : null,
+        panMasked: c.panMasked ? maskPan(decryptPII(c.panMasked)) : null,
+        bankAccount: c.bankAccount ? maskBankAccount(decryptPII(c.bankAccount)) : null,
         status: c.status,
         loansCount: c._count.loans,
         outstanding: String(totalOutstanding),

@@ -52,11 +52,17 @@ export const WHATSAPP_TEMPLATES = {
 
 export function openWhatsApp(phone: string, message: string) {
   // Sanitize phone - remove everything except digits
-  const cleaned = (phone || '').replace(/\D/g, '')
+  let cleaned = (phone || '').replace(/\D/g, '')
+  if (cleaned.length === 11 && cleaned.startsWith('0')) {
+    cleaned = cleaned.slice(1)
+  }
   // Ensure country code prefix (default +91 if 10 digits)
   const final = cleaned.length === 10 ? `91${cleaned}` : cleaned
-  const url = `https://wa.me/${final}?text=${encodeURIComponent(message)}`
+  const url = final
+    ? `https://wa.me/${final}?text=${encodeURIComponent(message)}`
+    : `https://wa.me/?text=${encodeURIComponent(message)}`
   if (typeof window !== 'undefined') {
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 }
+

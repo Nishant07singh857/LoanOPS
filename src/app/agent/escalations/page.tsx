@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, Plus, Filter, X, ChevronRight, MessageCircle,
-  CheckCircle2, Eye, Clock, ShieldAlert,
+  CheckCircle2, Eye, Clock, ShieldAlert, Loader2,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { KPICard } from '@/components/ui/kpi-card'
@@ -181,9 +181,11 @@ export default function AgentEscalationsPage() {
                 return (
                   <button
                     key={c.key}
+                    type="button"
+                    aria-pressed={active}
                     onClick={() => setChip(c.key)}
                     className={cn(
-                      'inline-flex items-center gap-1.5 px-3 h-7 rounded-full text-xs font-medium border transition-all',
+                      'inline-flex items-center gap-1.5 px-3 min-h-[36px] rounded-full text-xs font-medium border transition-all',
                       active ? 'bg-primary text-primary-foreground border-primary shadow-glow' : 'bg-card hover:bg-muted border-border text-muted-foreground'
                     )}
                   >
@@ -297,6 +299,8 @@ function NewEscalationDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   const [candidateId, setCandidateId] = React.useState('')
   const [loanNumber, setLoanNumber] = React.useState('')
   const [loanId, setLoanId] = React.useState('')
+  const [loadingLoan, setLoadingLoan] = React.useState(false)
+  const activeFetchCandidateRef = React.useRef<string>('')
   const [reason, setReason] = React.useState('LONG_OVERDUE')
   const [description, setDescription] = React.useState('')
 
@@ -314,7 +318,8 @@ function NewEscalationDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       toast.success('Escalation created', { description: `${candidates.find((c) => c.id === candidateId)?.fullName ?? ''} · ${reasonLabel[reason]}` })
       queryClient.invalidateQueries({ queryKey: ['agent-escalations'] })
       queryClient.invalidateQueries({ queryKey: ['agent-dashboard'] })
-      setCandidateId(''); setLoanId(''); setLoanNumber(''); setReason('LONG_OVERDUE'); setDescription('')
+      setCandidateId(''); setLoanId(''); setLoanNumber(''); setLoadingLoan(false); setReason('LONG_OVERDUE'); setDescription('')
+      activeFetchCandidateRef.current = ''
       onOpenChange(false)
     },
     onError: (e: Error) => toast.error('Failed to escalate', { description: e.message }),
@@ -322,13 +327,30 @@ function NewEscalationDialog({ open, onOpenChange }: { open: boolean; onOpenChan
 
   const onCandidateChange = (v: string) => {
     setCandidateId(v)
+    setLoanId('')
+    activeFetchCandidateRef.current = v
     const c = candidates.find((c) => c.id === v)
     if (c) {
       setLoanNumber(c.activeLoanNumbers[0] ?? '')
-      api.get<any>(`/api/agent/candidates/${v}`).then((res) => {
-        const loan = res.loans?.find((l: any) => l.status === 'ACTIVE')
-        if (loan) setLoanId(loan.id)
-      }).catch(() => {})
+      setLoadingLoan(true)
+      api.get<{ loans?: Array<{ id: string; status: string; loanNumber?: string }> }>(`/api/agent/candidates/${v}`)
+        .then((res) => {
+          if (activeFetchCandidateRef.current !== v) return
+          const loan = res.loans?.find((l) => l.status === 'ACTIVE')
+          if (loan) {
+            setLoanId(loan.id)
+            if (loan.loanNumber) setLoanNumber(loan.loanNumber)
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (activeFetchCandidateRef.current === v) {
+            setLoadingLoan(false)
+          }
+        })
+    } else {
+      setLoanNumber('')
+      setLoadingLoan(false)
     }
   }
 
@@ -338,7 +360,7 @@ function NewEscalationDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) activeFetchCandidateRef.current = ''; onOpenChange(isOpen) }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Escalate Candidate</DialogTitle>
@@ -358,7 +380,16 @@ function NewEscalationDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           </div>
           <div className="space-y-1.5">
             <Label>Loan</Label>
-            <Input value={loanNumber || '—'} readOnly className="bg-muted/30 font-mono text-xs" />
+            <div className="relative">
+              <Input
+                value={loadingLoan ? 'Resolving active loan...' : (loanNumber || '—')}
+                readOnly
+                className="bg-muted/30 font-mono text-base md:text-xs"
+              />
+              {loadingLoan && (
+                <Loader2 className="h-3.5 w-3.5 animate-spin absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              )}
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label>Reason</Label>
@@ -381,7 +412,14 @@ function NewEscalationDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="destructive" onClick={submit} disabled={createMutation.isPending}>Create Escalation</Button>
+          <Button
+            variant="destructive"
+            onClick={submit}
+            disabled={createMutation.isPending || loadingLoan || (Boolean(candidateId) && !loanId)}
+          >
+            {createMutation.isPending || loadingLoan ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            Create Escalation
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

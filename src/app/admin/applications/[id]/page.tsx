@@ -1,11 +1,12 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, FileText, User, Phone, CreditCard, Banknote, CheckCircle2,
-  XCircle, Info, ShieldCheck, FileSignature, History, Briefcase,
+  XCircle, Info, ShieldCheck, FileSignature, History, Briefcase, Eye, EyeOff,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -21,6 +22,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
+import { QRCodeSVG } from 'qrcode.react'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatBpsToPercent } from '@/lib/money'
 import { cn } from '@/lib/utils'
@@ -78,6 +80,7 @@ interface ApplicationDetail {
   submittedAt?: string | null
   createdAt: string
   loan?: { id: string; loanNumber: string; status: string } | null
+  qrLink?: { id: string; token: string; isRevoked: boolean; expiresAt: string | null } | null
 }
 
 function fmtDate(d?: string | null) {
@@ -86,12 +89,34 @@ function fmtDate(d?: string | null) {
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+function maskAadhaar(val?: string | null) {
+  if (!val) return '—'
+  const clean = val.replace(/\s|-/g, '')
+  if (clean.length < 4) return 'XXXX-XXXX'
+  return `XXXX-XXXX-${clean.slice(-4)}`
+}
+
+function maskPan(val?: string | null) {
+  if (!val) return '—'
+  const clean = val.trim().toUpperCase()
+  if (clean.length >= 10) return `${clean.slice(0, 5)}****${clean.slice(-1)}`
+  if (clean.length > 4) return `••••${clean.slice(-4)}`
+  return '••••••••••'
+}
+
+function maskBankAccount(val?: string | null) {
+  if (!val) return '—'
+  const clean = val.trim()
+  if (clean.length <= 4) return `••••••${clean}`
+  return `••••••${clean.slice(-4)}`
+}
+
 export default function ApplicationDetailPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
   const queryClient = useQueryClient()
 
-  const { data: app, isLoading } = useQuery({
+  const { data: app, isLoading, isError, refetch } = useQuery({
     queryKey: ['owner-application', params.id],
     queryFn: () => api.get<ApplicationDetail>(`/api/owner/applications/${params.id}`),
     enabled: !!params.id,
@@ -99,6 +124,38 @@ export default function ApplicationDetailPage() {
 
   const [action, setAction] = React.useState<ActionKind | null>(null)
   const [reason, setReason] = React.useState('')
+  const [showPii, setShowPii] = React.useState(false)
+  const [revealedPii, setRevealedPii] = React.useState<{
+    aadhaar?: string | null
+    pan?: string | null
+    bankAccount?: string | null
+  } | null>(null)
+  const [revealingPii, setRevealingPii] = React.useState(false)
+
+  const handleTogglePii = async () => {
+    if (showPii) {
+      setShowPii(false)
+      return
+    }
+    if (revealedPii) {
+      setShowPii(true)
+      return
+    }
+    setRevealingPii(true)
+    try {
+      const data = await api.post<{ aadhaar: string | null; pan: string | null; bankAccount: string | null }>(
+        '/api/owner/pii/reveal',
+        { entityType: 'APPLICATION', entityId: params.id }
+      )
+      setRevealedPii(data)
+      setShowPii(true)
+      toast.success('PII revealed (audit logged)')
+    } catch (err: any) {
+      toast.error('Failed to reveal PII', { description: err.message })
+    } finally {
+      setRevealingPii(false)
+    }
+  }
 
   const actionMutation = useMutation({
     mutationFn: async (input: { kind: ActionKind; reason: string }) => {
@@ -124,10 +181,28 @@ export default function ApplicationDetailPage() {
     onError: (err: any) => toast.error('Action failed', { description: err.message }),
   })
 
-  if (isLoading || !app) {
+  const qrRegenerate = useMutation({
+    mutationFn: () => api.post(`/api/owner/qr-links/${app?.qrLink?.id}/regenerate`, {}),
+    onSuccess: () => {
+      toast.success('QR link regenerated')
+      queryClient.invalidateQueries({ queryKey: ['owner-application', params.id] })
+    },
+    onError: (err: any) => toast.error('Failed to regenerate QR', { description: err.message }),
+  })
+
+  const qrRevoke = useMutation({
+    mutationFn: () => api.post(`/api/owner/qr-links/${app?.qrLink?.id}/revoke`, {}),
+    onSuccess: () => {
+      toast.success('QR link revoked')
+      queryClient.invalidateQueries({ queryKey: ['owner-application', params.id] })
+    },
+    onError: (err: any) => toast.error('Failed to revoke QR', { description: err.message }),
+  })
+
+  if (isLoading) {
     return (
-      <div className="space-y-6">
-        <Button variant="ghost" size="sm" onClick={() => router.push('/admin/applications')} className="gap-1">
+      <div className="space-y-6" role="status" aria-label="Loading application details">
+        <Button variant="ghost" size="sm" onClick={() => router.push('/admin/applications')} className="gap-1 min-h-[44px] sm:min-h-8">
           <ArrowLeft className="h-4 w-4" /> Back to Applications
         </Button>
         <Card className="shadow-premium"><CardContent className="p-4 space-y-3">
@@ -137,13 +212,37 @@ export default function ApplicationDetailPage() {
     )
   }
 
+  if (isError || !app) {
+    return (
+      <div className="space-y-6">
+        <Button variant="ghost" size="sm" onClick={() => router.push('/admin/applications')} className="gap-1 min-h-[44px] sm:min-h-8">
+          <ArrowLeft className="h-4 w-4" /> Back to Applications
+        </Button>
+        <Card className="border-destructive/40 bg-destructive/5 shadow-premium">
+          <CardContent className="p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-destructive">Failed to load application details</p>
+              <p className="text-xs text-muted-foreground mt-0.5">The application could not be found or there was a network error.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => refetch()} className="min-h-[44px] sm:min-h-8">
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   const c = app.candidate
   const canAct = app.status === 'SUBMITTED' || app.status === 'UNDER_REVIEW' || app.status === 'INFORMATION_REQUESTED'
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const rawAadhaar = app.kycAadhaar ?? c.aadhaarMasked ?? c.kyc?.aadhaarNumber
+  const rawPan = app.kycPan ?? c.panMasked ?? c.kyc?.panNumber
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Button variant="ghost" size="sm" onClick={() => router.push('/admin/applications')} className="gap-1">
+        <Button variant="ghost" size="sm" onClick={() => router.push('/admin/applications')} className="gap-1 min-h-[44px] sm:min-h-8">
           <ArrowLeft className="h-4 w-4" /> Back to Applications
         </Button>
       </div>
@@ -154,17 +253,17 @@ export default function ApplicationDetailPage() {
         icon={<FileText className="h-5 w-5" />}
         action={
           canAct ? (
-            <>
-              <Button variant="outline" size="sm" onClick={() => setAction('REQUEST_INFO')}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setAction('REQUEST_INFO')} className="min-h-[44px] sm:min-h-8">
                 <Info className="h-4 w-4" /> Request Info
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setAction('REJECT')} className="text-destructive border-destructive/40 hover:bg-destructive/10">
+              <Button variant="outline" size="sm" onClick={() => setAction('REJECT')} className="text-destructive border-destructive/40 hover:bg-destructive/10 min-h-[44px] sm:min-h-8">
                 <XCircle className="h-4 w-4" /> Reject
               </Button>
-              <Button size="sm" onClick={() => setAction('APPROVE')}>
+              <Button size="sm" onClick={() => setAction('APPROVE')} className="min-h-[44px] sm:min-h-8">
                 <CheckCircle2 className="h-4 w-4" /> Approve
               </Button>
-            </>
+            </div>
           ) : (
             <StatusBadge variant={app.status}>{formatStatus(app.status)}</StatusBadge>
           )
@@ -175,18 +274,18 @@ export default function ApplicationDetailPage() {
         <Card className="shadow-premium">
           <CardContent className="p-4 sm:p-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <Avatar className="h-12 w-12">
+              <div className="flex items-center gap-3 min-w-0">
+                <Avatar className="h-12 w-12 flex-shrink-0">
                   <AvatarFallback className="bg-primary/10 text-primary font-semibold">
                     {c.fullName.split(' ').map(p => p[0]).join('').slice(0, 2)}
                   </AvatarFallback>
                 </Avatar>
-                <div>
-                  <p className="font-semibold">{c.fullName}</p>
+                <div className="min-w-0">
+                  <p className="font-semibold truncate">{c.fullName}</p>
                   <p className="text-xs text-muted-foreground flex items-center gap-1"><Phone className="h-3 w-3" /> {c.mobile}</p>
                 </div>
               </div>
-              <div className="flex gap-3 sm:gap-6">
+              <div className="flex flex-wrap gap-3 sm:gap-6">
                 <div><p className="text-xs text-muted-foreground">Amount</p><p className="text-base font-semibold tabular-nums">{formatPaiseToINR(Number(app.principalAmount))}</p></div>
                 <div><p className="text-xs text-muted-foreground">Terms</p><p className="text-base font-semibold">{app.frequency} · {app.installments}</p></div>
                 <div><p className="text-xs text-muted-foreground">Status</p><StatusBadge variant={app.status}>{formatStatus(app.status)}</StatusBadge></div>
@@ -205,7 +304,7 @@ export default function ApplicationDetailPage() {
             {app.status === 'APPROVED' && app.loan && (
               <div className="mt-3 rounded-lg bg-success/10 border border-success/30 p-3 text-xs">
                 <span className="font-semibold text-success">Approved: </span>
-                <span>Loan {app.loan.loanNumber} created. <a href={`/admin/loans/${app.loan.id}`} className="text-primary underline">View loan →</a></span>
+                <span>Loan {app.loan.loanNumber} created. <Link href={`/admin/loans/${app.loan.id}`} className="text-primary underline">View loan →</Link></span>
               </div>
             )}
           </CardContent>
@@ -214,17 +313,53 @@ export default function ApplicationDetailPage() {
 
       <Tabs defaultValue="overview" className="w-full">
         <TabsList className="flex w-full overflow-x-auto no-scrollbar h-auto">
-          <TabsTrigger value="overview" className="flex-1 min-w-[80px]">Overview</TabsTrigger>
-          <TabsTrigger value="kyc" className="flex-1 min-w-[80px]">KYC</TabsTrigger>
-          <TabsTrigger value="agreement" className="flex-1 min-w-[80px]">Agreement</TabsTrigger>
-          <TabsTrigger value="history" className="flex-1 min-w-[80px]">History</TabsTrigger>
+          <TabsTrigger value="overview" className="flex-1 min-w-[80px] min-h-[44px] sm:min-h-9">Overview</TabsTrigger>
+          {app.qrLink && <TabsTrigger value="qr" className="flex-1 min-w-[80px] min-h-[44px] sm:min-h-9">QR Link</TabsTrigger>}
+          <TabsTrigger value="kyc" className="flex-1 min-w-[80px] min-h-[44px] sm:min-h-9">KYC</TabsTrigger>
+          <TabsTrigger value="agreement" className="flex-1 min-w-[80px] min-h-[44px] sm:min-h-9">Agreement</TabsTrigger>
+          <TabsTrigger value="history" className="flex-1 min-w-[80px] min-h-[44px] sm:min-h-9">History</TabsTrigger>
         </TabsList>
+
+        {app.qrLink && (
+          <TabsContent value="qr">
+            <Card className="shadow-premium">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">Application Link</CardTitle>
+                <CardDescription>Share this QR code or link with the candidate</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-4">
+                <div className="flex flex-col items-center p-4 bg-muted/20 rounded-xl">
+                  <div className="bg-white p-4 rounded-xl shadow-sm mb-4">
+                    <QRCodeSVG value={`${origin}/apply/${app.qrLink?.token}`} size={200} />
+                  </div>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full max-w-md">
+                    <div className="bg-background border rounded px-3 py-2 text-sm flex-1 truncate font-mono">
+                      {`${origin}/apply/${app.qrLink?.token}`}
+                    </div>
+                    <Button variant="secondary" className="min-h-[44px] sm:min-h-9" onClick={() => {
+                      navigator.clipboard.writeText(`${origin}/apply/${app.qrLink?.token}`)
+                      toast.success('Link copied')
+                    }}>Copy</Button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 mt-6 pt-4 border-t w-full max-w-md justify-center">
+                    <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-8" onClick={() => qrRegenerate.mutate()} disabled={qrRegenerate.isPending || app.qrLink?.isRevoked}>
+                      Regenerate
+                    </Button>
+                    <Button variant="destructive" size="sm" className="min-h-[44px] sm:min-h-8" onClick={() => qrRevoke.mutate()} disabled={qrRevoke.isPending || app.qrLink?.isRevoked}>
+                      {app.qrLink?.isRevoked ? 'Revoked' : 'Revoke'}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
 
         <TabsContent value="overview" className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Card className="shadow-premium">
               <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold flex items-center gap-2"><User className="h-4 w-4" /> Personal Information</CardTitle></CardHeader>
-              <CardContent className="grid grid-cols-2 gap-3 text-sm">
+              <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <Term label="Full Name" value={c.fullName} />
                 <Term label="Mobile" value={c.mobile} />
                 <Term label="Email" value={c.email ?? '—'} />
@@ -236,7 +371,7 @@ export default function ApplicationDetailPage() {
 
             <Card className="shadow-premium">
               <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold flex items-center gap-2"><Briefcase className="h-4 w-4" /> Financial Information</CardTitle></CardHeader>
-              <CardContent className="grid grid-cols-2 gap-3 text-sm">
+              <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <Term label="Employment" value={c.occupation ?? '—'} />
                 <Term label="Employer" value={c.employer ?? '—'} />
                 <Term label="Monthly Income" value={c.monthlyIncome ? formatPaiseToINR(c.monthlyIncome) : '—'} />
@@ -248,7 +383,7 @@ export default function ApplicationDetailPage() {
 
             <Card className="shadow-premium">
               <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold flex items-center gap-2"><Banknote className="h-4 w-4" /> Loan Request</CardTitle></CardHeader>
-              <CardContent className="grid grid-cols-2 gap-3 text-sm">
+              <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <Term label="Principal" value={formatPaiseToINR(Number(app.principalAmount))} />
                 <Term label="Frequency" value={app.frequency} />
                 <Term label="Installments" value={String(app.installments)} />
@@ -259,10 +394,26 @@ export default function ApplicationDetailPage() {
             </Card>
 
             <Card className="shadow-premium">
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold flex items-center gap-2"><CreditCard className="h-4 w-4" /> Bank Details</CardTitle></CardHeader>
-              <CardContent className="grid grid-cols-2 gap-3 text-sm">
+              <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2"><CreditCard className="h-4 w-4" /> Bank Details</CardTitle>
+                {c.bankAccount && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={revealingPii}
+                    onClick={handleTogglePii}
+                    aria-label={showPii ? 'Hide sensitive bank account number' : 'Show sensitive bank account number'}
+                    className="h-8 px-2 text-xs text-muted-foreground"
+                  >
+                    {showPii ? <EyeOff className="h-3.5 w-3.5 mr-1" /> : <Eye className="h-3.5 w-3.5 mr-1" />}
+                    {showPii ? 'Mask' : 'Reveal'}
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <Term label="Bank" value={c.bankName ?? '—'} />
-                <Term label="Account Number" value={c.bankAccount ?? '—'} />
+                <Term label="Account Number" value={showPii ? (revealedPii?.bankAccount ?? c.bankAccount ?? '—') : maskBankAccount(c.bankAccount)} />
                 <Term label="IFSC" value={c.bankIfsc ?? '—'} />
                 <Term label="UPI ID" value={c.upiId ?? '—'} />
               </CardContent>
@@ -272,20 +423,39 @@ export default function ApplicationDetailPage() {
 
         <TabsContent value="kyc">
           <Card className="shadow-premium">
-            <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> KYC Verification</CardTitle><CardDescription>Aadhaar, PAN, and KYC documents</CardDescription></CardHeader>
+            <CardHeader className="pb-2 flex flex-row items-start justify-between gap-2">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> KYC Verification</CardTitle>
+                <CardDescription>Aadhaar, PAN, and KYC documents</CardDescription>
+              </div>
+              {(rawAadhaar || rawPan) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={revealingPii}
+                  onClick={handleTogglePii}
+                  aria-label={showPii ? 'Mask KYC identifiers' : 'Reveal KYC identifiers'}
+                  className="min-h-[44px] sm:min-h-8 text-xs"
+                >
+                  {showPii ? <EyeOff className="h-3.5 w-3.5 mr-1" /> : <Eye className="h-3.5 w-3.5 mr-1" />}
+                  {showPii ? 'Mask PII' : 'Reveal PII'}
+                </Button>
+              )}
+            </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                <div className="flex items-center justify-between rounded-xl border border-border p-4 hover:border-primary/40 transition-all">
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-border p-4 hover:border-primary/40 transition-all">
                   <div>
                     <p className="text-sm font-medium">Aadhaar Card</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{app.kycAadhaar ?? c.aadhaarMasked ?? '—'}</p>
+                    <p className="text-xs font-mono text-muted-foreground mt-0.5">{maskAadhaar(rawAadhaar)}</p>
                   </div>
                   <StatusBadge variant={app.kycStatus ?? 'PENDING'}>{formatStatus(app.kycStatus ?? 'PENDING')}</StatusBadge>
                 </div>
-                <div className="flex items-center justify-between rounded-xl border border-border p-4 hover:border-primary/40 transition-all">
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-border p-4 hover:border-primary/40 transition-all">
                   <div>
                     <p className="text-sm font-medium">PAN Card</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{app.kycPan ?? c.panMasked ?? '—'}</p>
+                    <p className="text-xs font-mono text-muted-foreground mt-0.5">{showPii ? (revealedPii?.pan ?? rawPan ?? '—') : maskPan(rawPan)}</p>
                   </div>
                   <StatusBadge variant={app.kycStatus ?? 'PENDING'}>{formatStatus(app.kycStatus ?? 'PENDING')}</StatusBadge>
                 </div>
@@ -439,14 +609,18 @@ export default function ApplicationDetailPage() {
                   'Optional approval notes'
                 }
               />
+              {(action === 'REJECT' || action === 'REQUEST_INFO') && reason.trim().length > 0 && reason.trim().length < 3 && (
+                <p className="text-xs text-destructive mt-1">Please enter at least 3 characters.</p>
+              )}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAction(null)} disabled={actionMutation.isPending}>Cancel</Button>
+            <Button variant="outline" onClick={() => setAction(null)} disabled={actionMutation.isPending} className="min-h-[44px] sm:min-h-9">Cancel</Button>
             <Button
               variant={action === 'REJECT' ? 'destructive' : 'default'}
               onClick={() => action && actionMutation.mutate({ kind: action, reason })}
-              disabled={actionMutation.isPending || (action === 'REJECT' && !reason.trim()) || (action === 'REQUEST_INFO' && !reason.trim())}
+              disabled={actionMutation.isPending || (action === 'REJECT' && reason.trim().length < 3) || (action === 'REQUEST_INFO' && reason.trim().length < 3)}
+              className="min-h-[44px] sm:min-h-9"
             >
               {actionMutation.isPending ? 'Processing…' : action === 'APPROVE' ? 'Confirm Approval' : action === 'REJECT' ? 'Confirm Rejection' : 'Send Request'}
             </Button>
@@ -459,9 +633,9 @@ export default function ApplicationDetailPage() {
 
 function Term({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-sm font-semibold mt-0.5">{value}</p>
+      <p className="text-sm font-semibold mt-0.5 break-words">{value}</p>
     </div>
   )
 }

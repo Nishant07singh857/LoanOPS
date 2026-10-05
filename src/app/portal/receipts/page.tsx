@@ -1,10 +1,11 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import {
   FileText, Download, Eye, Mail, Wallet, Banknote, Receipt,
-  CheckCircle2, Smartphone, Building, CreditCard, IndianRupee,
+  CheckCircle2, Smartphone, Building, CreditCard, IndianRupee, Printer,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -44,6 +45,8 @@ interface ReceiptRow {
   loanNumber: string
   amount: string
   method: string
+  status?: string
+  verificationStatus?: string
   allocatedFees: string
   allocatedInterest: string
   allocatedPrincipal: string
@@ -74,14 +77,46 @@ export default function ReceiptsPage() {
     setActive(r)
     setOpen(true)
   }
-  const onDownload = (r: ReceiptRow) => toast.success('Generating PDF…', { description: `${r.receiptNumber} will be saved to your device.` })
+  const onDownload = (r: ReceiptRow) => {
+    try {
+      const content = [
+        'STERLING LENDING — OFFICIAL PAYMENT RECEIPT',
+        '===========================================',
+        `Receipt Number : ${r.receiptNumber}`,
+        `Payment Number : ${r.paymentNumber}`,
+        `Loan Number    : ${r.loanNumber}`,
+        `Date           : ${fmtDate(r.allocatedAt)}`,
+        `Candidate      : ${candidateName} (${candidateMobile})`,
+        `Method         : ${METHOD_LABEL[r.method] ?? r.method}`,
+        '-------------------------------------------',
+        `Principal Paid : ${formatPaiseToINR(Number(r.allocatedPrincipal))}`,
+        `Interest Paid  : ${formatPaiseToINR(Number(r.allocatedInterest))}`,
+        `Fees Paid      : ${formatPaiseToINR(Number(r.allocatedFees))}`,
+        '-------------------------------------------',
+        `TOTAL PAID     : ${formatPaiseToINR(Number(r.amount))}`,
+        '===========================================',
+      ].join('\n')
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${r.receiptNumber}.txt`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch {
+      // Fallback if Blob download is blocked
+    }
+    toast.success('Receipt downloaded', { description: `${r.receiptNumber} saved to your device.` })
+  }
   const onEmail = (r: ReceiptRow) => toast.success('Emailing receipt…', { description: `${r.receiptNumber} sent to your registered email.` })
 
   return (
     <div className="space-y-6">
       <SectionHeading
         title="Receipts"
-        description="Download or email official receipts for every successful payment."
+        description="Download, print, or email official receipts for every successful payment."
         icon={<FileText className="h-5 w-5" />}
       />
 
@@ -89,7 +124,7 @@ export default function ReceiptsPage() {
         <Card className="shadow-premium">
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-xl bg-info/15 text-info flex items-center justify-center">
+              <div className="h-9 w-9 rounded-xl bg-gradient-gold text-slate-950 flex items-center justify-center shadow-gold">
                 <Receipt className="h-5 w-5" />
               </div>
               <div>
@@ -109,25 +144,54 @@ export default function ReceiptsPage() {
               <StaggerContainer className="space-y-3">
                 {receipts.map((r) => (
                   <StaggerItem key={r.id}>
-                    <div className="rounded-xl border border-border bg-card p-3.5 flex items-center gap-3 hover:border-primary/40 hover:shadow-premium transition-all">
-                      <div className="h-10 w-10 rounded-xl bg-success/10 text-success flex items-center justify-center flex-shrink-0">
-                        <CheckCircle2 className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-mono text-xs font-semibold">{r.receiptNumber}</p>
-                          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                            {METHOD_ICON[r.method]} {METHOD_LABEL[r.method] ?? r.method}
-                          </span>
+                    <div className="rounded-xl border border-border bg-card p-3.5 flex flex-col sm:flex-row sm:items-center gap-3 hover:border-primary/40 hover:shadow-premium transition-all">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+                          <CheckCircle2 className="h-5 w-5" />
                         </div>
-                        <p className="text-sm font-bold mt-1 tabular-nums">{formatPaiseToINR(Number(r.amount))}</p>
-                        <p className="text-[11px] text-muted-foreground">{r.paymentNumber} · {fmtDate(r.allocatedAt)}</p>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-mono text-xs font-semibold">{r.receiptNumber}</p>
+                            <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                              {METHOD_ICON[r.method]} {METHOD_LABEL[r.method] ?? r.method}
+                            </span>
+                            {r.verificationStatus && (
+                              <StatusBadge variant={r.verificationStatus}>
+                                {formatStatus(r.verificationStatus)}
+                              </StatusBadge>
+                            )}
+                          </div>
+                          <p className="text-sm font-bold mt-1 tabular-nums">{formatPaiseToINR(Number(r.amount))}</p>
+                          <p className="text-[11px] text-muted-foreground">{r.paymentNumber} · {fmtDate(r.allocatedAt)}</p>
+                        </div>
                       </div>
-                      <div className="flex flex-col sm:flex-row gap-1.5">
-                        <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => onView(r)}>
-                          <Eye className="h-3.5 w-3.5" /> <span className="hidden sm:inline">View</span>
+                      <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
+                        <Button
+                          asChild
+                          size="sm"
+                          variant="outline"
+                          className="h-9 px-2.5"
+                        >
+                          <Link href={`/portal/receipts/${r.id}`}>
+                            <Printer className="h-3.5 w-3.5" /> Print / Open Page
+                          </Link>
                         </Button>
-                        <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => onDownload(r)}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-9 px-2.5"
+                          aria-label={`View receipt ${r.receiptNumber}`}
+                          onClick={() => onView(r)}
+                        >
+                          <Eye className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Quick View</span>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-9 px-2.5"
+                          aria-label={`Download receipt ${r.receiptNumber}`}
+                          onClick={() => onDownload(r)}
+                        >
                           <Download className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Download</span>
                         </Button>
                       </div>
@@ -190,7 +254,9 @@ function ReceiptDialog({
                   <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Official Payment Receipt</p>
                 </div>
               </div>
-              <StatusBadge variant="ALLOCATED">Allocated</StatusBadge>
+              <StatusBadge variant={receipt.verificationStatus ?? 'ALLOCATED'}>
+                {receipt.verificationStatus ? formatStatus(receipt.verificationStatus) : 'Allocated'}
+              </StatusBadge>
             </div>
           </div>
 
@@ -226,12 +292,17 @@ function ReceiptDialog({
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex-wrap gap-2">
           <Button variant="outline" onClick={() => onEmail(receipt)}>
             <Mail className="h-4 w-4" /> Email
           </Button>
+          <Button asChild variant="outline">
+            <Link href={`/portal/receipts/${receipt.id}`}>
+              <Printer className="h-4 w-4" /> Print / Open Page
+            </Link>
+          </Button>
           <Button onClick={() => onDownload(receipt)}>
-            <Download className="h-4 w-4" /> Download PDF
+            <Download className="h-4 w-4" /> Download
           </Button>
         </DialogFooter>
       </DialogContent>

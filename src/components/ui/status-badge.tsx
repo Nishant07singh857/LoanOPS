@@ -42,6 +42,13 @@ const statusBadgeVariants = cva(
         IN_REVIEW: 'bg-warning/15 text-warning border border-warning/20',
         RESOLVED: 'bg-success/15 text-success border border-success/20',
         ASSIGNED: 'bg-info/15 text-info border border-info/20',
+        DISPUTED: 'bg-destructive/15 text-destructive border border-destructive/20',
+        UNVERIFIED: 'bg-warning/15 text-warning border border-warning/20',
+        CASH: 'bg-warning/15 text-warning border border-warning/20',
+        PHONE: 'bg-info/15 text-info border border-info/20',
+        WHATSAPP: 'bg-success/15 text-success border border-success/20',
+        IN_APP: 'bg-primary/15 text-primary border border-primary/20',
+        FIELD_VISIT: 'bg-warning/15 text-warning border border-warning/20',
         // Priority
         LOW: 'bg-muted text-muted-foreground border border-border',
         MEDIUM: 'bg-info/15 text-info border border-info/20',
@@ -61,8 +68,9 @@ const statusBadgeVariants = cva(
 
 export interface StatusBadgeProps
   extends React.HTMLAttributes<HTMLSpanElement>,
-    VariantProps<typeof statusBadgeVariants> {
-  variant?: string
+    Omit<VariantProps<typeof statusBadgeVariants>, 'variant'> {
+  variant?: any
+
   dot?: boolean
 }
 
@@ -85,7 +93,8 @@ export function statusToVariant(status: string): string {
   return map[status] || status
 }
 
-export function formatStatus(status: string): string {
+export function formatStatus(status?: string | null): string {
+  if (!status) return '—'
   return status
     .replace(/_/g, ' ')
     .toLowerCase()

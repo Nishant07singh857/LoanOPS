@@ -67,33 +67,62 @@ export const GET = apiHandler(async (req: NextRequest) => {
     })
   }
 
-  // 3. Candidates with 2+ missed installments
-  const candidates = await db.candidate.findMany({
-    where: { organizationId: orgId, status: 'ACTIVE' },
-    include: {
-      loans: {
-        where: { status: 'ACTIVE' },
-        include: { schedule: { where: { status: { in: ['OVERDUE'] } } } },
-      },
-    },
-  })
-  for (const c of candidates) {
-    const totalOverdueInst = c.loans.reduce((s, l) => s + l.schedule.length, 0)
-    if (totalOverdueInst >= 2) {
+  // 3. Candidates with 2+ missed installments (Compute from overdueLoans)
+  const candidateOverdueMap = new Map<string, { candidate: any, count: number, loanCount: number }>()
+  for (const l of overdueLoans) {
+    const existing = candidateOverdueMap.get(l.candidateId) || { candidate: l.candidate, count: 0, loanCount: 0 }
+    existing.count += l.schedule.length
+    existing.loanCount += 1
+    candidateOverdueMap.set(l.candidateId, existing)
+  }
+
+  for (const [candidateId, data] of candidateOverdueMap.entries()) {
+    if (data.count >= 2) {
       insights.push({
-        id: `ins-missed-${c.id}`,
+        id: `ins-missed-${candidateId}`,
         signalType: 'REPEATED_MISSED_INSTALLMENTS',
-        level: totalOverdueInst >= 4 ? 'HIGH' : 'MEDIUM',
-        title: `${c.fullName} has ${totalOverdueInst} missed installment(s)`,
-        candidateId: c.id,
-        candidateName: c.fullName,
+        level: data.count >= 4 ? 'HIGH' : 'MEDIUM',
+        title: `${data.candidate.fullName} has ${data.count} missed installment(s)`,
+        candidateId: candidateId,
+        candidateName: data.candidate.fullName,
         reasons: [
-          `${totalOverdueInst} installment(s) overdue across ${c.loans.length} loan(s)`,
-          `Mobile: ${c.mobile}`,
+          `${data.count} installment(s) overdue across ${data.loanCount} loan(s)`,
+          `Mobile: ${data.candidate.mobile}`,
         ],
         suggestedAction: 'Escalate and consider repayment plan modification',
       })
     }
+  }
+
+  // 4. Upcoming due dates (within 3 days)
+  const upcomingDate = new Date()
+  upcomingDate.setDate(upcomingDate.getDate() + 3)
+
+  const upcomingInstallments = await db.installment.findMany({
+    where: {
+      loan: { organizationId: orgId, status: 'ACTIVE' },
+      status: 'UPCOMING',
+      dueDate: { lte: upcomingDate, gte: new Date() },
+    },
+    include: { loan: { include: { candidate: true } } },
+  })
+
+  for (const u of upcomingInstallments) {
+    insights.push({
+      id: `ins-upcoming-${u.id}`,
+      signalType: 'UPCOMING_DUE',
+      level: 'LOW',
+      title: `${u.loan.candidate.fullName} has an installment due soon`,
+      candidateId: u.loan.candidateId,
+      candidateName: u.loan.candidate.fullName,
+      loanId: u.loanId,
+      loanNumber: u.loan.loanNumber,
+      reasons: [
+        `Due on ${new Date(u.dueDate).toLocaleDateString()}`,
+        `Amount: ₹${(u.totalDue / 100).toLocaleString('en-IN')}`,
+      ],
+      suggestedAction: 'Send proactive payment reminder',
+    })
   }
 
   // Sort by level: HIGH → MEDIUM → LOW

@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requireAgent, audit } from '@/lib/server/auth'
-import { apiHandler, success, created, badRequest, notFound, validate, paginate, paginationSchema } from '@/lib/server/api'
+import { apiHandler, success, created, badRequest, notFound, forbidden, validate, paginate, paginationSchema } from '@/lib/server/api'
 
 const listSchema = paginationSchema.extend({
   status: z.string().optional(),
@@ -21,6 +21,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
   const { skip, take } = paginate(page, pageSize)
 
   const where = {
+    organizationId: ctx.user.organizationId,
     assignedToId: agentProfile.id,
     ...(status ? { status: status as any } : {}),
   }
@@ -56,35 +57,28 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const createSchema = z.object({
-  candidateId: z.string().min(1),
-  loanId: z.string().min(1),
-  title: z.string().min(2).max(255),
-  description: z.string().max(2000).optional().nullable(),
-  amount: z.string().regex(/^\d+$/).optional().nullable(),
-  dueDate: z.string().datetime(),
-  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).default('MEDIUM'),
-  notes: z.string().max(2000).optional().nullable(),
-})
+const createSchema = z.object({}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireAgent()
   const agentProfile = await db.agentProfile.findUnique({ where: { userId: ctx.user.id } })
-  if (!agentProfile) return notFound('Agent profile not found')
+  if (!agentProfile) return forbidden('Agent profile not found')
 
   const body = await req.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON body')
   const data = validate(createSchema, body)
 
-  // Validate candidate belongs to agent & org
+  // Validate candidate belongs to org & is assigned to agent
   const candidate = await db.candidate.findFirst({
     where: {
       id: data.candidateId,
       organizationId: ctx.user.organizationId,
-      assignedAgentId: agentProfile.id,
     },
   })
-  if (!candidate) return notFound('Candidate not found (or not assigned to you)')
+  if (!candidate) return notFound('Candidate not found')
+  if (candidate.assignedAgentId !== agentProfile.id) {
+    return forbidden('You do not have access to this candidate')
+  }
 
   // Validate loan belongs to candidate
   const loan = await db.loan.findFirst({

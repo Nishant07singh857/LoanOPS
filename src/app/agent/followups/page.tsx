@@ -138,9 +138,11 @@ export default function AgentFollowupsPage() {
                 return (
                   <button
                     key={c.key}
+                    type="button"
+                    aria-pressed={active}
                     onClick={() => setChip(c.key)}
                     className={cn(
-                      'inline-flex items-center gap-1.5 px-3 h-7 rounded-full text-xs font-medium border transition-all',
+                      'inline-flex items-center gap-1.5 px-3 min-h-[36px] rounded-full text-xs font-medium border transition-all',
                       active ? 'bg-primary text-primary-foreground border-primary shadow-glow' : 'bg-card hover:bg-muted border-border text-muted-foreground'
                     )}
                   >

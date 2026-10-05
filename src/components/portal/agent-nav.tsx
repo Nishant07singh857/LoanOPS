@@ -7,7 +7,7 @@ import type { PortalNavGroup } from './layout'
 export const AGENT_BRAND = {
   name: 'Sterling Lending',
   subtitle: 'Agent Portal',
-  accentClass: 'bg-info',
+  accentClass: 'bg-gradient-to-br from-purple-900 via-indigo-900 to-purple-800 shadow-glow',
 } as const
 
 export const AGENT_NAV: PortalNavGroup[] = [
@@ -23,6 +23,7 @@ export const AGENT_NAV: PortalNavGroup[] = [
   {
     label: 'Operations',
     items: [
+      { href: '/agent/create-loan', label: 'Originate Loan', icon: <Banknote className="h-4 w-4" /> },
       { href: '/agent/ptp', label: 'PTP', icon: <Handshake className="h-4 w-4" />, badge: 3 },
       { href: '/agent/cash', label: 'Cash', icon: <Banknote className="h-4 w-4" />, badge: 2 },
       { href: '/agent/escalations', label: 'Escalations', icon: <AlertTriangle className="h-4 w-4" /> },

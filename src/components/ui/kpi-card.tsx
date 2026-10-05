@@ -50,16 +50,21 @@ export function KPICard({ label, value, delta, icon, variant = 'default', classN
     >
       <Card
         className={cn(
-          'relative overflow-hidden border rounded-2xl shadow-premium transition-all hover:shadow-glow hover:-translate-y-0.5',
+          'relative overflow-hidden border rounded-2xl shadow-premium transition-all hover:shadow-glow sm:hover:-translate-y-0.5',
           variantStyles[variant]
         )}
       >
         <CardContent className="p-4 sm:p-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <p className="text-[11px] sm:text-xs font-medium text-muted-foreground uppercase tracking-wider truncate">
-                {label}
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] sm:text-xs font-medium text-muted-foreground tracking-wide">
+                  {label}
+                </p>
+                <div className="text-[10px] flex items-center text-muted-foreground opacity-50 group-hover:opacity-100 transition-opacity">
+                  View <ArrowUpRight className="h-3 w-3 ml-0.5" />
+                </div>
+              </div>
               <p className="text-xl sm:text-2xl font-bold tracking-tight mt-1.5 tabular-nums">{value}</p>
               {delta && (
                 <div
@@ -97,11 +102,19 @@ function Sparkline({ data, className }: { data: number[]; className?: string }) 
   const max = Math.max(...data)
   const min = Math.min(...data)
   const range = max - min || 1
+  const midY = h - ((data[0] - min) / range) * h
   const points = data
     .map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * h}`)
     .join(' ')
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className={cn('w-full h-full fill-none', className)} preserveAspectRatio="none">
+    <svg
+      viewBox={`0 0 ${w} ${h}`}
+      className={cn('w-full h-full fill-none', className)}
+      preserveAspectRatio="none"
+      role="img"
+      aria-label={`Trend from ${min} to ${max}`}
+    >
+      <line x1="0" y1={midY} x2={w} y2={midY} stroke="currentColor" strokeWidth="0.5" strokeDasharray="3 3" opacity="0.3" />
       <polyline points={points} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )

@@ -4,18 +4,22 @@ import { db } from '@/lib/db'
 import { requireCandidate } from '@/lib/server/auth'
 import { apiHandler, success, badRequest } from '@/lib/server/api'
 
-export const GET = apiHandler(async (req: NextRequest) => {
+export const GET = apiHandler(async (_req: NextRequest) => {
   const ctx = await requireCandidate()
   if (!ctx.user.candidateId) return badRequest('No candidate profile linked to this account')
 
   const payments = await db.payment.findMany({
     where: {
       candidateId: ctx.user.candidateId,
-      status: 'ALLOCATED',
+      status: { in: ['PENDING_VERIFICATION', 'VERIFIED', 'ALLOCATED'] },
       receiptNumber: { not: null },
     },
-    orderBy: { allocatedAt: 'desc' },
-    include: { loan: { select: { loanNumber: true } } },
+    orderBy: [{ allocatedAt: 'desc' }, { createdAt: 'desc' }],
+    include: {
+      loan: { select: { loanNumber: true } },
+      recordedBy: { select: { name: true } },
+      verifiedBy: { select: { name: true } },
+    },
   })
 
   return success({
@@ -27,11 +31,20 @@ export const GET = apiHandler(async (req: NextRequest) => {
       loanNumber: p.loan.loanNumber,
       amount: String(p.amount),
       method: p.method,
+      status: p.status,
+      verificationStatus:
+        p.status === 'VERIFIED' || p.verifiedAt ? 'VERIFIED' : 'PENDING_VERIFICATION',
+      recordedBy: p.recordedBy?.name ?? 'Field Agent',
+      verifiedBy: p.verifiedBy?.name ?? null,
+      verifiedAt: p.verifiedAt,
       allocatedFees: String(p.allocatedFees),
       allocatedInterest: String(p.allocatedInterest),
       allocatedPrincipal: String(p.allocatedPrincipal),
-      allocatedAt: p.allocatedAt,
+      allocatedAt: p.allocatedAt ?? p.createdAt,
+      createdAt: p.createdAt,
       reference: p.reference,
+      notes: p.notes,
     })),
   })
 })
+

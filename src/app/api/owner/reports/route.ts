@@ -99,9 +99,10 @@ export const GET = apiHandler(async (req: NextRequest) => {
   }
 
   if (type === 'collections') {
-    const ccs = await db.cashCollection.findMany({
+    const ccs = await db.payment.findMany({
       where: {
-        loan: { organizationId: orgId },
+        organizationId: orgId,
+        method: 'CASH',
         ...(status ? { status: status as any } : {}),
         ...dateFilter('createdAt'),
         ...(agent ? { recordedById: agent } : {}),
@@ -118,11 +119,11 @@ export const GET = apiHandler(async (req: NextRequest) => {
       items: ccs.map((c) => ({
         id: c.id,
         amount: String(c.amount),
-        collectionDate: c.collectionDate,
-        collectionTime: c.collectionTime,
+        collectionDate: c.createdAt,
+        collectionTime: c.createdAt,
         status: c.status,
         reference: c.reference,
-        recordedBy: c.recordedBy.name,
+        recordedBy: c.recordedBy?.name,
         loanNumber: c.loan.loanNumber,
         candidateName: c.candidate.fullName,
         candidateMobile: c.candidate.mobile,
@@ -347,13 +348,12 @@ export const GET = apiHandler(async (req: NextRequest) => {
     const agents = await db.agentProfile.findMany({
       where: { organizationId: orgId, ...(agent ? { id: agent } : {}) },
       include: {
-        user: { select: { name: true, email: true, phone: true } },
+        user: { select: { id: true, name: true, email: true, phone: true } },
         candidates: { select: { id: true } },
         tasks: { select: { id: true, status: true } },
       },
     })
-    const items = []
-    for (const a of agents) {
+    const items = await Promise.all(agents.map(async (a) => {
       const [tasksCompleted, ptpCreated, ptpFulfilled, ptpBroken, collectionAgg, outstandingAgg] = await Promise.all([
         db.collectionTask.count({ where: { assignedToId: a.id, status: 'RESOLVED' } }),
         db.ptp.count({ where: { agentId: a.user.id } }),
@@ -368,7 +368,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
           _sum: { outstandingPrincipal: true },
         }),
       ])
-      items.push({
+      return {
         id: a.id,
         name: a.user.name,
         email: a.user.email,
@@ -383,8 +383,8 @@ export const GET = apiHandler(async (req: NextRequest) => {
         collectionAmount: String(collectionAgg._sum.amount || 0),
         outstandingAssigned: String(outstandingAgg._sum.outstandingPrincipal || 0),
         successRate: ptpCreated > 0 ? Math.round((ptpFulfilled / ptpCreated) * 1000) / 10 : 0,
-      })
-    }
+      }
+    }))
     return success({
       type,
       items,

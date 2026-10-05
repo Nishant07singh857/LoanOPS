@@ -20,11 +20,11 @@ export function EmptyState({ icon, title, description, action, className }: Empt
       className={cn('flex flex-col items-center justify-center py-12 sm:py-16 px-4 text-center', className)}
     >
       {icon && (
-        <div className="mb-4 h-14 w-14 rounded-2xl bg-muted/60 flex items-center justify-center text-muted-foreground">
+        <div className="mb-4 h-16 w-16 rounded-full bg-muted/60 flex items-center justify-center text-muted-foreground">
           {icon}
         </div>
       )}
-      <h3 className="text-base sm:text-lg font-semibold">{title}</h3>
+      <p className="text-base sm:text-lg font-semibold" role="status">{title}</p>
       {description && <p className="text-sm text-muted-foreground mt-1 max-w-md">{description}</p>}
       {action && <div className="mt-4">{action}</div>}
     </motion.div>
@@ -72,9 +72,12 @@ export function FadeIn({ children, delay = 0, className }: FadeInProps) {
 export interface StaggerProps {
   children: React.ReactNode
   className?: string
+  role?: React.AriaRole
+  'aria-label'?: string
+  'aria-live'?: 'off' | 'assertive' | 'polite'
 }
 
-export function StaggerContainer({ children, className }: StaggerProps) {
+export function StaggerContainer({ children, className, role, 'aria-label': ariaLabel, 'aria-live': ariaLive }: StaggerProps) {
   return (
     <motion.div
       initial="hidden"
@@ -88,13 +91,16 @@ export function StaggerContainer({ children, className }: StaggerProps) {
         },
       }}
       className={className}
+      role={role}
+      aria-label={ariaLabel}
+      aria-live={ariaLive}
     >
       {children}
     </motion.div>
   )
 }
 
-export function StaggerItem({ children, className }: StaggerProps) {
+export function StaggerItem({ children, className, role, 'aria-label': ariaLabel, 'aria-live': ariaLive }: StaggerProps) {
   return (
     <motion.div
       variants={{
@@ -102,6 +108,9 @@ export function StaggerItem({ children, className }: StaggerProps) {
         show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } },
       }}
       className={className}
+      role={role}
+      aria-label={ariaLabel}
+      aria-live={ariaLive}
     >
       {children}
     </motion.div>

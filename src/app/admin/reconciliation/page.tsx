@@ -45,6 +45,7 @@ interface ReconException {
   severity: string
   description: string
   reference?: string | null
+  resolvedAt?: string | null
   createdAt: string
 }
 
@@ -69,13 +70,33 @@ export default function ReconciliationPage() {
   const [from, setFrom] = React.useState('')
   const [to, setTo] = React.useState('')
 
-  const { data: runsData } = useQuery({
+  const openRunDialog = () => {
+    if (!from || !to) {
+      const now = new Date()
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+      setFrom(thirtyDaysAgo.toISOString().slice(0, 10))
+      setTo(now.toISOString().slice(0, 10))
+    }
+    setRunOpen(true)
+  }
+
+  const {
+    data: runsData,
+    isLoading: runsLoading,
+    isError: runsError,
+    refetch: refetchRuns,
+  } = useQuery({
     queryKey: ['owner-recon-runs'],
     queryFn: () => api.get<{ items: ReconRun[] }>('/api/owner/reconciliation/runs'),
   })
   const runs = runsData?.items ?? []
 
-  const { data: exData, isLoading: exLoading } = useQuery({
+  const {
+    data: exData,
+    isLoading: exLoading,
+    isError: exError,
+    refetch: refetchEx,
+  } = useQuery({
     queryKey: ['owner-recon-exceptions'],
     queryFn: () => api.get<{ items: ReconException[] }>('/api/owner/reconciliation/exceptions'),
   })
@@ -93,10 +114,21 @@ export default function ReconciliationPage() {
       queryClient.invalidateQueries({ queryKey: ['owner-recon-runs'] })
       queryClient.invalidateQueries({ queryKey: ['owner-recon-exceptions'] })
       setRunOpen(false)
-      setFrom(''); setTo('')
     },
     onError: (err: any) => toast.error('Reconciliation failed', { description: err.message }),
   })
+
+  const submitRun = () => {
+    if (!from || !to) {
+      toast.error('Please select both From and To dates')
+      return
+    }
+    if (new Date(from) > new Date(to)) {
+      toast.error('Start date cannot be after end date')
+      return
+    }
+    runMutation.mutate({ from, to })
+  }
 
   const latestRun = runs[0]
   const totalExpected = Number(latestRun?.totalExpected ?? 0)
@@ -111,7 +143,7 @@ export default function ReconciliationPage() {
         description="Reconcile expected inflows with captured payments and surface exceptions."
         icon={<Scale className="h-5 w-5" />}
         action={
-          <Button variant="outline" size="sm" onClick={() => setRunOpen(true)}>
+          <Button variant="outline" size="sm" className="h-11 px-4" onClick={openRunDialog}>
             Run Recon Now
           </Button>
         }
@@ -142,7 +174,7 @@ export default function ReconciliationPage() {
           <Card className="shadow-premium border-l-4 border-l-success h-full">
             <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><CheckCircle2 className="h-4 w-4" /> Captured</CardTitle><CardDescription>Payments recorded in period</CardDescription></CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold tabular-nums">{formatPaiseToINR(totalCaptured)}</p>
+              <p className="text-2xl sm:text-3xl font-bold tabular-nums">{formatPaiseToINR(totalCaptured)}</p>
               <p className="text-xs text-muted-foreground mt-1">{runs.length} total reconciliation runs</p>
             </CardContent>
           </Card>
@@ -177,35 +209,70 @@ export default function ReconciliationPage() {
         <Card className="shadow-premium">
           <CardHeader className="pb-2"><CardTitle className="text-base">Recent Runs</CardTitle><CardDescription>{runs.length} runs</CardDescription></CardHeader>
           <CardContent>
-            {runs.length === 0 ? (
+            {runsLoading ? (
+              <div className="space-y-2" role="status" aria-label="Loading reconciliation runs">
+                {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+              </div>
+            ) : runsError ? (
+              <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-6 text-center space-y-3" role="alert">
+                <AlertTriangle className="h-6 w-6 text-destructive mx-auto" />
+                <p className="text-sm font-medium text-destructive">Failed to load reconciliation runs</p>
+                <Button variant="outline" size="sm" className="h-11 px-4" onClick={() => refetchRuns()}>Retry</Button>
+              </div>
+            ) : runs.length === 0 ? (
               <EmptyState icon={<Scale className="h-6 w-6" />} title="No reconciliation runs yet" description="Click 'Run Recon Now' to start a new reconciliation run." />
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/40">
-                    <TableHead className="pl-6">Run #</TableHead>
-                    <TableHead>Period</TableHead>
-                    <TableHead className="text-right">Expected</TableHead>
-                    <TableHead className="text-right">Captured</TableHead>
-                    <TableHead className="text-right">Allocated</TableHead>
-                    <TableHead className="text-center">Exceptions</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              <>
+                <div className="hidden md:block overflow-x-auto w-full">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/40">
+                        <TableHead className="pl-6">Run #</TableHead>
+                        <TableHead>Period</TableHead>
+                        <TableHead className="text-right">Expected</TableHead>
+                        <TableHead className="text-right">Captured</TableHead>
+                        <TableHead className="text-right">Allocated</TableHead>
+                        <TableHead className="text-center">Exceptions</TableHead>
+                        <TableHead className="pr-6">Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {runs.map((r) => (
+                        <TableRow key={r.id}>
+                          <TableCell className="pl-6 font-mono text-xs font-semibold">{r.runNumber}</TableCell>
+                          <TableCell className="text-xs">{fmtDate(r.periodStart)} → {fmtDate(r.periodEnd)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(r.totalExpected))}</TableCell>
+                          <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(r.totalCaptured))}</TableCell>
+                          <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(r.totalAllocated))}</TableCell>
+                          <TableCell className="text-center tabular-nums">{r.exceptionsCount}</TableCell>
+                          <TableCell className="pr-6"><StatusBadge variant={r.status}>{formatStatus(r.status)}</StatusBadge></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <StaggerContainer className="md:hidden space-y-3">
                   {runs.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell className="pl-6 font-mono text-xs font-semibold">{r.runNumber}</TableCell>
-                      <TableCell className="text-xs">{fmtDate(r.periodStart)} → {fmtDate(r.periodEnd)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(r.totalExpected))}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(r.totalCaptured))}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(r.totalAllocated))}</TableCell>
-                      <TableCell className="text-center">{r.exceptionsCount}</TableCell>
-                      <TableCell><StatusBadge variant={r.status}>{formatStatus(r.status)}</StatusBadge></TableCell>
-                    </TableRow>
+                    <StaggerItem key={r.id}>
+                      <div className="rounded-xl border border-border p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-mono text-xs font-semibold truncate">{r.runNumber}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">{fmtDate(r.periodStart)} → {fmtDate(r.periodEnd)}</p>
+                          </div>
+                          <StatusBadge variant={r.status}>{formatStatus(r.status)}</StatusBadge>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-border text-xs">
+                          <div><p className="text-muted-foreground">Expected</p><p className="font-semibold tabular-nums">{formatPaiseToINR(Number(r.totalExpected))}</p></div>
+                          <div><p className="text-muted-foreground">Captured</p><p className="font-semibold tabular-nums">{formatPaiseToINR(Number(r.totalCaptured))}</p></div>
+                          <div><p className="text-muted-foreground">Allocated</p><p className="font-semibold tabular-nums">{formatPaiseToINR(Number(r.totalAllocated))}</p></div>
+                          <div><p className="text-muted-foreground">Exceptions</p><p className="font-semibold tabular-nums">{r.exceptionsCount}</p></div>
+                        </div>
+                      </div>
+                    </StaggerItem>
                   ))}
-                </TableBody>
-              </Table>
+                </StaggerContainer>
+              </>
             )}
           </CardContent>
         </Card>
@@ -219,20 +286,35 @@ export default function ReconciliationPage() {
                 <CardTitle className="text-base">Exceptions</CardTitle>
                 <CardDescription>{filteredExceptions.length} open reconciliation exceptions</CardDescription>
               </div>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search type, description..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 sm:w-64" />
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  type="search"
+                  aria-label="Search reconciliation exceptions"
+                  placeholder="Search type, description..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9 w-full h-11"
+                />
               </div>
             </div>
           </CardHeader>
           <CardContent>
             {exLoading ? (
-              <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+              <div className="space-y-2" role="status" aria-label="Loading reconciliation exceptions">
+                {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+              </div>
+            ) : exError ? (
+              <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-6 text-center space-y-3" role="alert">
+                <AlertTriangle className="h-6 w-6 text-destructive mx-auto" />
+                <p className="text-sm font-medium text-destructive">Failed to load reconciliation exceptions</p>
+                <Button variant="outline" size="sm" className="h-11 px-4" onClick={() => refetchEx()}>Retry</Button>
+              </div>
             ) : filteredExceptions.length === 0 ? (
               <EmptyState icon={<CheckCircle2 className="h-6 w-6" />} title="No open exceptions" description="All reconciliation exceptions are resolved." />
             ) : (
               <>
-                <div className="hidden md:block">
+                <div className="hidden md:block overflow-x-auto w-full">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">
@@ -240,7 +322,7 @@ export default function ReconciliationPage() {
                         <TableHead>Severity</TableHead>
                         <TableHead>Reference</TableHead>
                         <TableHead>Description</TableHead>
-                        <TableHead>Created</TableHead>
+                        <TableHead className="pr-6">Created</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -252,7 +334,7 @@ export default function ReconciliationPage() {
                           <TableCell><StatusBadge variant={e.severity === 'HIGH' ? 'OVERDUE' : e.severity === 'MEDIUM' ? 'PENDING' : 'ACTIVE'}>{e.severity}</StatusBadge></TableCell>
                           <TableCell className="font-mono text-xs">{e.reference ?? '—'}</TableCell>
                           <TableCell className="text-xs text-muted-foreground max-w-[320px] truncate">{e.description}</TableCell>
-                          <TableCell className="text-xs">{fmtDate(e.createdAt)}</TableCell>
+                          <TableCell className="pr-6 text-xs">{fmtDate(e.createdAt)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -266,8 +348,8 @@ export default function ReconciliationPage() {
                           <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', typeTint[e.type] || 'bg-muted text-muted-foreground')}>{e.type.replace(/_/g, ' ')}</span>
                           <StatusBadge variant={e.severity === 'HIGH' ? 'OVERDUE' : e.severity === 'MEDIUM' ? 'PENDING' : 'ACTIVE'}>{e.severity}</StatusBadge>
                         </div>
-                        <p className="font-mono text-xs mt-2">{e.reference ?? '—'}</p>
-                        <p className="text-sm mt-1">{e.description}</p>
+                        <p className="font-mono text-xs mt-2 break-all">{e.reference ?? '—'}</p>
+                        <p className="text-sm mt-1 break-words">{e.description}</p>
                         <p className="text-[11px] text-muted-foreground mt-1">{fmtDate(e.createdAt)}</p>
                       </div>
                     </StaggerItem>
@@ -280,26 +362,26 @@ export default function ReconciliationPage() {
       </FadeIn>
 
       <Dialog open={runOpen} onOpenChange={setRunOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-[95vw] sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Run Reconciliation</DialogTitle>
             <DialogDescription>Select a period to reconcile expected vs captured vs allocated payments.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label htmlFor="from">From</Label>
-                <Input id="from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+                <Input id="from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-11 mt-1.5" />
               </div>
               <div>
                 <Label htmlFor="to">To</Label>
-                <Input id="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+                <Input id="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-11 mt-1.5" />
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRunOpen(false)}>Cancel</Button>
-            <Button onClick={() => runMutation.mutate({ from, to })} disabled={runMutation.isPending || !from || !to}>
+            <Button variant="outline" className="h-11" onClick={() => setRunOpen(false)}>Cancel</Button>
+            <Button className="h-11" onClick={submitRun} disabled={runMutation.isPending || !from || !to}>
               {runMutation.isPending ? 'Running…' : 'Run Reconciliation'}
             </Button>
           </DialogFooter>

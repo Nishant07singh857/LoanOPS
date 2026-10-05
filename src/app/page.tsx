@@ -5,13 +5,14 @@ import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import {
   Building2, Headphones, User, ShieldCheck, ArrowRight,
-  Zap, Lock, Smartphone, BarChart3, Bot, MessageSquare,
-  CheckCircle2, Wallet, FileText, Bell
+  Zap, Smartphone, BarChart3, Bot, MessageSquare,
+  CheckCircle2, Wallet
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { SessionProvider, useSession, type Role } from '@/lib/session'
-import { Toaster } from '@/components/ui/sonner'
+import { LegalFooter } from '@/components/legal/legal-footer'
+import { CookieBanner } from '@/components/legal/cookie-banner'
 
 const PORTALS: Array<{
   role: Role
@@ -22,36 +23,40 @@ const PORTALS: Array<{
   features: string[]
   gradient: string
   iconBg: string
+  buttonVariant: 'default' | 'luxury' | 'gold'
 }> = [
   {
     role: 'OWNER',
     title: 'Owner Portal',
-    tagline: 'Complete business control',
+    tagline: 'Executive Business Control',
     description: 'Origination, approval, disbursement, loans, finance, reconciliation, analytics & audit.',
-    icon: <Building2 className="h-7 w-7" />,
+    icon: <Building2 className="h-7 w-7 text-primary-foreground" />,
     features: ['Portfolio KPIs', 'Loan origination', 'Reconciliation', 'AI insights', 'Audit trail', 'Reports'],
-    gradient: 'from-primary/10 via-primary/5 to-transparent',
-    iconBg: 'bg-primary/10 text-primary',
+    gradient: 'from-purple-950/20 via-purple-900/10 to-transparent border-purple-500/30',
+    iconBg: 'bg-gradient-fintech shadow-glow border border-amber-300/20',
+    buttonVariant: 'default',
   },
   {
     role: 'AGENT',
     title: 'Agent Portal',
-    tagline: 'Field collections & follow-ups',
+    tagline: 'Field Collections & Follow-ups',
     description: 'Tasks, candidates, follow-ups, PTP, WhatsApp, cash collection & escalations.',
-    icon: <Headphones className="h-7 w-7" />,
+    icon: <Headphones className="h-7 w-7 text-purple-200" />,
     features: ['Today\'s tasks', 'Cash collection', 'WhatsApp follow-up', 'PTP tracking', 'Escalations', 'Notes'],
-    gradient: 'from-info/10 via-info/5 to-transparent',
-    iconBg: 'bg-info/10 text-info',
+    gradient: 'from-indigo-950/20 via-purple-950/10 to-transparent border-indigo-500/30',
+    iconBg: 'bg-gradient-to-br from-purple-900 via-indigo-900 to-purple-800 shadow-glow border border-purple-400/20',
+    buttonVariant: 'luxury',
   },
   {
     role: 'CANDIDATE',
     title: 'Candidate Portal',
-    tagline: 'Simple & trustworthy',
+    tagline: 'Private Client Experience',
     description: 'Application, KYC, agreement, loan, schedule, payments, receipts & support.',
-    icon: <User className="h-7 w-7" />,
+    icon: <User className="h-7 w-7 text-slate-950" />,
     features: ['Onboarding via QR/link', 'KYC & agreement', 'Loan dashboard', 'Schedule & payments', 'Receipts', 'Support'],
-    gradient: 'from-success/10 via-success/5 to-transparent',
-    iconBg: 'bg-success/10 text-success',
+    gradient: 'from-amber-500/15 via-purple-950/10 to-transparent border-amber-500/30',
+    iconBg: 'bg-gradient-gold shadow-gold border border-amber-300/40',
+    buttonVariant: 'gold',
   },
 ]
 
@@ -93,25 +98,29 @@ function LandingInner() {
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-background via-background to-muted/40">
       {/* Header */}
       <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-border/60">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-xl bg-gradient-fintech flex items-center justify-center text-primary-foreground shadow-glow">
-              <Wallet className="h-5 w-5" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 sm:py-0 sm:h-16 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="h-9 w-9 rounded-xl bg-gradient-fintech flex items-center justify-center text-primary-foreground shadow-glow">
+                <Wallet className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="font-bold tracking-tight leading-none text-base">LoanOps</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Premium Loan Operations</p>
+              </div>
             </div>
-            <div>
-              <p className="font-bold tracking-tight leading-none text-base">LoanOps</p>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Premium Loan Operations</p>
-            </div>
+            <span className="sm:hidden text-[11px] font-medium text-muted-foreground">Demo accounts</span>
           </div>
-          <div className="hidden sm:flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Demo accounts</span>
-            <Button variant="ghost" size="sm" onClick={() => enter('OWNER')}>Owner</Button>
-            <Button variant="ghost" size="sm" onClick={() => enter('AGENT')}>Agent</Button>
-            <Button variant="ghost" size="sm" onClick={() => enter('CANDIDATE')}>Candidate</Button>
-          </div>
+          <nav aria-label="Demo portals" className="flex items-center justify-between sm:justify-end gap-1.5 sm:gap-2 border-t border-border/40 pt-2 sm:border-t-0 sm:pt-0">
+            <span className="hidden sm:inline text-xs text-muted-foreground">Demo accounts</span>
+            <Button variant="ghost" size="sm" className="flex-1 sm:flex-initial h-9 text-xs sm:text-sm px-2.5 sm:px-3" aria-label="Enter Owner portal" onClick={() => enter('OWNER')}>Owner</Button>
+            <Button variant="ghost" size="sm" className="flex-1 sm:flex-initial h-9 text-xs sm:text-sm px-2.5 sm:px-3" aria-label="Enter Agent portal" onClick={() => enter('AGENT')}>Agent</Button>
+            <Button variant="ghost" size="sm" className="flex-1 sm:flex-initial h-9 text-xs sm:text-sm px-2.5 sm:px-3" aria-label="Enter Candidate portal" onClick={() => enter('CANDIDATE')}>Candidate</Button>
+          </nav>
         </div>
       </header>
 
+      <main className="flex-1 flex flex-col">
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-info/10 pointer-events-none" />
@@ -137,10 +146,10 @@ function LandingInner() {
               unified across owner, agent & candidate.
             </p>
             <div className="mt-7 flex flex-col sm:flex-row items-center justify-center gap-3">
-              <Button size="lg" onClick={() => enter('OWNER')} className="w-full sm:w-auto h-12 text-base rounded-xl">
+              <Button size="lg" aria-label="Enter Owner Portal" onClick={() => enter('OWNER')} className="w-full sm:w-auto h-12 text-base rounded-xl shadow-glow">
                 Enter Owner Portal <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
-              <Button size="lg" variant="outline" onClick={() => enter('CANDIDATE')} className="w-full sm:w-auto h-12 text-base rounded-xl">
+              <Button size="lg" variant="gold" aria-label="Try Candidate Portal" onClick={() => enter('CANDIDATE')} className="w-full sm:w-auto h-12 text-base rounded-xl shadow-gold">
                 Try Candidate Portal
               </Button>
             </div>
@@ -157,9 +166,12 @@ function LandingInner() {
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.1 + idx * 0.08, ease: 'easeOut' }}
-              whileHover={{ y: -4 }}
-              className="cursor-pointer"
+              className="group cursor-pointer transition-transform duration-200 sm:hover:-translate-y-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-2xl"
+              role="button"
+              tabIndex={0}
+              aria-label={`Open ${p.title}`}
               onClick={() => enter(p.role)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); enter(p.role) } }}
             >
               <Card className={`relative overflow-hidden rounded-2xl border bg-gradient-to-br ${p.gradient} h-full transition-shadow hover:shadow-glow`}>
                 <CardContent className="p-6">
@@ -181,7 +193,7 @@ function LandingInner() {
                       </span>
                     ))}
                   </div>
-                  <Button className="w-full mt-6 h-11 rounded-xl" onClick={(e) => { e.stopPropagation(); enter(p.role) }}>
+                  <Button variant={p.buttonVariant} className="w-full mt-6 h-11 rounded-xl" onClick={(e) => { e.stopPropagation(); enter(p.role) }}>
                     Open {p.title} <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </CardContent>
@@ -197,7 +209,7 @@ function LandingInner() {
           <h2 className="text-2xl sm:text-3xl font-bold">Built for production lending</h2>
           <p className="text-muted-foreground mt-2 max-w-2xl mx-auto">Everything you need to run a modern lending operation, with safety by default.</p>
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
           {FEATURES.map((f, i) => (
             <motion.div
               key={f.title}
@@ -245,20 +257,11 @@ function LandingInner() {
           </div>
         </div>
       </section>
+      </main>
 
-      {/* Footer */}
-      <footer className="mt-auto border-t border-border/60 bg-card/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Lock className="h-4 w-4" />
-            <span>All money calculations backend-only · BigInt paise · Audit by default</span>
-          </div>
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5"><FileText className="h-3.5 w-3.5" /> v3.1</span>
-            <span className="inline-flex items-center gap-1.5"><Bell className="h-3.5 w-3.5" /> Notifications enabled</span>
-          </div>
-        </div>
-      </footer>
+      {/* Footer & Legal Compliance */}
+      <LegalFooter />
+      <CookieBanner />
     </div>
   )
 }

@@ -2,24 +2,36 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Wallet, CreditCard, CalendarClock, FileText, MessageCircle,
   Bell, ShieldCheck, Landmark, CheckCircle2, Clock, ChevronRight,
   ArrowRight, Sparkles, Sun, IndianRupee, Lock, LifeBuoy,
+  Upload, AlertCircle, Eye, EyeOff, Loader2, IdCard, Building2,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
-import { formatPaiseToINR } from '@/lib/money'
+import { formatPaiseToINR, formatBpsToPercent } from '@/lib/money'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
 import { useSession } from '@/lib/session'
-import { cn } from '@/lib/utils'
+import {
+  cn,
+  maskAadhaar,
+  maskPan,
+  maskBankAccount,
+  AADHAAR_REGEX,
+  PAN_REGEX,
+  IFSC_REGEX,
+  BANK_ACCOUNT_REGEX,
+} from '@/lib/utils'
 
 const AGENT_PHONE = '+91 98201 44556'
 const OWNER_PHONE = '+91 98200 11223'
@@ -52,6 +64,9 @@ interface CandidateLoan {
     dueDate: string
     totalDue: string
   } | null
+  draftApplication?: any
+  hasKyc?: boolean
+  agreement?: any
 }
 
 interface NotificationRow {
@@ -86,7 +101,7 @@ export default function CandidateHomePage() {
 
   const { data: notifData } = useQuery({
     queryKey: ['candidate-notifications'],
-    queryFn: () => api.get<{ items: NotificationRow[]; total: number; unreadCount: number }>('/api/notifications?pageSize=10'),
+    queryFn: () => api.get<{ items: NotificationRow[]; total: number; unreadCount: number }>('/api/candidate/notifications?pageSize=10'),
   })
   const notifications = notifData?.items ?? []
 
@@ -136,8 +151,10 @@ export default function CandidateHomePage() {
                     Hello, {firstName} <span className="inline-block">👋</span>
                   </h1>
                   <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                    {loan ? (
+                    {loan?.loanNumber ? (
                       <>Your loan is <span className="font-semibold text-success">on track</span>. {paidCount} of {installmentsTotal} installments paid.</>
+                    ) : loan?.draftApplication ? (
+                      <>Complete your loan application below to unlock instant disbursement.</>
                     ) : (
                       <>Welcome! No active loan yet — check back after your application is approved.</>
                     )}
@@ -149,7 +166,7 @@ export default function CandidateHomePage() {
                   <Link href="/portal/loan"><Wallet className="h-4 w-4" /> My Loan</Link>
                 </Button>
                 <Button asChild size="sm">
-                  <Link href="/portal/payments"><CreditCard className="h-4 w-4" /> Pay Now</Link>
+                  <Link href="/portal/payments"><CreditCard className="h-4 w-4" /> Cash Payments</Link>
                 </Button>
               </div>
             </div>
@@ -161,6 +178,58 @@ export default function CandidateHomePage() {
         <Card className="shadow-premium"><CardContent className="p-4 space-y-3">
           {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
         </CardContent></Card>
+      ) : !loan?.loanNumber && loan?.draftApplication ? (
+        loan.draftApplication.status === 'DRAFT' || loan.draftApplication.status === 'INFORMATION_REQUESTED' ? (
+          <DraftApplicationFlow
+            draftApplication={loan.draftApplication}
+            hasKyc={Boolean(loan.hasKyc)}
+            agreement={loan.agreement}
+            candidateName={candidateName}
+          />
+        ) : (
+          <FadeIn>
+            <Card className="shadow-premium border-blue-400 bg-blue-500/5">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2 text-blue-700 dark:text-blue-300">
+                  <FileText className="h-5 w-5" /> Application {loan.draftApplication.status.replace(/_/g, ' ')}
+                </CardTitle>
+                <CardDescription>Your application is currently being processed by the lending team. You will be notified once a decision is made.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 rounded-xl bg-background border border-border">
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase">Principal</p>
+                    <p className="font-bold tabular-nums">{formatPaiseToINR(Number(loan.draftApplication.principalAmount))}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase">Installments</p>
+                    <p className="font-bold">{loan.draftApplication.installments} ({loan.draftApplication.frequency.toLowerCase()})</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase">Installment (EMI)</p>
+                    <p className="font-bold tabular-nums">
+                      {formatPaiseToINR(
+                        Number(
+                          loan.draftApplication.installmentAmount ||
+                            Math.round(
+                              Number(loan.draftApplication.totalRepayable || loan.draftApplication.principalAmount) /
+                                Math.max(1, Number(loan.draftApplication.installments || 1))
+                            )
+                        )
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase">Total Repayable</p>
+                    <p className="font-bold tabular-nums">
+                      {formatPaiseToINR(Number(loan.draftApplication.totalRepayable || loan.draftApplication.principalAmount))}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </FadeIn>
+        )
       ) : loan && loan.loanNumber ? (
         <>
           {/* Active loan card + next due */}
@@ -186,7 +255,7 @@ export default function CandidateHomePage() {
                     <div className="rounded-xl bg-muted/40 p-3">
                       <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Outstanding</p>
                       <p className="text-base sm:text-lg font-bold mt-1 tabular-nums">
-                        {formatPaiseToINR(Number(loan.outstandingPrincipal) + Number(loan.outstandingInterest))}
+                        {formatPaiseToINR(Number(loan.outstandingPrincipal) + Number(loan.outstandingInterest) + Number(loan.outstandingFees || 0))}
                       </p>
                     </div>
                     <div className="rounded-xl bg-muted/40 p-3">
@@ -240,7 +309,7 @@ export default function CandidateHomePage() {
                     </p>
                   </div>
                   <Button asChild className="w-full" size="sm">
-                    <Link href="/portal/payments"><CreditCard className="h-4 w-4" /> Pay Now</Link>
+                    <Link href="/portal/payments"><CreditCard className="h-4 w-4" /> Cash Payments</Link>
                   </Button>
                 </CardContent>
               </Card>
@@ -264,7 +333,7 @@ export default function CandidateHomePage() {
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {[
-                    { label: 'Pay Now', icon: <CreditCard className="h-5 w-5" />, tint: 'bg-success/15 text-success', href: '/portal/payments' },
+                    { label: 'Cash Payments', icon: <CreditCard className="h-5 w-5" />, tint: 'bg-success/15 text-success', href: '/portal/payments' },
                     { label: 'View Schedule', icon: <CalendarClock className="h-5 w-5" />, tint: 'bg-primary/10 text-primary', href: '/portal/schedule' },
                     { label: 'Download Receipt', icon: <FileText className="h-5 w-5" />, tint: 'bg-info/15 text-info', href: '/portal/receipts' },
                     { label: 'WhatsApp Support', icon: <MessageCircle className="h-5 w-5" />, tint: 'bg-warning/15 text-warning', onClick: onWhatsAppAgent },
@@ -412,3 +481,556 @@ export default function CandidateHomePage() {
     </div>
   )
 }
+
+function DraftApplicationFlow({
+  draftApplication,
+  hasKyc,
+  agreement,
+  candidateName,
+}: {
+  draftApplication: any
+  hasKyc: boolean
+  agreement?: any
+  candidateName: string
+}) {
+  const queryClient = useQueryClient()
+  const [step, setStep] = React.useState<1 | 2 | 3>(1)
+
+  // KYC & Bank inputs
+  const [aadhaarNumber, setAadhaarNumber] = React.useState('')
+  const [panNumber, setPanNumber] = React.useState('')
+  const [showSensitive, setShowSensitive] = React.useState(false)
+  const [aadhaarBase64, setAadhaarBase64] = React.useState<string>('')
+  const [aadhaarFileName, setAadhaarFileName] = React.useState<string>('')
+  const [panBase64, setPanBase64] = React.useState<string>('')
+  const [panFileName, setPanFileName] = React.useState<string>('')
+  const [bankName, setBankName] = React.useState('')
+  const [bankAccount, setBankAccount] = React.useState('')
+  const [bankIfsc, setBankIfsc] = React.useState('')
+  const [upiId, setUpiId] = React.useState('')
+
+  // Agreement
+  const [agreementAccepted, setAgreementAccepted] = React.useState(false)
+  const [errors, setErrors] = React.useState<Record<string, string>>({})
+
+  const principalPaise = Number(draftApplication.principalAmount || 0)
+  const totalRepayablePaise = Number(draftApplication.totalRepayable || principalPaise)
+  const installmentsCount = Math.max(1, Number(draftApplication.installments || 1))
+  const installmentPaise = Number(
+    draftApplication.installmentAmount || Math.round(totalRepayablePaise / installmentsCount)
+  )
+  const processingFeePaise = Number(draftApplication.processingFee || 0)
+  const otherFeesPaise = Number(draftApplication.otherFees || 0)
+  const totalInterestPaise = Math.max(
+    0,
+    totalRepayablePaise - principalPaise - processingFeePaise - otherFeesPaise
+  )
+
+  const handleFileChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setter: (b64: string) => void,
+    nameSetter: (name: string) => void,
+    fieldKey: string
+  ) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) {
+      setErrors((prev) => ({ ...prev, [fieldKey]: 'File size must be under 5 MB' }))
+      toast.error('File too large', { description: 'Please choose a file smaller than 5 MB.' })
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setter(reader.result)
+        nameSetter(file.name)
+        setErrors((prev) => {
+          const next = { ...prev }
+          delete next[fieldKey]
+          return next
+        })
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const validateStep2 = () => {
+    const nextErrors: Record<string, string> = {}
+    const cleanAadhaar = aadhaarNumber.replace(/[\s-]/g, '')
+    const cleanPan = panNumber.trim().toUpperCase()
+    const cleanAccount = bankAccount.trim().replace(/\s+/g, '')
+    const cleanIfsc = bankIfsc.trim().toUpperCase()
+
+    if (!hasKyc) {
+      if (cleanAadhaar && !AADHAAR_REGEX.test(cleanAadhaar)) {
+        nextErrors.aadhaarNumber = 'Enter a valid 12-digit Aadhaar number (digits only).'
+      }
+      if (cleanPan && !PAN_REGEX.test(cleanPan)) {
+        nextErrors.panNumber = 'Enter a valid 10-character PAN (e.g., ABCDE1234F).'
+      }
+      if (!aadhaarBase64 && !cleanAadhaar) {
+        nextErrors.aadhaarDoc = 'Please upload your Aadhaar document or enter your 12-digit Aadhaar number.'
+      }
+      if (!panBase64 && !cleanPan) {
+        nextErrors.panDoc = 'Please upload your PAN document or enter your 10-character PAN.'
+      }
+    } else {
+      if (cleanAadhaar && !AADHAAR_REGEX.test(cleanAadhaar)) {
+        nextErrors.aadhaarNumber = 'Enter a valid 12-digit Aadhaar number.'
+      }
+      if (cleanPan && !PAN_REGEX.test(cleanPan)) {
+        nextErrors.panNumber = 'Enter a valid 10-character PAN (e.g., ABCDE1234F).'
+      }
+    }
+
+    if (cleanAccount && !BANK_ACCOUNT_REGEX.test(cleanAccount)) {
+      nextErrors.bankAccount = 'Bank account number must be 8–20 alphanumeric characters.'
+    }
+    if (cleanIfsc && !IFSC_REGEX.test(cleanIfsc)) {
+      nextErrors.bankIfsc = 'IFSC must be 11 characters (e.g., HDFC0001234).'
+    }
+
+    setErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
+  }
+
+  const submitMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ message: string; applicationNumber: string }>('/api/candidate/application/submit', {
+        ...(aadhaarBase64 ? { aadhaarBase64 } : {}),
+        ...(panBase64 ? { panBase64 } : {}),
+        ...(aadhaarNumber.trim() ? { aadhaarNumber: aadhaarNumber.replace(/[\s-]/g, '') } : {}),
+        ...(panNumber.trim() ? { panNumber: panNumber.trim().toUpperCase() } : {}),
+        ...(bankName.trim() ? { bankName: bankName.trim() } : {}),
+        ...(bankAccount.trim() ? { bankAccount: bankAccount.trim().replace(/\s+/g, '') } : {}),
+        ...(bankIfsc.trim() ? { bankIfsc: bankIfsc.trim().toUpperCase() } : {}),
+        ...(upiId.trim() ? { upiId: upiId.trim() } : {}),
+        agreementAccepted,
+      }),
+    onSuccess: (res) => {
+      toast.success('Application submitted!', {
+        description: `Application ${res.applicationNumber} has been sent for approval.`,
+      })
+      queryClient.invalidateQueries({ queryKey: ['candidate-loan'] })
+      queryClient.invalidateQueries({ queryKey: ['candidate-profile'] })
+    },
+    onError: (e: Error) => {
+      toast.error('Submission failed', { description: e.message })
+    },
+  })
+
+  const handleFinalSubmit = () => {
+    if (!agreementAccepted) {
+      setErrors((prev) => ({
+        ...prev,
+        agreement: 'You must read and accept the Loan Agreement before submitting.',
+      }))
+      return
+    }
+    setErrors({})
+    submitMutation.mutate()
+  }
+
+  const stepProgress = step === 1 ? 33 : step === 2 ? 66 : 100
+
+  return (
+    <FadeIn>
+      <Card className="shadow-premium border-amber-400/50 bg-gradient-to-br from-amber-500/5 via-card to-card">
+        <CardHeader className="space-y-3">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2 text-amber-700 dark:text-amber-300">
+                <FileText className="h-5 w-5" /> Complete Your Loan Application
+              </CardTitle>
+              <CardDescription className="mt-0.5">
+                Application <span className="font-mono font-medium">{draftApplication.applicationNumber}</span> · Follow the 3 quick steps below to submit for instant review.
+              </CardDescription>
+            </div>
+            <StatusBadge variant="PENDING">Step {step} of 3</StatusBadge>
+          </div>
+
+          <div className="space-y-2">
+            <Progress value={stepProgress} className="h-2" aria-label={`Application progress step ${step} of 3`} />
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              {[
+                { num: 1, label: '1. Loan & EMI Breakdown' },
+                { num: 2, label: '2. KYC & Bank Details' },
+                { num: 3, label: '3. Agreement & Submit' },
+              ].map((s) => (
+                <button
+                  key={s.num}
+                  type="button"
+                  onClick={() => {
+                    if (s.num < step) setStep(s.num as 1 | 2 | 3)
+                    else if (s.num === 2 && step === 1) setStep(2)
+                    else if (s.num === 3 && step === 2 && validateStep2()) setStep(3)
+                  }}
+                  className={cn(
+                    'text-left font-medium py-1 px-2 rounded-lg transition-colors truncate',
+                    step === s.num
+                      ? 'bg-primary/10 text-primary font-semibold'
+                      : step > s.num
+                        ? 'text-success hover:bg-success/10'
+                        : 'text-muted-foreground'
+                  )}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-6">
+          {step === 1 && (
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 p-4 rounded-xl bg-background border border-border">
+                <div>
+                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Principal Amount</p>
+                  <p className="text-base sm:text-lg font-bold tabular-nums mt-0.5">{formatPaiseToINR(principalPaise)}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Installment (EMI)</p>
+                  <p className="text-base sm:text-lg font-bold text-primary tabular-nums mt-0.5">{formatPaiseToINR(installmentPaise)}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Tenure & Frequency</p>
+                  <p className="text-base sm:text-lg font-bold mt-0.5">
+                    {installmentsCount} × {String(draftApplication.frequency || 'MONTHLY').toLowerCase()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Total Repayable</p>
+                  <p className="text-base sm:text-lg font-bold tabular-nums mt-0.5">{formatPaiseToINR(totalRepayablePaise)}</p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border bg-muted/20 p-4 space-y-2.5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Transparent EMI & Cost Breakdown</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Loan Principal</span>
+                    <span className="font-medium tabular-nums">{formatPaiseToINR(principalPaise)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Interest Type</span>
+                    <span className="font-medium">
+                      {draftApplication.interestType === 'PERCENTAGE'
+                        ? `Percentage (${draftApplication.interestRate ? formatBpsToPercent(Number(draftApplication.interestRate)) : 'Flat'})`
+                        : draftApplication.interestType === 'FIXED'
+                          ? 'Fixed Interest'
+                          : 'Zero Interest (0%)'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Total Interest</span>
+                    <span className="font-medium tabular-nums">{formatPaiseToINR(totalInterestPaise)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Processing & Other Fees</span>
+                    <span className="font-medium tabular-nums">{formatPaiseToINR(processingFeePaise + otherFeesPaise)}</span>
+                  </div>
+                  <div className="flex items-center justify-between sm:col-span-2 pt-2 border-t border-border font-semibold">
+                    <span>Total Amount Payable ({installmentsCount} installments of {formatPaiseToINR(installmentPaise)})</span>
+                    <span className="tabular-nums">{formatPaiseToINR(totalRepayablePaise)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button onClick={() => setStep(2)} className="min-h-[44px]">
+                  Continue to KYC & Bank Details <ArrowRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="space-y-5">
+              {hasKyc && (
+                <div className="rounded-xl border border-success/30 bg-success/10 p-3.5 flex items-start gap-2.5">
+                  <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
+                  <div className="text-xs">
+                    <p className="font-semibold text-success">KYC Documents on File</p>
+                    <p className="text-muted-foreground mt-0.5">
+                      Your Aadhaar and PAN documents are already uploaded. You may proceed directly to Step 3 or update your details below.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <IdCard className="h-4 w-4" /> Identity Verification (KYC)
+                </p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowSensitive((v) => !v)}
+                  className="h-8 text-xs"
+                >
+                  {showSensitive ? <EyeOff className="h-3.5 w-3.5 mr-1" /> : <Eye className="h-3.5 w-3.5 mr-1" />}
+                  {showSensitive ? 'Mask IDs' : 'Show Full IDs'}
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="kyc-aadhaar">Aadhaar Number (12 digits)</Label>
+                  <Input
+                    id="kyc-aadhaar"
+                    inputMode="numeric"
+                    maxLength={14}
+                    placeholder="e.g. 1234 5678 9012"
+                    value={aadhaarNumber}
+                    onChange={(e) => {
+                      setAadhaarNumber(e.target.value)
+                      if (errors.aadhaarNumber || errors.aadhaarDoc) {
+                        setErrors((prev) => ({ ...prev, aadhaarNumber: '', aadhaarDoc: '' }))
+                      }
+                    }}
+                    aria-invalid={Boolean(errors.aadhaarNumber)}
+                  />
+                  {aadhaarNumber.trim() && (
+                    <p className="text-[11px] text-muted-foreground font-mono">
+                      Stored masked as: <span className="font-semibold text-foreground">{showSensitive ? aadhaarNumber : maskAadhaar(aadhaarNumber)}</span>
+                    </p>
+                  )}
+                  {errors.aadhaarNumber && (
+                    <p className="text-xs text-destructive flex items-center gap-1" role="alert">
+                      <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" /> {errors.aadhaarNumber}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="kyc-pan">PAN Number (10 characters)</Label>
+                  <Input
+                    id="kyc-pan"
+                    maxLength={10}
+                    placeholder="e.g. ABCDE1234F"
+                    value={panNumber}
+                    onChange={(e) => {
+                      setPanNumber(e.target.value.toUpperCase())
+                      if (errors.panNumber || errors.panDoc) {
+                        setErrors((prev) => ({ ...prev, panNumber: '', panDoc: '' }))
+                      }
+                    }}
+                    className="uppercase font-mono"
+                    aria-invalid={Boolean(errors.panNumber)}
+                  />
+                  {panNumber.trim() && (
+                    <p className="text-[11px] text-muted-foreground font-mono">
+                      Stored masked as: <span className="font-semibold text-foreground">{showSensitive ? panNumber : maskPan(panNumber)}</span>
+                    </p>
+                  )}
+                  {errors.panNumber && (
+                    <p className="text-xs text-destructive flex items-center gap-1" role="alert">
+                      <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" /> {errors.panNumber}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Aadhaar Document (Image / PDF)</Label>
+                  <label className="flex items-center justify-between gap-2 rounded-xl border border-dashed border-border bg-background p-3.5 text-xs text-muted-foreground hover:border-primary/40 hover:bg-muted/20 transition-colors cursor-pointer min-h-[48px]">
+                    <span className="inline-flex items-center gap-2 truncate">
+                      <Upload className="h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="truncate">{aadhaarFileName || (hasKyc ? 'Uploaded (click to replace)' : 'Upload Aadhaar front/back')}</span>
+                    </span>
+                    {aadhaarFileName && <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0" />}
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="sr-only"
+                      onChange={(e) => handleFileChange(e, setAadhaarBase64, setAadhaarFileName, 'aadhaarDoc')}
+                    />
+                  </label>
+                  {errors.aadhaarDoc && (
+                    <p className="text-xs text-destructive flex items-center gap-1" role="alert">
+                      <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" /> {errors.aadhaarDoc}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>PAN Card Document (Image / PDF)</Label>
+                  <label className="flex items-center justify-between gap-2 rounded-xl border border-dashed border-border bg-background p-3.5 text-xs text-muted-foreground hover:border-primary/40 hover:bg-muted/20 transition-colors cursor-pointer min-h-[48px]">
+                    <span className="inline-flex items-center gap-2 truncate">
+                      <Upload className="h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="truncate">{panFileName || (hasKyc ? 'Uploaded (click to replace)' : 'Upload PAN card')}</span>
+                    </span>
+                    {panFileName && <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0" />}
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="sr-only"
+                      onChange={(e) => handleFileChange(e, setPanBase64, setPanFileName, 'panDoc')}
+                    />
+                  </label>
+                  {errors.panDoc && (
+                    <p className="text-xs text-destructive flex items-center gap-1" role="alert">
+                      <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" /> {errors.panDoc}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-border space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Building2 className="h-4 w-4" /> Disbursement Bank Details (Optional if already provided)
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="bank-name">Bank Name</Label>
+                    <Input
+                      id="bank-name"
+                      placeholder="e.g. HDFC Bank"
+                      value={bankName}
+                      onChange={(e) => setBankName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="bank-account">Account Number</Label>
+                    <Input
+                      id="bank-account"
+                      placeholder="e.g. 50100234567890"
+                      value={bankAccount}
+                      onChange={(e) => {
+                        setBankAccount(e.target.value)
+                        if (errors.bankAccount) setErrors((prev) => ({ ...prev, bankAccount: '' }))
+                      }}
+                      className="font-mono"
+                    />
+                    {bankAccount.trim() && (
+                      <p className="text-[11px] text-muted-foreground font-mono">
+                        Display preview: {showSensitive ? bankAccount : maskBankAccount(bankAccount)}
+                      </p>
+                    )}
+                    {errors.bankAccount && (
+                      <p className="text-xs text-destructive flex items-center gap-1" role="alert">
+                        <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" /> {errors.bankAccount}
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="bank-ifsc">IFSC Code</Label>
+                    <Input
+                      id="bank-ifsc"
+                      placeholder="e.g. HDFC0001234"
+                      maxLength={11}
+                      value={bankIfsc}
+                      onChange={(e) => {
+                        setBankIfsc(e.target.value.toUpperCase())
+                        if (errors.bankIfsc) setErrors((prev) => ({ ...prev, bankIfsc: '' }))
+                      }}
+                      className="uppercase font-mono"
+                    />
+                    {errors.bankIfsc && (
+                      <p className="text-xs text-destructive flex items-center gap-1" role="alert">
+                        <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" /> {errors.bankIfsc}
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="bank-upi">UPI ID</Label>
+                    <Input
+                      id="bank-upi"
+                      placeholder="e.g. name@okhdfcbank"
+                      value={upiId}
+                      onChange={(e) => setUpiId(e.target.value)}
+                      className="font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <Button type="button" variant="outline" onClick={() => setStep(1)} className="min-h-[44px]">
+                  Back
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    if (validateStep2()) setStep(3)
+                  }}
+                  className="min-h-[44px]"
+                >
+                  Continue to Agreement <ArrowRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-5">
+              <div className="rounded-xl border border-border bg-background p-4 space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p className="text-sm font-semibold flex items-center gap-1.5">
+                    <ShieldCheck className="h-4 w-4 text-success" />
+                    {agreement?.name ?? 'Standard Personal Loan Agreement'}
+                  </p>
+                  <span className="text-xs text-muted-foreground font-mono">
+                    Version {agreement?.version ?? '3.1'}
+                  </span>
+                </div>
+                <div className="max-h-48 overflow-y-auto rounded-lg border border-border/60 bg-muted/20 p-3 text-xs font-mono whitespace-pre-wrap leading-relaxed">
+                  {agreement?.body ??
+                    `LOAN AGREEMENT — STERLING LENDING\n\nBorrower: ${candidateName}\nApplication No: ${draftApplication.applicationNumber}\nPrincipal Amount: ${formatPaiseToINR(principalPaise)}\nInstallment Amount (EMI): ${formatPaiseToINR(installmentPaise)} (${installmentsCount} ${String(draftApplication.frequency || 'MONTHLY').toLowerCase()} installments)\nTotal Repayable: ${formatPaiseToINR(totalRepayablePaise)}\n\n1. REPAYMENT OBLIGATION: The Borrower agrees to repay the Principal Amount along with applicable interest and fees according to the repayment schedule.\n2. KYC & PRIVACY: All Aadhaar, PAN, and Bank details are encrypted and masked in accordance with RBI Digital Lending Guidelines.\n3. PREPAYMENT: The Borrower may prepay the loan in part or in full at any time.`}
+                </div>
+              </div>
+
+              <label className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 cursor-pointer hover:border-primary/40 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={agreementAccepted}
+                  onChange={(e) => {
+                    setAgreementAccepted(e.target.checked)
+                    if (errors.agreement) setErrors((prev) => ({ ...prev, agreement: '' }))
+                  }}
+                  className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                />
+                <span className="text-xs sm:text-sm leading-relaxed">
+                  I, <span className="font-semibold">{candidateName}</span>, confirm that my KYC details are accurate and I digitally accept the{' '}
+                  <span className="font-semibold">Loan Agreement</span> for{' '}
+                  <span className="font-semibold">{formatPaiseToINR(principalPaise)}</span> (Total Repayable:{' '}
+                  <span className="font-semibold">{formatPaiseToINR(totalRepayablePaise)}</span>).
+                </span>
+              </label>
+
+              {errors.agreement && (
+                <p className="text-xs text-destructive flex items-center gap-1.5" role="alert">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" /> {errors.agreement}
+                </p>
+              )}
+
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <Button type="button" variant="outline" onClick={() => setStep(2)} className="min-h-[44px]">
+                  Back to KYC
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleFinalSubmit}
+                  disabled={submitMutation.isPending}
+                  className="min-h-[44px]"
+                >
+                  {submitMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Submitting Application…
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-4 w-4" /> Submit Application
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </FadeIn>
+  )
+}
+

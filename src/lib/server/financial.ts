@@ -38,18 +38,22 @@ export interface ScheduleResult {
 }
 
 const BPS_BASE = BigInt(10_000)
-const HUNDRED = BigInt(100)
 
-// Compute interest per installment (flat method — common for short-term lending)
-function computeInterestPerInstallment(input: ScheduleInput): bigint {
-  const { interestType, interestRateBps, fixedInterestPaise, principalPaise, installments } = input
+// Compute total target interest (flat method — common for short-term lending)
+function computeTargetTotalInterest(input: ScheduleInput): bigint {
+  const { interestType, interestRateBps, fixedInterestPaise, principalPaise } = input
   if (interestType === 'NONE') return BigInt(0)
   if (interestType === 'FIXED') {
-    return safeDiv(fixedInterestPaise, BigInt(Math.max(1, installments)))
+    return fixedInterestPaise > BigInt(0) ? fixedInterestPaise : BigInt(0)
   }
-  // Percentage - flat per installment on principal
-  const totalInterest = safeDiv(principalPaise * interestRateBps, BPS_BASE)
-  return safeDiv(totalInterest, BigInt(Math.max(1, installments)))
+  // Percentage - flat on principal
+  return safeDiv(principalPaise * interestRateBps, BPS_BASE)
+}
+
+// Compute interest per installment (flat method)
+function computeInterestPerInstallment(input: ScheduleInput): bigint {
+  const totalInterest = computeTargetTotalInterest(input)
+  return safeDiv(totalInterest, BigInt(Math.max(1, input.installments)))
 }
 
 // Compute fees per installment
@@ -65,6 +69,8 @@ function computeFeesPerInstallment(input: ScheduleInput): bigint {
 export function generateSchedule(input: ScheduleInput): ScheduleResult {
   const principal = input.principalPaise
   const n = Math.max(1, input.installments)
+  const targetInterest = computeTargetTotalInterest(input)
+  const targetFees = input.processingFeePaise + input.otherFeesPaise
   const interestPer = computeInterestPerInstallment(input)
   const feesPer = computeFeesPerInstallment(input)
 
@@ -87,9 +93,11 @@ export function generateSchedule(input: ScheduleInput): ScheduleResult {
     const isLast = i === n - 1
     const principalComponent = isLast ? (principal - principalPer * BigInt(n - 1)) : principalPer
     const interestComponent = isLast
-      ? (interestPer * BigInt(n)) - (interestPer * BigInt(n - 1))
+      ? (targetInterest - interestPer * BigInt(n - 1))
       : interestPer
-    const feesComponent = feesPer
+    const feesComponent = isLast
+      ? (targetFees - feesPer * BigInt(n - 1))
+      : feesPer
     const total = principalComponent + interestComponent + feesComponent
     const closing = opening - principalComponent
 
@@ -133,16 +141,16 @@ function addInterval(start: Date, frequency: RepaymentFrequency, n: number): Dat
     case 'WEEKLY':
       d.setDate(d.getDate() + n * 7)
       break
-    case 'MONTHLY':
+    case 'MONTHLY': {
       // Anchor day semantics: if start is 31st, future months use 28/29/30 as applicable
-      // but we don't permanently drift the anchor day. So we set month and re-adjust.
+      // Reset date to 1 before setMonth to avoid JS Date overflow into the following month.
       const anchorDay = d.getDate()
+      d.setDate(1)
       d.setMonth(d.getMonth() + n)
       const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
-      if (anchorDay > daysInMonth) {
-        d.setDate(daysInMonth)
-      }
+      d.setDate(Math.min(anchorDay, daysInMonth))
       break
+    }
   }
   return d
 }
@@ -245,9 +253,11 @@ export function serializePaise(p: bigint): string {
 }
 
 export function parsePaise(s: string | number | null | undefined): bigint {
-  if (s === null || s === undefined) return BigInt(0)
+  if (s === null || s === undefined || s === '') return BigInt(0)
   try {
-    return BigInt(String(s))
+    const n = Number(s)
+    if (!isFinite(n)) return BigInt(0)
+    return BigInt(Math.trunc(n))
   } catch {
     return BigInt(0)
   }

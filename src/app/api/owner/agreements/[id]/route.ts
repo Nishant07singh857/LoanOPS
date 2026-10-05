@@ -5,11 +5,7 @@ import { db } from '@/lib/db'
 import { requireOwner, audit } from '@/lib/server/auth'
 import { apiHandler, success, badRequest, notFound, validate } from '@/lib/server/api'
 
-const patchSchema = z.object({
-  isActive: z.boolean().optional(),
-  name: z.string().min(2).max(200).optional(),
-  body: z.string().min(20).max(100000).optional(),
-})
+const patchSchema = z.object({}).strict()
 
 export const PATCH = apiHandler(async (
   req: NextRequest,

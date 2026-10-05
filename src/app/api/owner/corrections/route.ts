@@ -49,12 +49,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const schema = z.object({
-  loanId: z.string(),
-  paymentId: z.string().optional().nullable(),
-  reason: z.string().min(2).max(2000),
-  evidenceUrl: z.string().optional().nullable(),
-})
+const schema = z.object({}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()

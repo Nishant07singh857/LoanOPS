@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   BookOpen, Download, Search, Info, ArrowDownRight, ArrowUpRight,
-  Banknote, Receipt, Undo2, FilePen,
+  Banknote, Receipt, Undo2, FilePen, AlertTriangle,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -15,6 +15,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
@@ -62,10 +65,15 @@ function fmtDate(d?: string | null) {
 
 export default function LedgerPage() {
   const [search, setSearch] = React.useState('')
+  const [typeFilter, setTypeFilter] = React.useState('all')
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['owner-ledger'],
-    queryFn: () => api.get<{ items: LedgerRow[]; total: number }>('/api/owner/ledger?pageSize=100'),
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['owner-ledger', typeFilter],
+    queryFn: () => {
+      const params = new URLSearchParams({ pageSize: '100' })
+      if (typeFilter !== 'all') params.set('type', typeFilter)
+      return api.get<{ items: LedgerRow[]; total: number }>(`/api/owner/ledger?${params.toString()}`)
+    },
   })
 
   const allEntries = data?.items ?? []
@@ -83,6 +91,35 @@ export default function LedgerPage() {
   })
   const totalDebit = filtered.reduce((s, e) => s + Number(e.amount), 0)
 
+  const handleExportCsv = () => {
+    if (filtered.length === 0) {
+      toast.error('No ledger entries to export')
+      return
+    }
+    const headers = ['Entry Number', 'Type', 'Debit Account', 'Credit Account', 'Amount (INR)', 'Description', 'Reference', 'Date']
+    const rows = filtered.map((e) => [
+      e.entryNumber,
+      e.type,
+      e.debitAccount,
+      e.creditAccount,
+      (Number(e.amount) / 100).toFixed(2),
+      `"${(e.description ?? '').replace(/"/g, '""')}"`,
+      e.reference ?? '',
+      fmtDate(e.createdAt),
+    ])
+    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `ledger-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    toast.success('Exporting ledger...', { description: `${filtered.length} entries exported to CSV.` })
+  }
+
   return (
     <div className="space-y-6">
       <SectionHeading
@@ -90,7 +127,13 @@ export default function LedgerPage() {
         description="Append-only double-entry ledger. All entries are immutable — corrections go through the Corrections workflow."
         icon={<BookOpen className="h-5 w-5" />}
         action={
-          <Button variant="outline" size="sm" onClick={() => toast.success('Exporting ledger...', { description: 'CSV export will download shortly.' })}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-11 px-4"
+            aria-label="Export ledger entries as CSV"
+            onClick={handleExportCsv}
+          >
             <Download className="h-4 w-4" /> Export
           </Button>
         }
@@ -106,7 +149,7 @@ export default function LedgerPage() {
         </div>
       </FadeIn>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
         <FadeIn>
           <Card className="shadow-premium">
             <CardContent className="p-4">
@@ -143,10 +186,34 @@ export default function LedgerPage() {
 
       <FadeIn>
         <Card className="shadow-premium">
-          <CardContent className="p-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search entry #, type, account, reference..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex flex-col sm:flex-row gap-2.5">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  type="search"
+                  aria-label="Search ledger entries by entry number, type, account, or reference"
+                  placeholder="Search entry #, type, account, reference..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9 h-11"
+                />
+              </div>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="w-full sm:w-[200px] h-11" aria-label="Filter by ledger entry type">
+                  <SelectValue placeholder="All entry types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All entry types</SelectItem>
+                  <SelectItem value="DISBURSEMENT">Disbursement</SelectItem>
+                  <SelectItem value="PAYMENT_PRINCIPAL">Payment Principal</SelectItem>
+                  <SelectItem value="PAYMENT_INTEREST">Payment Interest</SelectItem>
+                  <SelectItem value="PAYMENT_FEES">Payment Fees</SelectItem>
+                  <SelectItem value="REFUND">Refund</SelectItem>
+                  <SelectItem value="CORRECTION">Correction</SelectItem>
+                  <SelectItem value="REVERSAL">Reversal</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
@@ -157,12 +224,20 @@ export default function LedgerPage() {
           <CardHeader className="pb-2"><CardTitle className="text-base">Ledger Entries</CardTitle><CardDescription>{filtered.length} entries shown</CardDescription></CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+              <div className="space-y-2" role="status" aria-label="Loading ledger entries">
+                {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+              </div>
+            ) : isError ? (
+              <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-6 text-center space-y-3" role="alert">
+                <AlertTriangle className="h-6 w-6 text-destructive mx-auto" />
+                <p className="text-sm font-medium text-destructive">Failed to load ledger entries</p>
+                <Button variant="outline" size="sm" className="h-11 px-4" onClick={() => refetch()}>Retry</Button>
+              </div>
             ) : filtered.length === 0 ? (
               <EmptyState icon={<BookOpen className="h-6 w-6" />} title="No ledger entries" description="Ledger entries are posted automatically when loans are disbursed or payments are allocated." />
             ) : (
               <>
-                <div className="hidden md:block">
+                <div className="hidden md:block overflow-x-auto w-full">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">
@@ -204,17 +279,17 @@ export default function LedgerPage() {
                   {filtered.map((e) => (
                     <div key={e.id} className="rounded-xl border border-border p-4">
                       <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="font-mono text-xs font-semibold">{e.entryNumber}</p>
+                        <div className="min-w-0">
+                          <p className="font-mono text-xs font-semibold truncate">{e.entryNumber}</p>
                           <span className={cn('inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium mt-1', typeTint[e.type] || 'bg-muted text-muted-foreground')}>{typeIcon[e.type]} {e.type.replace(/_/g, ' ')}</span>
                         </div>
-                        <p className="text-sm font-semibold tabular-nums">{formatPaiseToINR(Number(e.amount))}</p>
+                        <p className="text-sm font-semibold tabular-nums flex-shrink-0">{formatPaiseToINR(Number(e.amount))}</p>
                       </div>
                       <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-border text-xs">
-                        <div><p className="text-muted-foreground">Debit</p><p className="text-destructive font-medium">{e.debitAccount}</p></div>
-                        <div><p className="text-muted-foreground">Credit</p><p className="text-success font-medium">{e.creditAccount}</p></div>
+                        <div className="min-w-0"><p className="text-muted-foreground">Debit</p><p className="text-destructive font-medium truncate">{e.debitAccount}</p></div>
+                        <div className="min-w-0"><p className="text-muted-foreground">Credit</p><p className="text-success font-medium truncate">{e.creditAccount}</p></div>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-2">{e.description ?? '—'}</p>
+                      <p className="text-xs text-muted-foreground mt-2 break-words">{e.description ?? '—'}</p>
                       <p className="text-[11px] text-muted-foreground mt-1">{fmtDate(e.createdAt)} · {e.reference ?? '—'}</p>
                     </div>
                   ))}

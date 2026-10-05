@@ -8,6 +8,8 @@ import {
   apiHandler, success, created, paginate, validate, validateBody,
   paginationSchema, badRequest,
 } from '@/lib/server/api'
+import { encryptPII, decryptPII } from '@/lib/server/crypto'
+import { maskAadhaar, maskPan, maskBankAccount } from '@/lib/utils'
 
 const listSchema = paginationSchema.extend({
   search: z.string().trim().optional().default(''),
@@ -40,8 +42,26 @@ export const GET = apiHandler(async (req: NextRequest) => {
       where,
       skip, take,
       orderBy: { createdAt: 'desc' },
-      include: {
-        assignedAgent: { include: { user: true } },
+      select: {
+        id: true,
+        fullName: true,
+        mobile: true,
+        email: true,
+        dob: true,
+        occupation: true,
+        employer: true,
+        monthlyIncome: true,
+        aadhaarMasked: true,
+        panMasked: true,
+        bankAccount: true,
+        status: true,
+        createdAt: true,
+        assignedAgent: {
+          select: {
+            id: true,
+            user: { select: { name: true } },
+          },
+        },
         _count: { select: { loans: true, applications: true } },
       },
     }),
@@ -58,6 +78,9 @@ export const GET = apiHandler(async (req: NextRequest) => {
       occupation: c.occupation,
       employer: c.employer,
       monthlyIncome: c.monthlyIncome,
+      aadhaarMasked: c.aadhaarMasked ? maskAadhaar(decryptPII(c.aadhaarMasked)) : null,
+      panMasked: c.panMasked ? maskPan(decryptPII(c.panMasked)) : null,
+      bankAccount: c.bankAccount ? maskBankAccount(decryptPII(c.bankAccount)) : null,
       assignedAgent: c.assignedAgent ? {
         id: c.assignedAgent.id,
         name: c.assignedAgent.user.name,
@@ -73,23 +96,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const createSchema = z.object({
-  fullName: z.string().min(2).max(255),
-  mobile: z.string().min(10).max(20),
-  email: z.string().email().optional().nullable(),
-  dob: z.string().optional().nullable(),
-  address: z.string().optional().nullable(),
-  occupation: z.string().optional().nullable(),
-  employer: z.string().optional().nullable(),
-  monthlyIncome: z.number().int().nonnegative().optional().nullable(),
-  bankName: z.string().optional().nullable(),
-  bankAccount: z.string().optional().nullable(),
-  bankIfsc: z.string().optional().nullable(),
-  upiId: z.string().optional().nullable(),
-  aadhaarMasked: z.string().optional().nullable(),
-  panMasked: z.string().optional().nullable(),
-  assignedAgentId: z.string().optional().nullable(),
-})
+const createSchema = z.object({}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()
@@ -129,11 +136,11 @@ export const POST = apiHandler(async (req: NextRequest) => {
       employer: data.employer ?? null,
       monthlyIncome: data.monthlyIncome ?? null,
       bankName: data.bankName ?? null,
-      bankAccount: data.bankAccount ?? null,
+      bankAccount: data.bankAccount ? encryptPII(data.bankAccount) : null,
       bankIfsc: data.bankIfsc ?? null,
       upiId: data.upiId ?? null,
-      aadhaarMasked: data.aadhaarMasked ?? null,
-      panMasked: data.panMasked ?? null,
+      aadhaarMasked: data.aadhaarMasked ? maskAadhaar(decryptPII(data.aadhaarMasked)) : null,
+      panMasked: data.panMasked ? maskPan(decryptPII(data.panMasked)) : null,
       assignedAgentId: data.assignedAgentId ?? null,
       status: 'ACTIVE',
     },

@@ -4,12 +4,11 @@ import * as React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart3, FileText, Landmark, FileCheck, Wallet, AlertTriangle, ClipboardList,
-  UserCog, Scale, ScrollText, Banknote, Filter, Download, Play,
+  Filter, Download, Play, RefreshCw,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -71,15 +70,48 @@ export default function ReportsPage() {
   if (agent !== 'all') params.set('agent', agent)
   if (status !== 'all') params.set('status', status)
 
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: ['owner-report', active, from?.toISOString(), to?.toISOString(), agent, status],
     queryFn: () => api.get<any>(`/api/owner/reports?${params.toString()}`),
     enabled: ['loans', 'applications', 'payments', 'collections', 'ptps'].includes(active),
   })
 
-  const generate = (k: string) => toast.success(`Generating ${k} report...`, { description: 'Your report will be available in Reports → History shortly.' })
-
   const items: any[] = data?.items ?? []
+
+  const generate = (key: string, label: string) => {
+    if (active !== key) {
+      setActive(key)
+    } else {
+      refetch()
+    }
+    toast.success(`Generating ${label}...`, { description: 'Preview updated with latest filtered records.' })
+  }
+
+  const exportCsv = () => {
+    if (items.length === 0) {
+      toast.error('No records to export')
+      return
+    }
+    const headers = Object.keys(items[0])
+    const escapeCell = (val: unknown) => {
+      const str = val == null ? '' : String(val)
+      return `"${str.replace(/"/g, '""')}"`
+    }
+    const csvRows = [
+      headers.map(escapeCell).join(','),
+      ...items.map((row) => headers.map((h) => escapeCell(row[h])).join(',')),
+    ]
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${active}-report-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    toast.success(`Exported ${items.length} records to CSV`)
+  }
 
   return (
     <div className="space-y-6">
@@ -101,7 +133,7 @@ export default function ReportsPage() {
               <div>
                 <Label>Date Range</Label>
                 <Select value={dateRange} onValueChange={setDateRange}>
-                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full h-11 mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="7d">Last 7 days</SelectItem>
                     <SelectItem value="30d">Last 30 days</SelectItem>
@@ -114,7 +146,7 @@ export default function ReportsPage() {
               <div>
                 <Label>Agent</Label>
                 <Select value={agent} onValueChange={setAgent}>
-                  <SelectTrigger className="w-full"><SelectValue placeholder="All agents" /></SelectTrigger>
+                  <SelectTrigger className="w-full h-11 mt-1"><SelectValue placeholder="All agents" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All agents</SelectItem>
                     {agents.map((a) => (
@@ -126,7 +158,7 @@ export default function ReportsPage() {
               <div>
                 <Label>Status</Label>
                 <Select value={status} onValueChange={setStatus}>
-                  <SelectTrigger className="w-full"><SelectValue placeholder="Any status" /></SelectTrigger>
+                  <SelectTrigger className="w-full h-11 mt-1"><SelectValue placeholder="Any status" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Any status</SelectItem>
                     <SelectItem value="ACTIVE">Active</SelectItem>
@@ -141,7 +173,7 @@ export default function ReportsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full"
+                className="w-full h-11"
                 onClick={() => { setDateRange('30d'); setAgent('all'); setStatus('all') }}
               >
                 Reset Filters
@@ -178,8 +210,8 @@ export default function ReportsPage() {
                       <Button
                         size="sm"
                         variant={isActive ? 'default' : 'outline'}
-                        className="w-full mt-3"
-                        onClick={(e) => { e.stopPropagation(); generate(r.label) }}
+                        className="w-full mt-3 h-11"
+                        onClick={(e) => { e.stopPropagation(); generate(r.key, r.label) }}
                       >
                         <Play className="h-3.5 w-3.5" /> Generate
                       </Button>
@@ -193,14 +225,14 @@ export default function ReportsPage() {
           {/* Sample preview */}
           <FadeIn>
             <Card className="shadow-premium">
-              <CardHeader className="pb-2 flex-row items-center justify-between">
+              <CardHeader className="pb-2 flex-row flex-wrap items-center justify-between gap-2">
                 <div>
                   <CardTitle className="text-base">{REPORT_TYPES.find((r) => r.key === active)?.label} — Preview</CardTitle>
                   <CardDescription>
                     {isLoading ? 'Loading…' : isFetching ? 'Updating…' : `${items.length} records`}
                   </CardDescription>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => toast.success('Exporting...')}>
+                <Button variant="outline" size="sm" className="h-11 px-3" disabled={items.length === 0} onClick={exportCsv}>
                   <Download className="h-4 w-4" /> Export CSV
                 </Button>
               </CardHeader>
@@ -209,131 +241,152 @@ export default function ReportsPage() {
                   <div className="space-y-3">
                     {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
                   </div>
+                ) : isError ? (
+                  <div className="py-8 flex flex-col items-center text-center gap-3">
+                    <AlertTriangle className="h-8 w-8 text-destructive" />
+                    <div>
+                      <p className="font-semibold text-sm">Failed to load report</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Please check your connection and try again.</p>
+                    </div>
+                    <Button variant="outline" size="sm" className="h-11" onClick={() => refetch()}>
+                      <RefreshCw className="h-4 w-4" /> Retry
+                    </Button>
+                  </div>
                 ) : items.length === 0 ? (
                   <EmptyState icon={<FileText className="h-6 w-6" />} title="No records found" description="Adjust filters and try a different report type." />
                 ) : active === 'loans' ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/40">
-                        <TableHead className="pl-6">Loan #</TableHead>
-                        <TableHead>Candidate</TableHead>
-                        <TableHead>Agent</TableHead>
-                        <TableHead className="text-right">Principal</TableHead>
-                        <TableHead className="text-right">Outstanding</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {items.map((l: any) => (
-                        <TableRow key={l.id}>
-                          <TableCell className="pl-6 font-mono text-xs text-primary font-semibold">{l.loanNumber}</TableCell>
-                          <TableCell>{l.candidateName}</TableCell>
-                          <TableCell className="text-xs">{l.agent ?? '—'}</TableCell>
-                          <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(l.principalAmount))}</TableCell>
-                          <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(l.outstandingPrincipal))}</TableCell>
-                          <TableCell><StatusBadge variant={l.status}>{formatStatus(l.status)}</StatusBadge></TableCell>
+                  <div className="overflow-x-auto w-full">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/40">
+                          <TableHead className="pl-6">Loan #</TableHead>
+                          <TableHead>Candidate</TableHead>
+                          <TableHead className="hidden md:table-cell">Agent</TableHead>
+                          <TableHead className="text-right hidden sm:table-cell">Principal</TableHead>
+                          <TableHead className="text-right">Outstanding</TableHead>
+                          <TableHead className="hidden lg:table-cell">Status</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {items.map((l: any) => (
+                          <TableRow key={l.id}>
+                            <TableCell className="pl-6 font-mono text-xs text-primary font-semibold">{l.loanNumber}</TableCell>
+                            <TableCell>{l.candidateName}</TableCell>
+                            <TableCell className="text-xs hidden md:table-cell">{l.agent ?? '—'}</TableCell>
+                            <TableCell className="text-right tabular-nums hidden sm:table-cell">{formatPaiseToINR(Number(l.principalAmount))}</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(l.outstandingPrincipal))}</TableCell>
+                            <TableCell className="hidden lg:table-cell"><StatusBadge variant={l.status}>{formatStatus(l.status)}</StatusBadge></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 ) : active === 'applications' ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/40">
-                        <TableHead className="pl-6">App #</TableHead>
-                        <TableHead>Candidate</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                        <TableHead>Purpose</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {items.map((a: any) => (
-                        <TableRow key={a.id}>
-                          <TableCell className="pl-6 font-mono text-xs text-primary font-semibold">{a.applicationNumber}</TableCell>
-                          <TableCell>{a.candidateName}</TableCell>
-                          <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(a.principalAmount))}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{a.purpose}</TableCell>
-                          <TableCell><StatusBadge variant={a.status}>{formatStatus(a.status)}</StatusBadge></TableCell>
+                  <div className="overflow-x-auto w-full">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/40">
+                          <TableHead className="pl-6">App #</TableHead>
+                          <TableHead>Candidate</TableHead>
+                          <TableHead className="text-right hidden sm:table-cell">Amount</TableHead>
+                          <TableHead className="hidden md:table-cell">Purpose</TableHead>
+                          <TableHead>Status</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {items.map((a: any) => (
+                          <TableRow key={a.id}>
+                            <TableCell className="pl-6 font-mono text-xs text-primary font-semibold">{a.applicationNumber}</TableCell>
+                            <TableCell>{a.candidateName}</TableCell>
+                            <TableCell className="text-right tabular-nums hidden sm:table-cell">{formatPaiseToINR(Number(a.principalAmount))}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate hidden md:table-cell">{a.purpose}</TableCell>
+                            <TableCell><StatusBadge variant={a.status}>{formatStatus(a.status)}</StatusBadge></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 ) : active === 'payments' ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/40">
-                        <TableHead className="pl-6">Payment #</TableHead>
-                        <TableHead>Candidate</TableHead>
-                        <TableHead>Loan</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                        <TableHead>Method</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {items.map((p: any) => (
-                        <TableRow key={p.id}>
-                          <TableCell className="pl-6 font-mono text-xs text-primary font-semibold">{p.paymentNumber}</TableCell>
-                          <TableCell>{p.candidateName}</TableCell>
-                          <TableCell className="font-mono text-xs">{p.loanNumber}</TableCell>
-                          <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(p.amount))}</TableCell>
-                          <TableCell className="text-xs">{p.method.replace('_', ' ')}</TableCell>
-                          <TableCell><StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge></TableCell>
+                  <div className="overflow-x-auto w-full">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/40">
+                          <TableHead className="pl-6">Payment #</TableHead>
+                          <TableHead>Candidate</TableHead>
+                          <TableHead className="hidden md:table-cell">Loan</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                          <TableHead className="hidden sm:table-cell">Method</TableHead>
+                          <TableHead>Status</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {items.map((p: any) => (
+                          <TableRow key={p.id}>
+                            <TableCell className="pl-6 font-mono text-xs text-primary font-semibold">{p.paymentNumber}</TableCell>
+                            <TableCell>{p.candidateName}</TableCell>
+                            <TableCell className="font-mono text-xs hidden md:table-cell">{p.loanNumber}</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(p.amount))}</TableCell>
+                            <TableCell className="text-xs hidden sm:table-cell">{p.method.replace('_', ' ')}</TableCell>
+                            <TableCell><StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 ) : active === 'collections' ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/40">
-                        <TableHead className="pl-6">Loan</TableHead>
-                        <TableHead>Candidate</TableHead>
-                        <TableHead>Recorded By</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {items.map((c: any) => (
-                        <TableRow key={c.id}>
-                          <TableCell className="pl-6 font-mono text-xs">{c.loanNumber}</TableCell>
-                          <TableCell>{c.candidateName}</TableCell>
-                          <TableCell className="text-xs">{c.recordedBy}</TableCell>
-                          <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(c.amount))}</TableCell>
-                          <TableCell><StatusBadge variant={c.status}>{formatStatus(c.status)}</StatusBadge></TableCell>
+                  <div className="overflow-x-auto w-full">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/40">
+                          <TableHead className="pl-6 hidden sm:table-cell">Loan</TableHead>
+                          <TableHead>Candidate</TableHead>
+                          <TableHead className="hidden md:table-cell">Recorded By</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                          <TableHead>Status</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {items.map((c: any) => (
+                          <TableRow key={c.id}>
+                            <TableCell className="pl-6 font-mono text-xs hidden sm:table-cell">{c.loanNumber}</TableCell>
+                            <TableCell>{c.candidateName}</TableCell>
+                            <TableCell className="text-xs hidden md:table-cell">{c.recordedBy}</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(c.amount))}</TableCell>
+                            <TableCell><StatusBadge variant={c.status}>{formatStatus(c.status)}</StatusBadge></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 ) : active === 'ptps' ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/40">
-                        <TableHead className="pl-6">Loan</TableHead>
-                        <TableHead>Candidate</TableHead>
-                        <TableHead className="text-right">Promised</TableHead>
-                        <TableHead>Promise Date</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {items.map((p: any) => (
-                        <TableRow key={p.id}>
-                          <TableCell className="pl-6 font-mono text-xs">{p.loanNumber}</TableCell>
-                          <TableCell>{p.candidateName}</TableCell>
-                          <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(p.promisedAmount))}</TableCell>
-                          <TableCell className="text-xs">{new Date(p.promiseDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</TableCell>
-                          <TableCell><StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge></TableCell>
+                  <div className="overflow-x-auto w-full">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/40">
+                          <TableHead className="pl-6 hidden sm:table-cell">Loan</TableHead>
+                          <TableHead>Candidate</TableHead>
+                          <TableHead className="text-right">Promised</TableHead>
+                          <TableHead className="hidden md:table-cell">Promise Date</TableHead>
+                          <TableHead>Status</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {items.map((p: any) => (
+                          <TableRow key={p.id}>
+                            <TableCell className="pl-6 font-mono text-xs hidden sm:table-cell">{p.loanNumber}</TableCell>
+                            <TableCell>{p.candidateName}</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(p.promisedAmount))}</TableCell>
+                            <TableCell className="text-xs hidden md:table-cell">{new Date(p.promiseDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</TableCell>
+                            <TableCell><StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 ) : null}
 
                 {data?.total !== undefined && (
-                  <div className="px-4 py-3 mt-3 border-t border-border text-xs text-muted-foreground flex justify-between">
+                  <div className="px-4 py-3 mt-3 border-t border-border text-xs text-muted-foreground flex flex-wrap gap-3 justify-between">
                     <span>Total records: <strong>{data.total}</strong></span>
                     {data.totalDisbursed && <span>Total Disbursed: <strong>{formatPaiseToINRShort(Number(data.totalDisbursed))}</strong></span>}
                     {data.totalOutstanding && <span>Total Outstanding: <strong>{formatPaiseToINRShort(Number(data.totalOutstanding))}</strong></span>}

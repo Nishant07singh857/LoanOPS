@@ -1,39 +1,65 @@
-// POST /api/auth/candidate-login — candidate portal login (mobile + OTP-less for demo)
-// In production: OTP-based. For now use mobile + password.
+// POST /api/auth/candidate-login — candidate portal login
+// Hardened for Phase 2 & 4:
+// - Central rate limiting keyed by IP + mobile
+// - Constant-time dummy bcrypt check on missing candidate (no timing enumeration)
+// - Identical error message for unknown mobile vs wrong password
+// - Failed login audit log + lockout after 5 attempts
+
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import {
-  verifyPassword, createSession, setSessionCookie,
-  checkLoginRate, recordLoginFailure, clearLoginFailures, getClientIp,
+  verifyPassword,
+  constantTimeDummyVerify,
+  createSession,
+  setSessionCookie,
+  checkLoginRate,
+  recordLoginFailure,
+  clearLoginFailures,
+  getClientIp,
   auditRaw,
 } from '@/lib/server/auth'
 import { apiHandler, success, badRequest, tooMany, unauthorized, validate } from '@/lib/server/api'
+import { enforceRateLimit } from '@/lib/server/rate-limit'
 
-const schema = z.object({
-  mobile: z.string().min(10).max(20),
-  password: z.string().min(8).max(128),
-})
+const schema = z
+  .object({
+    mobile: z.string().trim().min(10).max(20),
+    password: z.string().min(6).max(128),
+  })
+  .strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const body = await req.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON body')
 
   const parsed = validate(schema, body)
+  const cleanMobile = parsed.mobile.replace(/\D/g, '').replace(/^91(\d{10})$/, '$1')
   const ip = getClientIp(req)
+  const userAgent = req.headers.get('user-agent') || undefined
+  const rateKey = `${ip}:${cleanMobile}`
 
-  const rl = checkLoginRate(ip)
-  if (!rl.ok) return tooMany(`Too many attempts. Retry after ${Math.ceil(rl.retryAfterMs! / 1000)}s`)
+  const rlResponse = enforceRateLimit(req, 'auth_login', cleanMobile)
+  if (rlResponse) return rlResponse
 
-  // Candidate uses their linked User record. Find candidate by mobile, then user.
+  const rl = checkLoginRate(rateKey)
+  if (!rl.ok) {
+    return tooMany(`Too many login attempts. Please try again in ${Math.ceil(rl.retryAfterMs! / 1000)} seconds.`)
+  }
+
   const candidate = await db.candidate.findFirst({
-    where: { mobile: parsed.mobile, status: 'ACTIVE' },
+    where: {
+      mobile: { in: [parsed.mobile, cleanMobile] },
+      status: 'ACTIVE',
+      deletedAt: null,
+    },
     include: { organization: true, assignedAgent: true },
   })
 
   if (!candidate || !candidate.userId) {
-    recordLoginFailure(ip)
-    return unauthorized('Invalid mobile or password')
+    await constantTimeDummyVerify(parsed.password)
+    recordLoginFailure(rateKey)
+    return unauthorized('Invalid credentials')
   }
 
   const user = await db.user.findUnique({
@@ -41,25 +67,56 @@ export const POST = apiHandler(async (req: NextRequest) => {
   })
 
   if (!user || !user.isActive || user.role !== 'CANDIDATE') {
-    recordLoginFailure(ip)
-    return unauthorized('Invalid mobile or password')
+    await constantTimeDummyVerify(parsed.password)
+    recordLoginFailure(rateKey)
+    return unauthorized('Invalid credentials')
+  }
+
+  if (user.lockedUntil && user.lockedUntil > new Date()) {
+    await constantTimeDummyVerify(parsed.password)
+    return tooMany('Account temporarily locked due to repeated failed attempts. Please try again later.')
   }
 
   const ok = await verifyPassword(parsed.password, user.passwordHash)
   if (!ok) {
-    recordLoginFailure(ip)
-    return unauthorized('Invalid mobile or password')
+    const nextAttempts = user.failedLoginAttempts + 1
+    await db.user.update({
+      where: { id: user.id },
+      data: {
+        failedLoginAttempts: { increment: 1 },
+        lockedUntil: nextAttempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null,
+      },
+    })
+    recordLoginFailure(rateKey)
+    await auditRaw(
+      user.organizationId,
+      user.id,
+      'LOGIN_FAILED',
+      'Candidate',
+      candidate.id,
+      `Failed candidate login attempt (${nextAttempts})`,
+      { ipAddress: ip, userAgent }
+    )
+    return unauthorized('Invalid credentials')
   }
 
-  clearLoginFailures(ip)
+  await db.user.update({
+    where: { id: user.id },
+    data: { failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
+  })
+
+  clearLoginFailures(rateKey)
 
   const token = await createSession(
     { id: user.id, organizationId: user.organizationId },
-    { ip, userAgent: req.headers.get('user-agent') || undefined }
+    { ip, userAgent }
   )
   await setSessionCookie(token)
 
-  await auditRaw(user.organizationId, user.id, 'LOGIN', 'Candidate', candidate.id, `Candidate ${candidate.mobile} logged in`, { ip })
+  await auditRaw(user.organizationId, user.id, 'LOGIN', 'Candidate', candidate.id, 'Candidate logged in', {
+    ipAddress: ip,
+    userAgent,
+  })
 
   return success({
     id: user.id,
@@ -68,6 +125,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
     role: 'CANDIDATE',
     organizationId: user.organizationId,
     organizationName: candidate.organization.name,
+    phone: user.phone ?? candidate.mobile,
     candidateId: candidate.id,
   })
 })

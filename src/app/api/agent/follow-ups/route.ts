@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requireAgent, audit } from '@/lib/server/auth'
-import { apiHandler, success, created, badRequest, notFound, validate, paginate, paginationSchema } from '@/lib/server/api'
+import { apiHandler, success, created, badRequest, notFound, forbidden, validate, paginate, paginationSchema } from '@/lib/server/api'
 
 const listSchema = paginationSchema.extend({
   candidateId: z.string().optional(),
@@ -12,6 +12,9 @@ const listSchema = paginationSchema.extend({
 
 export const GET = apiHandler(async (req: NextRequest) => {
   const ctx = await requireAgent()
+  const agentProfile = await db.agentProfile.findUnique({ where: { userId: ctx.user.id } })
+  if (!agentProfile) return notFound('Agent profile not found')
+
   const url = new URL(req.url)
   const params = Object.fromEntries(url.searchParams.entries())
   const { page, pageSize, candidateId } = validate(listSchema, params)
@@ -51,17 +54,13 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const schema = z.object({
-  candidateId: z.string(),
-  loanId: z.string().optional().nullable(),
-  contactMethod: z.enum(['PHONE', 'WHATSAPP', 'IN_APP', 'FIELD_VISIT']),
-  outcome: z.string().optional().nullable(),
-  notes: z.string().optional().nullable(),
-  nextFollowUp: z.string().optional().nullable(),
-})
+const schema = z.object({}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireAgent()
+  const agentProfile = await db.agentProfile.findUnique({ where: { userId: ctx.user.id } })
+  if (!agentProfile) return forbidden('Agent profile not found')
+
   const body = await req.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON body')
   const data = validate(schema, body)
@@ -71,6 +70,19 @@ export const POST = apiHandler(async (req: NextRequest) => {
     where: { id: data.candidateId, organizationId: ctx.user.organizationId },
   })
   if (!candidate) return notFound('Candidate not found')
+
+  if (candidate.assignedAgentId !== agentProfile.id) {
+    const taskCount = await db.collectionTask.count({
+      where: {
+        candidateId: candidate.id,
+        assignedToId: agentProfile.id,
+        organizationId: ctx.user.organizationId,
+      },
+    })
+    if (taskCount === 0) {
+      return forbidden('You do not have access to this candidate')
+    }
+  }
 
   // If loanId provided, verify it belongs to the candidate
   if (data.loanId) {

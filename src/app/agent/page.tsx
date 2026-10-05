@@ -185,7 +185,7 @@ export default function AgentDashboardPage() {
             value={formatPaiseToINRShort(recentCash.reduce((s, c) => s + Number(c.amount), 0))}
             icon={<Banknote className="h-5 w-5" />}
             variant="success"
-            spark={[80, 110, 130, 140, 165, 180, 195]}
+            spark={recentCash.length > 0 ? [80, 110, 130, 140, 165, 180, 195] : undefined}
           />
         </StaggerItem>
         <StaggerItem>
@@ -194,7 +194,7 @@ export default function AgentDashboardPage() {
             value={String(data?.todayTasksCount ?? 0)}
             icon={<ListTodo className="h-5 w-5" />}
             variant="info"
-            spark={[2, 3, 4, 5, 5, 4, 5]}
+            spark={(data?.todayTasksCount ?? 0) > 0 ? [2, 3, 4, 5, 5, 4, 5] : undefined}
           />
         </StaggerItem>
         <StaggerItem>
@@ -203,7 +203,7 @@ export default function AgentDashboardPage() {
             value={String(data?.ptpDueCount ?? 0)}
             icon={<Handshake className="h-5 w-5" />}
             variant="warning"
-            spark={[1, 1, 2, 3, 2, 3, 3]}
+            spark={(data?.ptpDueCount ?? 0) > 0 ? [1, 1, 2, 3, 2, 3, 3] : undefined}
           />
         </StaggerItem>
         <StaggerItem>
@@ -212,7 +212,7 @@ export default function AgentDashboardPage() {
             value={String(data?.overdueCandidatesCount ?? 0)}
             icon={<AlertTriangle className="h-5 w-5" />}
             variant="destructive"
-            spark={[3, 3, 4, 5, 4, 5, 5]}
+            spark={(data?.overdueCandidatesCount ?? 0) > 0 ? [3, 3, 4, 5, 4, 5, 5] : undefined}
           />
         </StaggerItem>
       </StaggerContainer>
@@ -287,59 +287,65 @@ export default function AgentDashboardPage() {
               ) : todaysTasks.length === 0 ? (
                 <EmptyState icon={<ListTodo className="h-6 w-6" />} title="No tasks today" description="You're all caught up." />
               ) : (
-                todaysTasks.map((t) => (
-                  <StaggerItem key={t.id}>
-                    <div className="rounded-2xl border border-border bg-card p-3.5 hover:border-primary/40 hover:shadow-premium transition-all">
-                      <div className="flex items-start gap-3">
-                        <Avatar className="h-9 w-9 flex-shrink-0">
-                          <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-                            {initials(t.candidate.fullName)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold truncate">{t.candidate.fullName}</p>
-                              <p className="font-mono text-[11px] text-muted-foreground">{t.loan?.loanNumber ?? '—'}</p>
+                <StaggerContainer className="space-y-3">
+                  {todaysTasks.map((t) => (
+                    <StaggerItem key={t.id}>
+                      <div className="rounded-2xl border border-border bg-card p-3.5 hover:border-primary/40 hover:shadow-premium transition-all">
+                        <div className="flex items-start gap-3">
+                          <Avatar className="h-9 w-9 flex-shrink-0">
+                            <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+                              {initials(t.candidate.fullName)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <Link href={`/agent/candidates/${t.candidate.id}`} className="text-sm font-semibold truncate block hover:text-primary transition-colors">
+                                  {t.candidate.fullName}
+                                </Link>
+                                <p className="font-mono text-[11px] text-muted-foreground">{t.loan?.loanNumber ?? '—'}</p>
+                              </div>
+                              <StatusBadge variant={t.priority}>{t.priority}</StatusBadge>
                             </div>
-                            <StatusBadge variant={t.priority}>{t.priority}</StatusBadge>
-                          </div>
-                          <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground">
-                            {t.amount && (
+                            <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground flex-wrap">
+                              {t.amount && (
+                                <span className="inline-flex items-center gap-1">
+                                  <Banknote className="h-3 w-3" /> {formatPaiseToINR(Number(t.amount))}
+                                </span>
+                              )}
                               <span className="inline-flex items-center gap-1">
-                                <Banknote className="h-3 w-3" /> {formatPaiseToINR(Number(t.amount))}
+                                <Clock className="h-3 w-3" /> {fmtDateShort(t.dueDate)}
                               </span>
-                            )}
-                            <span className="inline-flex items-center gap-1">
-                              <Clock className="h-3 w-3" /> {fmtDateShort(t.dueDate)}
-                            </span>
-                          </div>
-                          <div className="flex gap-1.5 mt-3">
-                            <Button size="sm" variant="outline" className="h-8 px-2.5" onClick={() => onCall(t.candidate.fullName)}>
-                              <PhoneCall className="h-3.5 w-3.5" /> Call
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-8 px-2.5 text-info border-info/40 hover:bg-info/10"
-                              onClick={() => onWhatsApp(t.candidate.fullName, t.candidate.mobile, t.loan?.loanNumber ?? '', t.amount ?? '0', fmtDateShort(t.dueDate))}
-                            >
-                              <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
-                            </Button>
-                            <Button
-                              size="sm"
-                              className="h-8 px-2.5 ml-auto"
-                              disabled={completeMutation.isPending}
-                              onClick={() => completeMutation.mutate(t.id)}
-                            >
-                              <CheckCircle2 className="h-3.5 w-3.5" /> Done
-                            </Button>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 mt-3">
+                              <Button asChild size="sm" variant="outline" className="h-8 px-2.5">
+                                <a href={`tel:${t.candidate.mobile.replace(/\s/g, '')}`} onClick={() => onCall(t.candidate.fullName)}>
+                                  <PhoneCall className="h-3.5 w-3.5" /> Call
+                                </a>
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 px-2.5 text-info border-info/40 hover:bg-info/10"
+                                onClick={() => onWhatsApp(t.candidate.fullName, t.candidate.mobile, t.loan?.loanNumber ?? '', t.amount ?? '0', fmtDateShort(t.dueDate))}
+                              >
+                                <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-8 px-2.5 ml-auto"
+                                disabled={completeMutation.isPending}
+                                onClick={() => completeMutation.mutate(t.id)}
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" /> Done
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  </StaggerItem>
-                ))
+                    </StaggerItem>
+                  ))}
+                </StaggerContainer>
               )}
             </CardContent>
           </Card>
@@ -372,59 +378,63 @@ export default function AgentDashboardPage() {
               ) : todaysFollowups.length === 0 ? (
                 <EmptyState icon={<PhoneCall className="h-6 w-6" />} title="No follow-ups today" description="No calls scheduled." />
               ) : (
-                todaysFollowups.map((f) => (
-                  <StaggerItem key={f.id}>
-                    <Link
-                      href={`/agent/candidates/${f.candidate.id}`}
-                      className="block rounded-2xl border border-border bg-card p-3.5 hover:border-primary/40 hover:shadow-premium transition-all"
-                    >
-                      <div className="flex items-start gap-3">
-                        <Avatar className="h-9 w-9 flex-shrink-0">
-                          <AvatarFallback className="bg-warning/10 text-warning text-xs font-semibold">
-                            {initials(f.candidate.fullName)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold truncate">{f.candidate.fullName}</p>
-                              <p className="font-mono text-[11px] text-muted-foreground">{f.contactMethod}</p>
+                <StaggerContainer className="space-y-3">
+                  {todaysFollowups.map((f) => (
+                    <StaggerItem key={f.id}>
+                      <Link
+                        href={`/agent/candidates/${f.candidate.id}`}
+                        className="block rounded-2xl border border-border bg-card p-3.5 hover:border-primary/40 hover:shadow-premium transition-all"
+                      >
+                        <div className="flex items-start gap-3">
+                          <Avatar className="h-9 w-9 flex-shrink-0">
+                            <AvatarFallback className="bg-warning/10 text-warning text-xs font-semibold">
+                              {initials(f.candidate.fullName)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold truncate">{f.candidate.fullName}</p>
+                                <p className="font-mono text-[11px] text-muted-foreground">{f.contactMethod}</p>
+                              </div>
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-warning whitespace-nowrap">
+                                <Clock className="h-3 w-3" /> {fmtTime(f.nextFollowUp)}
+                              </span>
                             </div>
-                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-warning whitespace-nowrap">
-                              <Clock className="h-3 w-3" /> {fmtTime(f.nextFollowUp)}
-                            </span>
-                          </div>
-                          {f.outcome && (
-                            <p className="text-[11px] text-muted-foreground mt-1.5">Last outcome: {f.outcome}</p>
-                          )}
-                          <div className="flex items-center gap-2 mt-2.5">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2 ml-auto text-info border-info/40 hover:bg-info/10"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                onWhatsApp(f.candidate.fullName, f.candidate.mobile, '', '0', fmtDateShort(f.nextFollowUp))
-                              }}
-                            >
-                              <MessageCircle className="h-3 w-3" /> WhatsApp
-                            </Button>
+                            {f.outcome && (
+                              <p className="text-[11px] text-muted-foreground mt-1.5">Last outcome: {f.outcome}</p>
+                            )}
+                            <div className="flex items-center gap-2 mt-2.5">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 ml-auto text-info border-info/40 hover:bg-info/10"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  onWhatsApp(f.candidate.fullName, f.candidate.mobile, '', '0', fmtDateShort(f.nextFollowUp))
+                                }}
+                              >
+                                <MessageCircle className="h-3 w-3" /> WhatsApp
+                              </Button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </Link>
-                  </StaggerItem>
-                ))
+                      </Link>
+                    </StaggerItem>
+                  ))}
+                </StaggerContainer>
               )}
             </CardContent>
           </Card>
         </FadeIn>
       </div>
 
-      {/* PTP Due Today */}
-      {ptpDue.length > 0 && (
+      {/* PTP Due Today & Recent Cash Collections */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        {/* PTP Due Today */}
         <FadeIn>
-          <Card className="shadow-premium">
+          <Card className="shadow-premium h-full">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -441,78 +451,90 @@ export default function AgentDashboardPage() {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent>
-              <StaggerContainer className="space-y-2.5">
-                {ptpDue.map((p) => (
-                  <StaggerItem key={p.id}>
-                    <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 hover:border-primary/40 hover:shadow-premium transition-all">
-                      <div className="h-9 w-9 rounded-xl bg-warning/10 text-warning flex items-center justify-center flex-shrink-0">
-                        <Handshake className="h-4 w-4" />
+            <CardContent className="space-y-3 max-h-[460px] overflow-y-auto no-scrollbar">
+              {isLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+                </div>
+              ) : ptpDue.length === 0 ? (
+                <EmptyState icon={<Handshake className="h-6 w-6" />} title="No PTPs due" description="No promises to pay scheduled for today." />
+              ) : (
+                <StaggerContainer className="space-y-2.5">
+                  {ptpDue.map((p) => (
+                    <StaggerItem key={p.id}>
+                      <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 hover:border-primary/40 hover:shadow-premium transition-all">
+                        <div className="h-9 w-9 rounded-xl bg-warning/10 text-warning flex items-center justify-center flex-shrink-0">
+                          <Handshake className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">{p.candidate.fullName}</p>
+                          <p className="font-mono text-[10px] text-muted-foreground">{p.loan.loanNumber}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold tabular-nums">{formatPaiseToINR(Number(p.promisedAmount))}</p>
+                          <p className="text-[11px] text-muted-foreground">{fmtDateShort(p.promiseDate)}</p>
+                        </div>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{p.candidate.fullName}</p>
-                        <p className="font-mono text-[10px] text-muted-foreground">{p.loan.loanNumber}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold tabular-nums">{formatPaiseToINR(Number(p.promisedAmount))}</p>
-                        <p className="text-[11px] text-muted-foreground">{fmtDateShort(p.promiseDate)}</p>
-                      </div>
-                    </div>
-                  </StaggerItem>
-                ))}
-              </StaggerContainer>
+                    </StaggerItem>
+                  ))}
+                </StaggerContainer>
+              )}
             </CardContent>
           </Card>
         </FadeIn>
-      )}
 
-      {/* Recent Cash Collections */}
-      <FadeIn>
-        <Card className="shadow-premium">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl bg-success/15 text-success flex items-center justify-center">
-                  <Banknote className="h-5 w-5" />
+        {/* Recent Cash Collections */}
+        <FadeIn delay={0.05}>
+          <Card className="shadow-premium h-full">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-9 w-9 rounded-xl bg-success/15 text-success flex items-center justify-center">
+                    <Banknote className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Recent Cash Collections</CardTitle>
+                    <CardDescription className="text-xs">{recentCash.length} most recent</CardDescription>
+                  </div>
                 </div>
-                <div>
-                  <CardTitle className="text-base">Recent Cash Collections</CardTitle>
-                  <CardDescription className="text-xs">{recentCash.length} most recent</CardDescription>
-                </div>
+                <Button asChild variant="ghost" size="sm">
+                  <Link href="/agent/cash">View all <ChevronRight className="h-3.5 w-3.5" /></Link>
+                </Button>
               </div>
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/agent/cash">View all <ChevronRight className="h-3.5 w-3.5" /></Link>
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {recentCash.length === 0 ? (
-              <EmptyState icon={<Banknote className="h-6 w-6" />} title="No cash collections yet" description="Record your first cash pickup from the Cash page." />
-            ) : (
-              <StaggerContainer className="space-y-2.5">
-                {recentCash.map((c) => (
-                  <StaggerItem key={c.id}>
-                    <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 hover:border-primary/40 hover:shadow-premium transition-all">
-                      <div className="h-9 w-9 rounded-xl bg-success/10 text-success flex items-center justify-center flex-shrink-0">
-                        <Banknote className="h-4 w-4" />
+            </CardHeader>
+            <CardContent className="space-y-3 max-h-[460px] overflow-y-auto no-scrollbar">
+              {isLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+                </div>
+              ) : recentCash.length === 0 ? (
+                <EmptyState icon={<Banknote className="h-6 w-6" />} title="No cash collections yet" description="Record your first cash pickup from the Cash page." />
+              ) : (
+                <StaggerContainer className="space-y-2.5">
+                  {recentCash.map((c) => (
+                    <StaggerItem key={c.id}>
+                      <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 hover:border-primary/40 hover:shadow-premium transition-all">
+                        <div className="h-9 w-9 rounded-xl bg-success/10 text-success flex items-center justify-center flex-shrink-0">
+                          <Banknote className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">{c.candidateName}</p>
+                          <p className="font-mono text-[10px] text-muted-foreground">{c.loanNumber}</p>
+                          <p className="text-[11px] text-muted-foreground">{fmtDateShort(c.collectionDate)}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold tabular-nums">{formatPaiseToINR(Number(c.amount))}</p>
+                          <StatusBadge variant={c.status} className="mt-0.5">{formatStatus(c.status)}</StatusBadge>
+                        </div>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{c.candidateName}</p>
-                        <p className="font-mono text-[10px] text-muted-foreground">{c.loanNumber}</p>
-                        <p className="text-[11px] text-muted-foreground">{fmtDateShort(c.collectionDate)}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold tabular-nums">{formatPaiseToINR(Number(c.amount))}</p>
-                        <StatusBadge variant={c.status} className="mt-0.5">{formatStatus(c.status)}</StatusBadge>
-                      </div>
-                    </div>
-                  </StaggerItem>
-                ))}
-              </StaggerContainer>
-            )}
-          </CardContent>
-        </Card>
-      </FadeIn>
+                    </StaggerItem>
+                  ))}
+                </StaggerContainer>
+              )}
+            </CardContent>
+          </Card>
+        </FadeIn>
+      </div>
     </div>
   )
 }

@@ -24,8 +24,8 @@ export const GET = apiHandler(async (req: NextRequest) => {
       db.ptp.count({ where: { agentId: a.user.id } }),
       db.ptp.count({ where: { agentId: a.user.id, status: 'FULFILLED' } }),
       db.ptp.count({ where: { agentId: a.user.id, status: 'BROKEN' } }),
-      db.cashCollection.aggregate({
-        where: { recordedById: a.user.id, status: 'ALLOCATED' },
+      db.payment.aggregate({
+        where: { recordedById: a.user.id, status: 'ALLOCATED', method: 'CASH' },
         _sum: { amount: true },
       }),
       db.loan.aggregate({

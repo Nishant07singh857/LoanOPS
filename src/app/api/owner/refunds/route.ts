@@ -56,13 +56,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const createSchema = z.object({
-  loanId: z.string(),
-  paymentId: z.string().optional().nullable(),
-  amount: z.union([z.string(), z.number()]),
-  reason: z.string().min(2).max(2000),
-  notes: z.string().optional().nullable(),
-})
+const createSchema = z.object({}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()

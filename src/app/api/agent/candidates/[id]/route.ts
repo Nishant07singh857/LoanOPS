@@ -3,6 +3,8 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAgent } from '@/lib/server/auth'
 import { apiHandler, success, notFound, forbidden } from '@/lib/server/api'
+import { decryptPII } from '@/lib/server/crypto'
+import { maskAadhaar, maskPan, maskBankAccount } from '@/lib/utils'
 
 export const GET = apiHandler(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const ctx = await requireAgent()
@@ -28,19 +30,26 @@ export const GET = apiHandler(async (req: NextRequest, { params }: { params: Pro
       ptps: { where: { agentId: ctx.user.id }, orderBy: { createdAt: 'desc' } },
       followUps: { where: { agentId: ctx.user.id }, orderBy: { contactDate: 'desc' }, take: 20, include: { loan: { select: { loanNumber: true } } } },
       escalations: { where: { agentId: ctx.user.id }, orderBy: { createdAt: 'desc' }, take: 20 },
-      cashCollections: { where: { recordedById: ctx.user.id }, orderBy: { createdAt: 'desc' }, take: 20 },
+      payments: { where: { method: 'CASH', recordedById: ctx.user.id }, orderBy: { createdAt: 'desc' }, take: 20 },
     },
   })
   if (!c) return notFound('Candidate not found')
 
-  // RBAC: agent can see only candidates assigned to them OR in their org
-  // (per spec: "agent can only see candidates assigned to them or in their org")
-  // We allow org-level visibility — this is the more permissive interpretation.
-  // If the candidate has an assignedAgentId that is NOT this agent, restrict.
-  if (c.assignedAgentId && c.assignedAgentId !== agentProfile.id) {
-    // Allow viewing but mark as cross-agent
-    // Could also `return forbidden('Candidate not assigned to you')` if stricter
+  // Strict IDOR protection: agent must be assigned to the candidate OR have an assigned CollectionTask for this candidate
+  if (c.assignedAgentId !== agentProfile.id) {
+    const taskCount = await db.collectionTask.count({
+      where: {
+        candidateId: c.id,
+        assignedToId: agentProfile.id,
+        organizationId: ctx.user.organizationId,
+      },
+    })
+    if (taskCount === 0) {
+      return forbidden('You do not have access to this candidate')
+    }
   }
+
+  const rawKyc = c.kycDocs[0] ?? null
 
   return success({
     id: c.id,
@@ -53,11 +62,19 @@ export const GET = apiHandler(async (req: NextRequest, { params }: { params: Pro
     employer: c.employer,
     monthlyIncome: c.monthlyIncome,
     bankName: c.bankName,
-    bankAccount: c.bankAccount,
+    bankAccount: c.bankAccount ? maskBankAccount(decryptPII(c.bankAccount)) : null,
     bankIfsc: c.bankIfsc,
     upiId: c.upiId,
-    aadhaarMasked: c.aadhaarMasked,
-    panMasked: c.panMasked,
+    aadhaarMasked: c.aadhaarMasked
+      ? maskAadhaar(decryptPII(c.aadhaarMasked))
+      : rawKyc?.aadhaarNumber
+        ? maskAadhaar(decryptPII(rawKyc.aadhaarNumber))
+        : null,
+    panMasked: c.panMasked
+      ? maskPan(decryptPII(c.panMasked))
+      : rawKyc?.panNumber
+        ? maskPan(decryptPII(rawKyc.panNumber))
+        : null,
     status: c.status,
     assignedAgent: c.assignedAgent ? {
       id: c.assignedAgent.id,
@@ -110,14 +127,20 @@ export const GET = apiHandler(async (req: NextRequest, { params }: { params: Pro
       status: e.status,
       createdAt: e.createdAt,
     })),
-    cashCollections: c.cashCollections.map((cc) => ({
+    cashCollections: c.payments.map((cc) => ({
       id: cc.id,
       amount: String(cc.amount),
-      collectionDate: cc.collectionDate,
+      collectionDate: cc.createdAt,
       status: cc.status,
       reference: cc.reference,
     })),
-    kyc: c.kycDocs[0] ?? null,
+    kyc: rawKyc
+      ? {
+          ...rawKyc,
+          aadhaarNumber: rawKyc.aadhaarNumber ? maskAadhaar(decryptPII(rawKyc.aadhaarNumber)) : null,
+          panNumber: rawKyc.panNumber ? maskPan(decryptPII(rawKyc.panNumber)) : null,
+        }
+      : null,
     createdAt: c.createdAt,
   })
 })

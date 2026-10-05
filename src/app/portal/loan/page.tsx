@@ -116,6 +116,7 @@ export default function LoanDetailPage() {
   }
 
   if (!loan || !loan.loanNumber) {
+    const hasDraft = Boolean((loan as any)?.draftApplication)
     return (
       <div className="space-y-6">
         <SectionHeading
@@ -130,8 +131,19 @@ export default function LoanDetailPage() {
         />
         <EmptyState
           icon={<Wallet className="h-6 w-6" />}
-          title="No active loan"
-          description="Your loan will appear here once an application is approved and disbursed."
+          title={hasDraft ? 'Application in progress' : 'No active loan'}
+          description={
+            hasDraft
+              ? 'You have a pending loan application. Complete your KYC and agreement on the Home dashboard.'
+              : 'Your loan will appear here once an application is approved and disbursed.'
+          }
+          action={
+            hasDraft ? (
+              <Button asChild size="sm">
+                <Link href="/portal">Go to Application <ChevronRight className="h-4 w-4" /></Link>
+              </Button>
+            ) : undefined
+          }
         />
       </div>
     )
@@ -139,6 +151,13 @@ export default function LoanDetailPage() {
 
   const totalOutstanding = Number(loan.outstandingPrincipal) + Number(loan.outstandingInterest) + Number(loan.outstandingFees)
   const collectedPercent = Number(loan.totalRepayable) > 0 ? Math.round((Number(loan.totalCollected) / Number(loan.totalRepayable)) * 100) : 0
+  const totalInterest = Math.max(
+    0,
+    Number(loan.totalRepayable) -
+      Number(loan.principalAmount) -
+      Number(loan.processingFee || 0) -
+      Number(loan.otherFees || 0)
+  )
 
   return (
     <div className="space-y-6">
@@ -154,11 +173,11 @@ export default function LoanDetailPage() {
       />
 
       <FadeIn>
-        <Card className="shadow-premium overflow-hidden border-success/15">
+        <Card className="shadow-premium overflow-hidden border-amber-400/30 bg-gradient-to-br from-purple-950/20 via-card to-card">
           <CardContent className="p-4 sm:p-6">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div className="flex items-start gap-3.5">
-                <div className="h-12 w-12 rounded-2xl bg-success/15 text-success flex items-center justify-center flex-shrink-0">
+                <div className="h-12 w-12 rounded-2xl bg-gradient-gold text-slate-950 flex items-center justify-center flex-shrink-0 shadow-gold">
                   <Wallet className="h-6 w-6" />
                 </div>
                 <div>
@@ -206,11 +225,21 @@ export default function LoanDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <FadeIn className="lg:col-span-2">
           <Card className="shadow-premium h-full">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2"><ScrollText className="h-4 w-4" /> Loan Terms</CardTitle>
-              <CardDescription className="text-xs">The structure of your loan</CardDescription>
+            <CardHeader className="pb-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 space-y-0">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2"><ScrollText className="h-4 w-4" /> Loan Terms & EMI Breakdown</CardTitle>
+                <CardDescription className="text-xs">The complete principal, interest, and fee structure of your loan</CardDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => {
+                const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.CANDIDATE_TO_AGENT, {
+                  candidateName,
+                  loanNumber: loan?.loanNumber ?? '',
+                }) + '\n\nI would like to request an EMI restructure (e.g. switch to Monthly).'
+                openWhatsApp(AGENT_PHONE, msg)
+                toast.success('Restructure request opened in WhatsApp')
+              }}>Request Restructure</Button>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
                 <TermRow label="Principal Amount" value={formatPaiseToINR(Number(loan.principalAmount))} icon={<IndianRupee className="h-4 w-4" />} />
                 <TermRow label="Interest Type" value={loan.interestType === 'PERCENTAGE' ? 'Percentage (flat)' : loan.interestType === 'FIXED' ? 'Fixed Amount' : 'No Interest'} icon={<Percent className="h-4 w-4" />} />
@@ -220,15 +249,35 @@ export default function LoanDetailPage() {
                 {loan.interestType === 'FIXED' && loan.fixedInterest && (
                   <TermRow label="Fixed Interest" value={formatPaiseToINR(Number(loan.fixedInterest))} icon={<IndianRupee className="h-4 w-4" />} />
                 )}
+                <TermRow label="Total Interest" value={formatPaiseToINR(totalInterest)} icon={<IndianRupee className="h-4 w-4" />} />
                 <TermRow label="Frequency" value={loan.frequency.charAt(0) + loan.frequency.slice(1).toLowerCase()} icon={<CalendarClock className="h-4 w-4" />} />
                 <TermRow label="Installments" value={`${loan.installments}`} icon={<Calendar className="h-4 w-4" />} />
-                <TermRow label="Installment Amount" value={formatPaiseToINR(Number(loan.installmentAmount))} icon={<Banknote className="h-4 w-4" />} />
-                {loan.processingFee && (
+                <TermRow label="Installment Amount (EMI)" value={formatPaiseToINR(Number(loan.installmentAmount))} icon={<Banknote className="h-4 w-4" />} />
+                {loan.processingFee && Number(loan.processingFee) > 0 && (
                   <TermRow label="Processing Fee" value={formatPaiseToINR(Number(loan.processingFee))} icon={<Receipt className="h-4 w-4" />} />
                 )}
+                {loan.otherFees && Number(loan.otherFees) > 0 && (
+                  <TermRow label="Other Fees" value={formatPaiseToINR(Number(loan.otherFees))} icon={<Receipt className="h-4 w-4" />} />
+                )}
+                <TermRow label="Total Repayable" value={formatPaiseToINR(Number(loan.totalRepayable))} icon={<Wallet className="h-4 w-4" />} />
                 <TermRow label="First Due Date" value={fmtDate(loan.firstDueDate)} icon={<Calendar className="h-4 w-4" />} />
                 <TermRow label="Final Due Date" value={fmtDate(loan.finalDueDate)} icon={<Calendar className="h-4 w-4" />} />
               </dl>
+
+              <div className="rounded-xl border border-border bg-muted/20 p-3.5 grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Balance Principal</p>
+                  <p className="text-xs sm:text-sm font-semibold tabular-nums mt-0.5">{formatPaiseToINR(Number(loan.outstandingPrincipal))}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Balance Interest</p>
+                  <p className="text-xs sm:text-sm font-semibold tabular-nums mt-0.5">{formatPaiseToINR(Number(loan.outstandingInterest))}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Balance Fees</p>
+                  <p className="text-xs sm:text-sm font-semibold tabular-nums mt-0.5">{formatPaiseToINR(Number(loan.outstandingFees))}</p>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </FadeIn>
@@ -298,15 +347,16 @@ export default function LoanDetailPage() {
               </div>
               <div>
                 <p className="text-sm font-semibold">Need a fresh loan?</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Apply for a new loan with pre-filled details. Quick decisions, paperless process.</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Contact support or your loan officer to request a new loan application link. Quick decisions, paperless process.</p>
               </div>
             </div>
             <Button asChild>
-              <Link href="/apply/a3f8d2e91b7c4f0a8e2d1b6c9f4a3e8d">
-                Apply for New Loan <ChevronRight className="h-4 w-4" />
+              <Link href="/portal/support">
+                Request Fresh Loan <ChevronRight className="h-4 w-4" />
               </Link>
             </Button>
           </CardContent>
+
         </Card>
       </FadeIn>
 

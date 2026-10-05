@@ -3,11 +3,10 @@
 import * as React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PortalLayout, type PortalNavGroup } from '@/components/portal/layout'
-import { PageTransition } from '@/components/ui/motion'
+
 import { SessionProvider } from '@/lib/session'
 import { OWNER_BRAND, OWNER_NAV } from '@/components/portal/owner-nav'
 import { EnsureRole } from '@/components/portal/ensure-role'
-import { QueryProvider } from '@/components/query-provider'
 import { api } from '@/lib/api-client'
 
 interface OwnerDashboardKPIs {
@@ -20,14 +19,16 @@ interface OwnerDashboardKPIs {
 
 function useOwnerNavBadges() {
   const { data: kpis } = useQuery<OwnerDashboardKPIs>({
-    queryKey: ['owner-dashboard-badges'],
+    queryKey: ['owner-dashboard'],
     queryFn: () => api.get<OwnerDashboardKPIs>('/api/owner/dashboard'),
     staleTime: 30 * 1000,
+    retry: 1,
   })
   const { data: notifData } = useQuery<{ unreadCount?: number; total?: number } | { items: unknown[]; unreadCount?: number }>({
     queryKey: ['owner-notifications-badges'],
     queryFn: () => api.get<{ unreadCount?: number; total?: number } | { items: unknown[]; unreadCount?: number }>('/api/notifications?pageSize=1'),
     staleTime: 30 * 1000,
+    retry: 1,
   })
 
   return React.useMemo(() => {
@@ -35,7 +36,7 @@ function useOwnerNavBadges() {
       '/admin/loans': kpis?.activeLoans ?? 0,
       '/admin/applications': kpis?.pendingApplications ?? 0,
       '/admin/collections': kpis?.pendingCashVerification ?? 0,
-      '/admin/disbursements': kpis?.loansReadyForDisbursement ?? 0,
+      '/admin/loans?status=PENDING_DISBURSEMENT': kpis?.loansReadyForDisbursement ?? 0,
     }
     const notifCount = (notifData as { unreadCount?: number })?.unreadCount ?? 0
     return { badges, notifCount }
@@ -62,17 +63,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <SessionProvider>
       <EnsureRole role="OWNER">
-        <QueryProvider>
-          <PortalLayout
-            role="OWNER"
-            navMode="sidebar"
-            groups={groups}
-            brand={OWNER_BRAND}
-            notifications={{ count: notifCount }}
-          >
-            <PageTransition>{children}</PageTransition>
-          </PortalLayout>
-        </QueryProvider>
+        <PortalLayout
+          role="OWNER"
+          navMode="sidebar"
+          groups={groups}
+          brand={OWNER_BRAND}
+          notifications={{ count: notifCount }}
+        >
+          {children}
+        </PortalLayout>
       </EnsureRole>
     </SessionProvider>
   )

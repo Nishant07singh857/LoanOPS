@@ -3,11 +3,10 @@
 import * as React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PortalLayout, type PortalNavGroup } from '@/components/portal/layout'
-import { PageTransition } from '@/components/ui/motion'
+
 import { SessionProvider } from '@/lib/session'
 import { AGENT_BRAND, AGENT_NAV } from '@/components/portal/agent-nav'
 import { EnsureRole } from '@/components/portal/ensure-role'
-import { QueryProvider } from '@/components/query-provider'
 import { api } from '@/lib/api-client'
 
 interface AgentDashboard {
@@ -26,7 +25,7 @@ function useAgentNavBadges() {
   })
   const { data: notifData } = useQuery<{ unreadCount?: number; total?: number } | { items: unknown[]; unreadCount?: number }>({
     queryKey: ['agent-notifications-badges'],
-    queryFn: () => api.get<{ unreadCount?: number; total?: number } | { items: unknown[]; unreadCount?: number }>('/api/notifications?pageSize=1'),
+    queryFn: () => api.get<{ unreadCount?: number; total?: number } | { items: unknown[]; unreadCount?: number }>('/api/notifications?pageSize=50'),
     staleTime: 30 * 1000,
   })
 
@@ -61,17 +60,15 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
   return (
     <SessionProvider>
       <EnsureRole role="AGENT">
-        <QueryProvider>
-          <PortalLayout
-            role="AGENT"
-            navMode="topbottom"
-            groups={groups}
-            brand={AGENT_BRAND}
-            notifications={{ count: notifCount }}
-          >
-            <PageTransition>{children}</PageTransition>
-          </PortalLayout>
-        </QueryProvider>
+        <PortalLayout
+          role="AGENT"
+          navMode="topbottom"
+          groups={groups}
+          brand={AGENT_BRAND}
+          notifications={{ count: notifCount }}
+        >
+          {children}
+        </PortalLayout>
       </EnsureRole>
     </SessionProvider>
   )

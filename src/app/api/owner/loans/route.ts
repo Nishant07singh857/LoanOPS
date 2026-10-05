@@ -4,13 +4,7 @@ import { z } from 'zod'
 import { requireOwner } from '@/lib/server/auth'
 import { apiHandler, success, validate, paginate } from '@/lib/server/api'
 
-const querySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  status: z.string().optional(),
-  frequency: z.string().optional(),
-  search: z.string().optional(),
-})
+const querySchema = z.object({}).strict()
 
 export const GET = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()
@@ -31,7 +25,24 @@ export const GET = apiHandler(async (req: NextRequest) => {
   const [loans, total] = await Promise.all([
     ctx.db.loan.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        loanNumber: true,
+        candidateId: true,
+        principalAmount: true,
+        interestType: true,
+        interestRate: true,
+        fixedInterest: true,
+        frequency: true,
+        installments: true,
+        installmentAmount: true,
+        totalRepayable: true,
+        outstandingPrincipal: true,
+        outstandingInterest: true,
+        totalCollected: true,
+        status: true,
+        disbursedAt: true,
+        createdAt: true,
         candidate: {
           select: {
             id: true,

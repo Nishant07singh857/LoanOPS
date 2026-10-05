@@ -128,9 +128,11 @@ function UseTemplateDialog({ template, onClose }: { template: TemplateKey | null
   })
   const candidates = data?.items ?? []
 
-  React.useEffect(() => {
-    if (template) setSelected('')
-  }, [template])
+  const [prevTemplate, setPrevTemplate] = React.useState(template)
+  if (template !== prevTemplate) {
+    setPrevTemplate(template)
+    setSelected('')
+  }
 
   if (!template) return null
 
@@ -224,9 +226,11 @@ function BroadcastForm({ onSubmit }: { onSubmit: () => void }) {
   return (
     <div className="space-y-3">
       <div className="space-y-1.5">
-        <Label>Template</Label>
+        <Label htmlFor="broadcast-template">Template</Label>
         <select
-          className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm"
+          id="broadcast-template"
+          aria-label="Select WhatsApp template"
+          className="w-full h-9 rounded-md border border-border bg-background px-3 text-base md:text-sm"
           value={template}
           onChange={(e) => setTemplate(e.target.value as TemplateKey)}
         >

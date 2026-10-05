@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Wallet, ShieldCheck, ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react'
@@ -9,84 +10,94 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { SessionProvider, useSession, type Role } from '@/lib/session'
+import { LegalFooter } from '@/components/legal/legal-footer'
+
+const DEMO_CREDENTIALS: Array<{
+  role: Role
+  label: string
+  identifier: string
+  password: string
+}> = [
+  { role: 'OWNER', label: 'Owner', identifier: 'owner@loanops.in', password: 'Owner@123' },
+  { role: 'AGENT', label: 'Agent', identifier: 'agent@loanops.in', password: 'Agent@123' },
+  { role: 'CANDIDATE', label: 'Candidate', identifier: '9820277789', password: 'Candidate@123' },
+]
 
 function LoginInner() {
   const router = useRouter()
   const params = useSearchParams()
-  const redirect = params.get('redirect') || '/admin'
-  const requestedRole = (params.get('role') || 'OWNER') as Role
+  const roleParam = params.get('role') as Role | null
+  const requestedRole: Role =
+    roleParam === 'AGENT' || roleParam === 'CANDIDATE' || roleParam === 'OWNER' ? roleParam : 'OWNER'
+  const defaultRedirect =
+    requestedRole === 'CANDIDATE' ? '/portal' : requestedRole === 'AGENT' ? '/agent' : '/admin'
+  const explicitRedirect = params.get('redirect')
+  const redirect = explicitRedirect || defaultRedirect
   const { user, loading, login, loginCandidate } = useSession()
 
-  const [role, setRole] = React.useState<Role>(requestedRole)
-  const [email, setEmail] = React.useState('')
-  const [mobile, setMobile] = React.useState('')
+  const [selectedRole, setSelectedRole] = React.useState<Role>(requestedRole)
+  const [identifier, setIdentifier] = React.useState('')
   const [password, setPassword] = React.useState('')
   const [showPass, setShowPass] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
   React.useEffect(() => {
-    setRole(requestedRole)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedRole(requestedRole)
   }, [requestedRole])
 
   // Redirect already-authenticated users away from /login.
-  // This fixes the "back button shows login form again" bug.
   React.useEffect(() => {
     if (loading) return
     if (user) {
-      // If a specific redirect target was requested and matches the user's role, use it.
-      // Otherwise, send them to their own portal home.
       const userHome = user.role === 'OWNER' ? '/admin' : user.role === 'AGENT' ? '/agent' : '/portal'
-      const target = redirect && user.role === requestedRole ? redirect : userHome
-      // Use replace() so /login is removed from browser history — back button won't return to it.
+      const isCompatibleRedirect =
+        explicitRedirect &&
+        ((user.role === 'OWNER' && explicitRedirect.startsWith('/admin')) ||
+          (user.role === 'AGENT' && explicitRedirect.startsWith('/agent')) ||
+          (user.role === 'CANDIDATE' && explicitRedirect.startsWith('/portal')))
+      const target = isCompatibleRedirect
+        ? explicitRedirect
+        : user.role === requestedRole
+          ? redirect
+          : userHome
       router.replace(target)
     }
-  }, [user, loading, redirect, requestedRole, router])
+  }, [user, loading, redirect, explicitRedirect, requestedRole, router])
+
+  const fillDemo = (demo: (typeof DEMO_CREDENTIALS)[number]) => {
+    setSelectedRole(demo.role)
+    setIdentifier(demo.identifier)
+    setPassword(demo.password)
+    setError(null)
+  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setBusy(true)
     setError(null)
+    const idStr = identifier.trim()
 
+    if (!idStr || !password) {
+      setError('Please enter your email or mobile number and password')
+      return
+    }
+
+    setBusy(true)
     try {
       let r
-      if (role === 'CANDIDATE') {
-        if (!mobile.trim()) {
-          setError('Mobile number is required')
-          setBusy(false)
-          return
-        }
-        r = await loginCandidate(mobile.trim(), password)
+      const digitsOnly = idStr.replace(/\D/g, '')
+      if (/^\d+$/.test(idStr) || (!idStr.includes('@') && digitsOnly.length >= 10)) {
+        const cleanMobile = digitsOnly.replace(/^91(\d{10})$/, '$1')
+        r = await loginCandidate(cleanMobile, password)
       } else {
-        if (!email.trim()) {
-          setError('Email is required')
-          setBusy(false)
-          return
-        }
-        r = await login(email.trim(), password)
+        r = await login(idStr, password)
       }
-      if (r.ok) {
-        // Use replace() instead of push() so /login is removed from browser history.
-        // This prevents the "back button shows login form again" issue.
-        router.replace(redirect)
-      } else {
+      if (!r.ok) {
         setError(r.error || 'Login failed')
       }
     } finally {
       setBusy(false)
-    }
-  }
-
-  const fillDemo = () => {
-    if (role === 'OWNER') {
-      setEmail('owner@loanops.in')
-      setPassword('Owner@123')
-    } else if (role === 'AGENT') {
-      setEmail('agent@loanops.in')
-      setPassword('Agent@123')
-    } else {
-      setMobile('9820277789')
-      setPassword('Candidate@123')
     }
   }
 
@@ -103,7 +114,7 @@ function LoginInner() {
             </div>
             <div>
               <p className="font-bold tracking-tight text-lg">LoanOps</p>
-              <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Premium Loan Operations</p>
+              <p className="text-xs text-primary-foreground/70 tracking-wider">Premium Loan Operations</p>
             </div>
           </div>
 
@@ -119,9 +130,9 @@ function LoginInner() {
                 ['BigInt paise', 'No float math'],
                 ['Audit trail', 'Every action logged'],
               ].map(([t, d]) => (
-                <div key={t} className="rounded-xl bg-primary-foreground/10 backdrop-blur p-3">
+                <div key={t} className="rounded-xl bg-primary-foreground/20 border border-primary-foreground/10 backdrop-blur p-3">
                   <p className="font-semibold text-sm">{t}</p>
-                  <p className="text-xs text-primary-foreground/70 mt-0.5">{d}</p>
+                  <p className="text-xs text-primary-foreground/80 mt-0.5">{d}</p>
                 </div>
               ))}
             </div>
@@ -135,7 +146,7 @@ function LoginInner() {
       </div>
 
       {/* Right panel (form) */}
-      <div className="flex-1 flex items-center justify-center p-4 sm:p-8">
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-8">
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -148,64 +159,62 @@ function LoginInner() {
             </div>
             <div>
               <p className="font-bold leading-none">LoanOps</p>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Premium Loan Operations</p>
+              <p className="text-[10px] text-muted-foreground tracking-wider mt-0.5">Premium Loan Operations</p>
             </div>
           </div>
 
           <Card className="rounded-2xl shadow-premium">
             <CardContent className="p-6 sm:p-8">
               <h1 className="text-2xl font-bold tracking-tight">Sign in</h1>
-              <p className="text-sm text-muted-foreground mt-1.5">Choose your portal and enter credentials.</p>
+              <p className="text-sm text-muted-foreground mt-1.5">Enter your email or mobile number to continue.</p>
 
-              {/* Role tabs */}
-              <div className="mt-5 grid grid-cols-3 gap-1 p-1 bg-muted/50 rounded-xl">
-                {(['OWNER', 'AGENT', 'CANDIDATE'] as Role[]).map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => { setRole(r); setError(null) }}
-                    className={
-                      'relative py-2 px-3 rounded-lg text-sm font-medium transition-all ' +
-                      (role === r
-                        ? 'bg-card shadow-sm text-foreground'
-                        : 'text-muted-foreground hover:text-foreground')
-                    }
-                  >
-                    {r.charAt(0) + r.slice(1).toLowerCase()}
-                  </button>
-                ))}
-              </div>
+              {/* Demo credentials quick-fill (development only) */}
+              {process.env.NODE_ENV === 'development' && (
+                <div className="mt-4 rounded-xl bg-muted/60 border border-border/60 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-muted-foreground">Quick-fill demo account</span>
+                    <span className="text-[11px] text-muted-foreground font-mono">
+                      {DEMO_CREDENTIALS.find((d) => d.role === selectedRole)?.identifier}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {DEMO_CREDENTIALS.map((demo) => {
+                      const active = selectedRole === demo.role && identifier === demo.identifier
+                      return (
+                        <Button
+                          key={demo.role}
+                          type="button"
+                          variant={active ? 'default' : 'outline'}
+                          size="sm"
+                          aria-label={`Fill ${demo.label} demo credentials`}
+                          onClick={() => fillDemo(demo)}
+                          className="h-9 text-xs rounded-lg"
+                        >
+                          {demo.label}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
 
-              <form onSubmit={submit} className="mt-5 space-y-4">
-                {role === 'CANDIDATE' ? (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="mobile">Mobile number</Label>
-                    <Input
-                      id="mobile"
-                      type="tel"
-                      value={mobile}
-                      onChange={(e) => setMobile(e.target.value)}
-                      placeholder="9820277789"
-                      autoComplete="tel"
-                      required
-                      className="h-11 rounded-xl"
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="email">Email address</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder={role === 'OWNER' ? 'owner@loanops.in' : 'agent@loanops.in'}
-                      autoComplete="email"
-                      required
-                      className="h-11 rounded-xl"
-                    />
-                  </div>
-                )}
+              <form onSubmit={submit} className="mt-5 space-y-4" aria-describedby={error ? 'login-error' : undefined} noValidate>
+                <div className="space-y-1.5">
+                  <Label htmlFor="identifier">Email or Mobile Number</Label>
+                  <Input
+                    id="identifier"
+                    type="text"
+                    inputMode="email"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder="name@example.com or 9820277789"
+                    autoComplete="username"
+                    required
+                    aria-invalid={error ? 'true' : undefined}
+                    aria-describedby={error ? 'login-error' : undefined}
+                    className="h-11 min-h-[44px] rounded-xl text-base"
+                  />
+                </div>
 
                 <div className="space-y-1.5">
                   <Label htmlFor="password">Password</Label>
@@ -218,14 +227,16 @@ function LoginInner() {
                       placeholder="••••••••"
                       autoComplete="current-password"
                       required
-                      minLength={8}
-                      className="h-11 rounded-xl pr-11"
+                      minLength={6}
+                      aria-invalid={error ? 'true' : undefined}
+                      aria-describedby={error ? 'login-error' : undefined}
+                      className="h-11 min-h-[44px] rounded-xl pr-11 text-base"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPass(!showPass)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      tabIndex={-1}
+                      aria-label={showPass ? 'Hide secret characters' : 'Show secret characters'}
+                      className="absolute right-0 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-r-xl"
                     >
                       {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
@@ -234,6 +245,8 @@ function LoginInner() {
 
                 {error && (
                   <motion.div
+                    id="login-error"
+                    role="alert"
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     className="rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm px-3 py-2"
@@ -245,44 +258,36 @@ function LoginInner() {
                 <Button
                   type="submit"
                   disabled={busy}
-                  className="w-full h-11 rounded-xl text-base"
+                  className="w-full h-11 min-h-[44px] rounded-xl text-base"
                 >
                   {busy ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <>
-                      Sign in to {role.charAt(0) + role.slice(1).toLowerCase()} Portal
+                      Sign in
                       <ArrowRight className="ml-2 h-4 w-4" />
                     </>
                   )}
                 </Button>
               </form>
 
-              {process.env.NODE_ENV !== 'production' && (
-                <div className="mt-5 rounded-xl border border-dashed border-border bg-muted/30 p-3">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Demo credentials</p>
-                  <button
-                    type="button"
-                    onClick={fillDemo}
-                    className="text-xs text-primary hover:underline"
-                  >
-                    Click to autofill demo credentials for {role}
-                  </button>
-                  <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">
-                    {role === 'OWNER' && 'owner@loanops.in / Owner@123'}
-                    {role === 'AGENT' && 'agent@loanops.in / Agent@123'}
-                    {role === 'CANDIDATE' && 'Mobile 9820277789 / Candidate@123'}
-                  </p>
-                </div>
-              )}
-
-              <p className="text-center text-xs text-muted-foreground mt-5">
-                <a href="/" className="hover:text-foreground underline underline-offset-2">← Back to home</a>
-              </p>
+              <div className="mt-5 space-y-2 text-center">
+                <p className="text-xs text-muted-foreground">
+                  New candidate?{' '}
+                  <Link href="/signup" className="text-primary hover:underline underline-offset-2 font-medium">
+                    Create an account
+                  </Link>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  <Link href="/" className="hover:text-foreground underline underline-offset-2">&larr; Back to home</Link>
+                </p>
+              </div>
             </CardContent>
           </Card>
+
+          <LegalFooter compact className="mt-6" />
         </motion.div>
-      </div>
+      </main>
     </div>
   )
 }
@@ -290,7 +295,13 @@ function LoginInner() {
 export default function LoginPage() {
   return (
     <SessionProvider>
-      <LoginInner />
+      <React.Suspense fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      }>
+        <LoginInner />
+      </React.Suspense>
     </SessionProvider>
   )
 }

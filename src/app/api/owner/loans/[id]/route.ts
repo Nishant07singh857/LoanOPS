@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireOwner } from '@/lib/server/auth'
 import { apiHandler, success, notFound } from '@/lib/server/api'
+import { decryptPII } from '@/lib/server/crypto'
+import { maskAadhaar, maskPan, maskBankAccount } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,7 +18,6 @@ export const GET = apiHandler(async (req: NextRequest, { params }: { params: Pro
       application: true,
       schedule: { orderBy: { installmentNumber: 'asc' } },
       payments: { orderBy: { createdAt: 'desc' } },
-      cashCollections: { orderBy: { createdAt: 'desc' } },
       ptps: { orderBy: { createdAt: 'desc' } },
       escalations: { orderBy: { createdAt: 'desc' } },
       disbursements: { orderBy: { initiatedAt: 'desc' } },
@@ -27,12 +28,37 @@ export const GET = apiHandler(async (req: NextRequest, { params }: { params: Pro
 
   if (!loan) return notFound('Loan not found')
 
+  const maskedCandidate = loan.candidate
+    ? {
+        ...loan.candidate,
+        aadhaarMasked: loan.candidate.aadhaarMasked
+          ? maskAadhaar(decryptPII(loan.candidate.aadhaarMasked))
+          : loan.application?.kycAadhaar
+            ? maskAadhaar(decryptPII(loan.application.kycAadhaar))
+            : null,
+        panMasked: loan.candidate.panMasked
+          ? maskPan(decryptPII(loan.candidate.panMasked))
+          : loan.application?.kycPan
+            ? maskPan(decryptPII(loan.application.kycPan))
+            : null,
+        bankAccount: loan.candidate.bankAccount ? maskBankAccount(decryptPII(loan.candidate.bankAccount)) : null,
+      }
+    : loan.candidate
+
+  const maskedApplication = loan.application
+    ? {
+        ...loan.application,
+        kycAadhaar: loan.application.kycAadhaar ? maskAadhaar(decryptPII(loan.application.kycAadhaar)) : null,
+        kycPan: loan.application.kycPan ? maskPan(decryptPII(loan.application.kycPan)) : null,
+      }
+    : null
+
   return success({
     id: loan.id,
     loanNumber: loan.loanNumber,
     candidateId: loan.candidateId,
-    candidate: loan.candidate,
-    application: loan.application,
+    candidate: maskedCandidate,
+    application: maskedApplication,
     principalAmount: String(loan.principalAmount),
     interestType: loan.interestType,
     interestRate: loan.interestRate,
@@ -77,10 +103,6 @@ export const GET = apiHandler(async (req: NextRequest, { params }: { params: Pro
       allocatedInterest: String(p.allocatedInterest),
       allocatedPrincipal: String(p.allocatedPrincipal),
       unallocated: String(p.unallocated),
-    })),
-    cashCollections: loan.cashCollections.map(c => ({
-      ...c,
-      amount: String(c.amount),
     })),
     disbursements: loan.disbursements.map(d => ({
       ...d,

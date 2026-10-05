@@ -1,0 +1,24 @@
+title = "LoanOps Gitleaks Secret Scanner Configuration"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "postgres-connection-uri"
+description = "Hardcoded PostgreSQL connection string with password"
+regex = '''postgresql://[^:\s]+:[^@\s]+@[a-zA-Z0-9.-]+:\d+/[a-zA-Z0-9_-]+'''
+tags = ["database", "secret"]
+
+[[rules]]
+id = "loanops-session-or-pii-secret"
+description = "Hardcoded production SESSION_SECRET or PII_ENCRYPTION_KEY"
+regex = '''(SESSION_SECRET|PII_ENCRYPTION_KEY)\s*=\s*["'][0-9a-fA-F]{64}["']'''
+tags = ["key", "secret"]
+
+[allowlist]
+description = "Allow example/test placeholders"
+paths = [
+  '''\.env\.example$''',
+  '''tests/.*''',
+  '''DEPLOYMENT\.md$''',
+]

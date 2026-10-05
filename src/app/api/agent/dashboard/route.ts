@@ -22,8 +22,8 @@ export const GET = apiHandler(async (req: NextRequest) => {
       status: { in: ['OPEN', 'ASSIGNED'] },
     },
     include: {
-      candidate: { select: { fullName: true, mobile: true } },
-      loan: { select: { loanNumber: true, installmentAmount: true } },
+      candidate: { select: { id: true, fullName: true, mobile: true } },
+      loan: { select: { id: true, loanNumber: true, installmentAmount: true } },
     },
     orderBy: { dueDate: 'asc' },
   })
@@ -38,7 +38,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
       agentId: ctx.user.id,
       nextFollowUp: { gte: startOfToday, lt: endOfToday },
     },
-    include: { candidate: { select: { fullName: true, mobile: true } } },
+    include: { candidate: { select: { id: true, fullName: true, mobile: true } } },
     orderBy: { nextFollowUp: 'asc' },
   })
 
@@ -49,7 +49,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
       status: 'ACTIVE',
       promiseDate: { lt: endOfToday },
     },
-    include: { candidate: { select: { fullName: true, mobile: true } }, loan: { select: { loanNumber: true } } },
+    include: { candidate: { select: { id: true, fullName: true, mobile: true } }, loan: { select: { id: true, loanNumber: true } } },
     orderBy: { promiseDate: 'asc' },
   })
 
@@ -74,12 +74,13 @@ export const GET = apiHandler(async (req: NextRequest) => {
     }))
 
   // Pending cash verifications (recorded by me, awaiting owner verify)
-  const pendingCash = await db.cashCollection.findMany({
+  const pendingCash = await db.payment.findMany({
     where: {
       recordedById: ctx.user.id,
+      method: 'CASH',
       status: 'PENDING_VERIFICATION',
     },
-    include: { candidate: { select: { fullName: true, mobile: true } }, loan: { select: { loanNumber: true } } },
+    include: { candidate: { select: { id: true, fullName: true, mobile: true } }, loan: { select: { id: true, loanNumber: true } } },
     orderBy: { createdAt: 'desc' },
   })
 
@@ -141,8 +142,8 @@ export const GET = apiHandler(async (req: NextRequest) => {
     pendingCashVerifications: pendingCash.map((c) => ({
       id: c.id,
       amount: String(c.amount),
-      collectionDate: c.collectionDate,
-      collectionTime: c.collectionTime,
+      collectionDate: c.createdAt,
+      collectionTime: c.createdAt,
       reference: c.reference,
       notes: c.notes,
       candidate: {
@@ -157,7 +158,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
       amount: String(c.amount),
       candidateName: c.candidate.fullName,
       loanNumber: c.loan.loanNumber,
-      collectionDate: c.collectionDate,
+      collectionDate: c.createdAt,
       status: c.status,
     })),
   })

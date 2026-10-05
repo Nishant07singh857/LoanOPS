@@ -17,44 +17,112 @@ export const GET = apiHandler(async (req: NextRequest) => {
   const { skip, take } = paginate(page, pageSize)
 
   const where = {
-    loan: { organizationId: ctx.user.organizationId },
-    ...(status ? { status: status as any } : {}),
+    organizationId: ctx.user.organizationId,
+    method: 'CASH' as const,
+    ...(status
+      ? status === 'VERIFIED'
+        ? { status: { in: ['VERIFIED', 'ALLOCATED'] as any } }
+        : { status: status as any }
+      : {}),
   }
 
-  const [items, total] = await Promise.all([
-    db.cashCollection.findMany({
+  const [items, total, unverifiedPayments] = await Promise.all([
+    db.payment.findMany({
       where,
-      skip, take,
+      skip,
+      take,
       orderBy: { createdAt: 'desc' },
       include: {
         candidate: { select: { fullName: true, mobile: true } },
         loan: { select: { loanNumber: true } },
-        recordedBy: { select: { name: true } },
-        verifiedBy: { select: { name: true } },
+        recordedBy: { select: { id: true, name: true } },
+        verifiedBy: { select: { id: true, name: true } },
       },
     }),
-    db.cashCollection.count({ where }),
+    db.payment.count({ where }),
+    db.payment.findMany({
+      where: {
+        organizationId: ctx.user.organizationId,
+        method: 'CASH',
+        status: 'PENDING_VERIFICATION',
+      },
+      select: {
+        amount: true,
+        recordedById: true,
+        recordedBy: { select: { id: true, name: true } },
+      },
+    }),
   ])
+
+  const agentMap = new Map<
+    string,
+    { agentId: string; agentName: string; unverifiedAmount: number; count: number }
+  >()
+  let totalUnverifiedPaise = 0
+
+  for (const p of unverifiedPayments) {
+    totalUnverifiedPaise += p.amount
+    const agentId = p.recordedById ?? 'unassigned'
+    const agentName = p.recordedBy?.name ?? 'Field Agent'
+    const existing = agentMap.get(agentId)
+    if (existing) {
+      existing.unverifiedAmount += p.amount
+      existing.count += 1
+    } else {
+      agentMap.set(agentId, {
+        agentId,
+        agentName,
+        unverifiedAmount: p.amount,
+        count: 1,
+      })
+    }
+  }
+
+  const agentCashInHand = Array.from(agentMap.values())
+    .sort((a, b) => b.unverifiedAmount - a.unverifiedAmount)
+    .map((a) => ({
+      agentId: a.agentId,
+      agentName: a.agentName,
+      unverifiedAmount: String(a.unverifiedAmount),
+      count: a.count,
+    }))
 
   return success({
     items: items.map((c) => ({
       id: c.id,
+      paymentNumber: c.paymentNumber,
+      receiptNumber: c.receiptNumber,
       amount: String(c.amount),
-      collectionDate: c.collectionDate,
-      collectionTime: c.collectionTime,
-      installmentNumber: c.installmentNumber,
+      allocatedFees: String(c.allocatedFees),
+      allocatedInterest: String(c.allocatedInterest),
+      allocatedPrincipal: String(c.allocatedPrincipal),
+      collectionDate: c.createdAt,
+      collectionTime: c.createdAt,
       reference: c.reference,
       notes: c.notes,
       proofUrl: c.proofUrl,
       status: c.status,
+      verificationStatus:
+        c.status === 'VERIFIED' || c.verifiedAt
+          ? 'VERIFIED'
+          : c.status === 'REJECTED'
+            ? 'REJECTED'
+            : 'PENDING_VERIFICATION',
       rejectionReason: c.rejectionReason,
-      recordedBy: c.recordedBy.name,
+      recordedById: c.recordedById,
+      recordedBy: c.recordedBy?.name,
       verifiedBy: c.verifiedBy?.name ?? null,
       candidate: c.candidate,
       loan: c.loan,
       createdAt: c.createdAt,
+      allocatedAt: c.allocatedAt,
       verifiedAt: c.verifiedAt,
     })),
-    total, page, pageSize,
+    total,
+    page,
+    pageSize,
+    agentCashInHand,
+    totalUnverifiedCash: String(totalUnverifiedPaise),
   })
 })
+

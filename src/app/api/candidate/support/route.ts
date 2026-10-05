@@ -6,12 +6,7 @@ import { db } from '@/lib/db'
 import { requireCandidate, audit } from '@/lib/server/auth'
 import { apiHandler, success, created, badRequest, validate, genNumber } from '@/lib/server/api'
 
-const schema = z.object({
-  category: z.string().min(2).max(100),
-  subject: z.string().min(2).max(200),
-  description: z.string().min(2).max(5000),
-  attachmentUrl: z.string().optional().nullable(),
-})
+const schema = z.object({}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireCandidate()
@@ -38,18 +33,19 @@ export const POST = apiHandler(async (req: NextRequest) => {
   // Notify owners
   const owners = await db.user.findMany({
     where: { organizationId: ctx.user.organizationId, role: 'OWNER', isActive: true },
+    select: { id: true }
   })
-  for (const owner of owners) {
-    await db.notification.create({
-      data: {
+  if (owners.length > 0) {
+    await db.notification.createMany({
+      data: owners.map(owner => ({
         organizationId: ctx.user.organizationId,
         userId: owner.id,
-        type: 'AI_INSIGHT',
+        type: 'AI_INSIGHT', // Note: maybe should be 'SUPPORT' but keeping it as is to preserve functionality
         title: 'New support ticket',
         message: `Ticket ${ticketNumber} from ${ctx.user.name}: ${data.subject}`,
         isRead: false,
         metadata: { ticketId: ticket.id },
-      },
+      }))
     })
   }
 

@@ -5,10 +5,7 @@ import { z } from 'zod'
 import { requireOwner, audit } from '@/lib/server/auth'
 import { apiHandler, success, validate, genToken, paginate } from '@/lib/server/api'
 
-const querySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-})
+const querySchema = z.object({}).strict()
 
 export const GET = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()
@@ -19,7 +16,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
   const [links, total] = await Promise.all([
     ctx.db.qrLink.findMany({
       where: { organizationId: ctx.user.organizationId },
-      include: { createdBy: { select: { name: true, email: true } } },
+      include: { createdBy: { select: { name: true, email: true } }, application: { select: { id: true } } },
       orderBy: { createdAt: 'desc' },
       skip,
       take,
@@ -45,7 +42,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
       isRevoked: l.isRevoked,
       isUsed: l.isUsed,
       submittedAt: l.submittedAt,
-      applicationId: l.applicationId,
+      applicationId: l.application?.id || null,
       publicUrl: `/apply/${l.token}`,
     })),
     total,
@@ -54,16 +51,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const createSchema = z.object({
-  prePrincipal: z.string().regex(/^\d+$/).optional(),
-  preInterestType: z.enum(['PERCENTAGE', 'FIXED', 'NONE']).optional(),
-  preInterestRate: z.number().int().min(0).optional(),
-  preFixedInterest: z.string().regex(/^\d+$/).optional(),
-  preFrequency: z.enum(['DAILY', 'WEEKLY', 'MONTHLY']).optional(),
-  preInstallments: z.number().int().min(1).max(360).optional(),
-  prePurpose: z.string().max(500).optional(),
-  expiresInDays: z.number().int().min(1).max(365).optional(),
-})
+const createSchema = z.object({}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()
@@ -85,8 +73,15 @@ export const POST = apiHandler(async (req: NextRequest) => {
       preInterestRate: input.preInterestRate,
       preFixedInterest: input.preFixedInterest ? Number(input.preFixedInterest) : null,
       preFrequency: input.preFrequency,
+      preTenure: input.preTenureMonths,
       preInstallments: input.preInstallments,
       prePurpose: input.prePurpose,
+      preProcessingFee: input.processingFee ? Number(input.processingFee) : null,
+      preOtherFees: input.otherFees ? Number(input.otherFees) : null,
+      preFullName: input.preFullName,
+      preMobile: input.preMobile,
+      preAadhaar: input.preAadhaar,
+      prePan: input.prePan,
       expiresAt,
     },
   })

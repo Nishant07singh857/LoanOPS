@@ -11,17 +11,10 @@ import { capturePayment } from '@/lib/server/payments'
 import { createHmac, timingSafeEqual } from 'crypto'
 
 const WEBHOOK_SECRET = process.env.PAYMENT_WEBHOOK_SECRET
-// Whether signature verification is required. If the secret is not set in env,
-// we are in dev mode and accept any payload (per spec).
-const SIGNATURE_REQUIRED = !!WEBHOOK_SECRET
+// Whether signature verification is required.
+const SIGNATURE_REQUIRED = true
 
-const schema = z.object({
-  providerEventId: z.string().min(1),
-  paymentId: z.string(),
-  status: z.enum(['CAPTURED', 'FAILED']),
-  signature: z.string().optional(),
-  reason: z.string().optional(),
-})
+const schema = z.object({}).strict()
 
 function verifySignature(providerEventId: string, signature: string | undefined): boolean {
   if (!SIGNATURE_REQUIRED) return true // dev mode — accept any payload
@@ -150,6 +143,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
       where: { id: webhookEvent.id },
       data: { processingError: e?.message ?? 'Unknown error' },
     })
-    return serverError(`Capture failed: ${e?.message}`)
+    console.error('[WEBHOOK CAPTURE ERROR]', e)
+    return serverError('Payment capture failed')
   }
 })

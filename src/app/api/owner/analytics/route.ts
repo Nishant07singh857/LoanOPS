@@ -26,52 +26,40 @@ export const GET = apiHandler(async (req: NextRequest) => {
   const outstandingTrend: { label: string; value: number }[] = []
   const overdueTrend: { label: string; value: number }[] = []
 
-  for (const b of buckets) {
-    // Disbursed in this month
-    const disbursed = await db.loan.aggregate({
-      where: {
-        organizationId: orgId,
-        disbursedAt: { gte: b.start, lt: b.end },
-      },
-      _sum: { principalAmount: true },
-    })
-    disbursementTrend.push({ label: b.label, value: disbursed._sum.principalAmount ?? 0 })
+  // Process buckets in parallel
+  const bucketResults = await Promise.all(buckets.map(async (b) => {
+    const [disbursed, collected, outstandingLoans, overdueInsts] = await Promise.all([
+      db.loan.aggregate({
+        where: { organizationId: orgId, disbursedAt: { gte: b.start, lt: b.end } },
+        _sum: { principalAmount: true },
+      }),
+      db.payment.aggregate({
+        where: { organizationId: orgId, status: 'ALLOCATED', allocatedAt: { gte: b.start, lt: b.end } },
+        _sum: { amount: true },
+      }),
+      db.loan.findMany({
+        where: { organizationId: orgId, disbursedAt: { lt: b.end }, status: { in: ['ACTIVE', 'CLOSED'] } },
+        select: { outstandingPrincipal: true },
+      }),
+      db.installment.aggregate({
+        where: { dueDate: { lt: b.end }, status: 'OVERDUE', loan: { organizationId: orgId } },
+        _sum: { totalDue: true, paidAmount: true },
+      })
+    ])
 
-    // Collected (payments allocated) in this month
-    const collected = await db.payment.aggregate({
-      where: {
-        organizationId: orgId,
-        status: 'ALLOCATED',
-        allocatedAt: { gte: b.start, lt: b.end },
-      },
-      _sum: { amount: true },
-    })
-    collectionTrend.push({ label: b.label, value: collected._sum.amount ?? 0 })
+    return {
+      disbursement: { label: b.label, value: disbursed._sum.principalAmount ?? 0 },
+      collection: { label: b.label, value: collected._sum.amount ?? 0 },
+      outstanding: { label: b.label, value: outstandingLoans.reduce((s, l) => s + l.outstandingPrincipal, 0) },
+      overdue: { label: b.label, value: Math.max(0, (overdueInsts._sum.totalDue ?? 0) - (overdueInsts._sum.paidAmount ?? 0)) }
+    }
+  }))
 
-    // Outstanding at end of month (sum of outstandingPrincipal of loans that existed by then)
-    const outstandingLoans = await db.loan.findMany({
-      where: {
-        organizationId: orgId,
-        disbursedAt: { lt: b.end },
-        status: { in: ['ACTIVE', 'CLOSED'] },
-      },
-      select: { outstandingPrincipal: true },
-    })
-    outstandingTrend.push({ label: b.label, value: outstandingLoans.reduce((s, l) => s + l.outstandingPrincipal, 0) })
-
-    // Overdue at end of month (sum of overdue installments where due date < end of bucket)
-    const overdueInsts = await db.installment.aggregate({
-      where: {
-        dueDate: { lt: b.end },
-        status: 'OVERDUE',
-        loan: { organizationId: orgId },
-      },
-      _sum: { totalDue: true, paidAmount: true },
-    })
-    overdueTrend.push({
-      label: b.label,
-      value: Math.max(0, (overdueInsts._sum.totalDue ?? 0) - (overdueInsts._sum.paidAmount ?? 0)),
-    })
+  for (const res of bucketResults) {
+    disbursementTrend.push(res.disbursement)
+    collectionTrend.push(res.collection)
+    outstandingTrend.push(res.outstanding)
+    overdueTrend.push(res.overdue)
   }
 
   // Repayment frequency distribution
@@ -97,6 +85,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
       _count: {
         select: {
           tasks: { where: { status: { in: ['OPEN', 'ASSIGNED'] } } } as any,
+          candidates: { where: { status: 'ACTIVE' } } as any,
         },
       },
     },
@@ -126,7 +115,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
       name: a.user.name,
       zone: a.zone,
       activeTasks: (a._count as any).tasks ?? 0,
-      assignedCandidates: 0, // filled below
+      assignedCandidates: (a._count as any).candidates ?? 0,
     })),
     ptpFulfillment: ptpFulfillment.map((p) => ({ status: p.status, count: p._count })),
   })

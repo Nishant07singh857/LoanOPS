@@ -5,8 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Landmark, Banknote, Receipt, FileText, ClipboardList, ScrollText,
-  FileSignature, MessageCircle, Eye, Calendar, Phone, User, Wallet,
-  CreditCard, AlertCircle, Building2,
+  FileSignature, MessageCircle, Eye, EyeOff, Calendar, Phone, User, Wallet,
+  CreditCard, AlertCircle, Building2, FilePen,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -113,7 +113,8 @@ interface LoanDetail {
     notes?: string | null
     initiatedAt: string
     completedAt?: string | null
-    initiatedBy: string
+    initiatedBy?: string | null
+    initiatedById?: string | null
   }>
   ptps: Array<{
     id: string
@@ -121,7 +122,7 @@ interface LoanDetail {
     promiseDate: string
     status: string
     notes?: string | null
-    agent: string
+    agent?: string | { name?: string } | null
     createdAt: string
   }>
   escalations: Array<{
@@ -129,7 +130,7 @@ interface LoanDetail {
     reason: string
     status: string
     description?: string | null
-    agent: string
+    agent?: string | { name?: string } | null
     createdAt: string
   }>
 }
@@ -148,18 +149,73 @@ function fmtDateTime(d?: string | null) {
   return date.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+function maskAadhaar(val?: string | null) {
+  if (!val) return '—'
+  const clean = val.replace(/\s|-/g, '')
+  if (clean.length < 4) return 'XXXX-XXXX'
+  return `XXXX-XXXX-${clean.slice(-4)}`
+}
+
+function maskPan(val?: string | null) {
+  if (!val) return '—'
+  const clean = val.trim().toUpperCase()
+  if (clean.length >= 10) return `${clean.slice(0, 5)}****${clean.slice(-1)}`
+  if (clean.length > 4) return `••••${clean.slice(-4)}`
+  return '••••••••••'
+}
+
+function maskBankAccount(val?: string | null) {
+  if (!val) return '—'
+  const clean = val.trim()
+  if (clean.length <= 4) return `••••••${clean}`
+  return `••••••${clean.slice(-4)}`
+}
+
 export default function LoanDetailPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
   const queryClient = useQueryClient()
 
-  const { data: loan, isLoading } = useQuery({
+  const { data: loan, isLoading, isError, refetch } = useQuery({
     queryKey: ['owner-loan', params.id],
     queryFn: () => api.get<LoanDetail>(`/api/owner/loans/${params.id}`),
     enabled: !!params.id,
   })
 
   const [disburseOpen, setDisburseOpen] = React.useState(false)
+  const [restructureOpen, setRestructureOpen] = React.useState(false)
+  const [showPii, setShowPii] = React.useState(false)
+  const [revealedPii, setRevealedPii] = React.useState<{
+    aadhaar?: string | null
+    pan?: string | null
+    bankAccount?: string | null
+  } | null>(null)
+  const [revealingPii, setRevealingPii] = React.useState(false)
+
+  const handleTogglePii = async () => {
+    if (showPii) {
+      setShowPii(false)
+      return
+    }
+    if (revealedPii) {
+      setShowPii(true)
+      return
+    }
+    setRevealingPii(true)
+    try {
+      const data = await api.post<{ aadhaar: string | null; pan: string | null; bankAccount: string | null }>(
+        '/api/owner/pii/reveal',
+        { entityType: 'LOAN', entityId: params.id }
+      )
+      setRevealedPii(data)
+      setShowPii(true)
+      toast.success('PII revealed (audit logged)')
+    } catch (err: any) {
+      toast.error('Failed to reveal PII', { description: err.message })
+    } finally {
+      setRevealingPii(false)
+    }
+  }
 
   const disburseMutation = useMutation({
     mutationFn: (input: { method: 'ONLINE' | 'OFFLINE'; reference?: string; notes?: string }) =>
@@ -170,8 +226,9 @@ export default function LoanDetailPage() {
         notes: input.notes,
       }),
     onSuccess: (data: any) => {
+      const amt = Number(data?.amount ?? loan?.principalAmount ?? 0)
       toast.success('Disbursement initiated', {
-        description: `${data.method} · ${formatPaiseToINR(Number(data.amount))} to ${loan?.candidate.fullName}`,
+        description: `${data.method} - ${formatPaiseToINR(amt)} to ${loan?.candidate.fullName}`,
       })
       queryClient.invalidateQueries({ queryKey: ['owner-loan', params.id] })
       queryClient.invalidateQueries({ queryKey: ['owner-loans'] })
@@ -181,15 +238,49 @@ export default function LoanDetailPage() {
     onError: (err: any) => toast.error('Disbursement failed', { description: err.message }),
   })
 
-  if (isLoading || !loan) {
+  const restructureMutation = useMutation({
+    mutationFn: (input: { tenureMonths: number; newFrequency: string; notes: string }) =>
+      api.post(`/api/owner/loans/${params.id}/restructure`, input),
+    onSuccess: () => {
+      toast.success('Loan successfully restructured')
+      queryClient.invalidateQueries({ queryKey: ['owner-loan', params.id] })
+      queryClient.invalidateQueries({ queryKey: ['owner-loans'] })
+      queryClient.invalidateQueries({ queryKey: ['owner-dashboard'] })
+      setRestructureOpen(false)
+    },
+    onError: (err: any) => toast.error('Restructure failed', { description: err.message }),
+  })
+
+  if (isLoading) {
     return (
-      <div className="space-y-6">
-        <Button variant="ghost" size="sm" onClick={() => router.push('/admin/loans')} className="gap-1">
+      <div className="space-y-6" role="status" aria-label="Loading loan details">
+        <Button variant="ghost" size="sm" onClick={() => router.push('/admin/loans')} className="gap-1 min-h-[44px] sm:min-h-8">
           <ArrowLeft className="h-4 w-4" /> Back to Loans
         </Button>
         <Card className="shadow-premium"><CardContent className="p-4 space-y-3">
           {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
         </CardContent></Card>
+      </div>
+    )
+  }
+
+  if (isError || !loan) {
+    return (
+      <div className="space-y-6">
+        <Button variant="ghost" size="sm" onClick={() => router.push('/admin/loans')} className="gap-1 min-h-[44px] sm:min-h-8">
+          <ArrowLeft className="h-4 w-4" /> Back to Loans
+        </Button>
+        <Card className="border-destructive/40 bg-destructive/5 shadow-premium">
+          <CardContent className="p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-destructive">Failed to load loan details</p>
+              <p className="text-xs text-muted-foreground mt-0.5">The loan could not be found or there was a network error.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => refetch()} className="min-h-[44px] sm:min-h-8">
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }
@@ -209,10 +300,12 @@ export default function LoanDetailPage() {
     toast.success('WhatsApp draft opened', { description: `Reminder sent to ${loan.candidate.fullName}` })
   }
 
+  const hasSensitivePii = Boolean(loan.candidate.bankAccount || loan.candidate.aadhaarMasked || loan.candidate.panMasked)
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Button variant="ghost" size="sm" onClick={() => router.push('/admin/loans')} className="gap-1">
+        <Button variant="ghost" size="sm" onClick={() => router.push('/admin/loans')} className="gap-1 min-h-[44px] sm:min-h-8">
           <ArrowLeft className="h-4 w-4" /> Back to Loans
         </Button>
       </div>
@@ -222,19 +315,24 @@ export default function LoanDetailPage() {
         description={`${loan.candidate.fullName} · ${loan.frequency} · ${loan.installments} installments`}
         icon={<Landmark className="h-5 w-5" />}
         action={
-          <>
-            <Button variant="outline" size="sm" onClick={onWhatsApp}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={onWhatsApp} className="min-h-[44px] sm:min-h-8">
               <MessageCircle className="h-4 w-4" /> WhatsApp
             </Button>
-            <Button variant="outline" size="sm" onClick={() => toast.info('Opening receipts...')}>
+            <Button variant="outline" size="sm" onClick={() => toast.info('Opening receipts...')} className="min-h-[44px] sm:min-h-8">
               <Receipt className="h-4 w-4" /> View Receipts
             </Button>
             {loan.status === 'PENDING_DISBURSEMENT' && (
-              <Button size="sm" onClick={() => setDisburseOpen(true)}>
+              <Button size="sm" onClick={() => setDisburseOpen(true)} className="min-h-[44px] sm:min-h-8">
                 <Banknote className="h-4 w-4" /> Disburse
               </Button>
             )}
-          </>
+            {loan.status === 'ACTIVE' && (
+              <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white shadow-md shadow-amber-500/20 min-h-[44px] sm:min-h-8" onClick={() => setRestructureOpen(true)}>
+                <FilePen className="h-4 w-4 mr-2" /> Change Installment Type
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -242,14 +340,14 @@ export default function LoanDetailPage() {
         <Card className={cn('border-l-4 shadow-premium', overdue ? 'border-l-destructive' : loan.status === 'CLOSED' ? 'border-l-muted-foreground' : 'border-l-primary')}>
           <CardContent className="p-4 sm:p-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <StatusBadge variant={overdue ? 'OVERDUE' : loan.status}>{overdue ? 'Overdue' : formatStatus(loan.status)}</StatusBadge>
                 <div>
                   <p className="text-xs text-muted-foreground">Outstanding principal</p>
                   <p className="text-2xl font-bold tabular-nums">{formatPaiseToINR(Number(loan.outstandingPrincipal))}</p>
                 </div>
               </div>
-              <div className="flex gap-6 sm:gap-10">
+              <div className="flex flex-wrap gap-6 sm:gap-10">
                 <div><p className="text-xs text-muted-foreground">Collected</p><p className="text-base font-semibold tabular-nums">{formatPaiseToINR(Number(loan.totalCollected))}</p></div>
                 <div><p className="text-xs text-muted-foreground">Next due</p><p className={cn('text-base font-semibold', overdue ? 'text-destructive' : '')}>{fmtDate(loan.schedule.find((s) => s.status !== 'PAID' && s.status !== 'UPCOMING')?.dueDate ?? null) || '—'}</p></div>
                 <div className="hidden sm:block"><p className="text-xs text-muted-foreground">Disbursed</p><p className="text-base font-semibold">{fmtDate(loan.disbursedAt)}</p></div>
@@ -260,36 +358,61 @@ export default function LoanDetailPage() {
       </FadeIn>
 
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="flex w-full overflow-x-auto no-scrollbar h-auto">
-          <TabsTrigger value="overview" className="flex-1 min-w-[80px]">Overview</TabsTrigger>
-          <TabsTrigger value="schedule" className="flex-1 min-w-[80px]">Schedule</TabsTrigger>
-          <TabsTrigger value="payments" className="flex-1 min-w-[80px]">Payments</TabsTrigger>
-          <TabsTrigger value="collections" className="flex-1 min-w-[80px]">Collections</TabsTrigger>
-          <TabsTrigger value="ptp" className="flex-1 min-w-[80px]">PTP</TabsTrigger>
-          <TabsTrigger value="disbursement" className="flex-1 min-w-[80px]">Disbursement</TabsTrigger>
-          <TabsTrigger value="agreement" className="flex-1 min-w-[80px]">Agreement</TabsTrigger>
+        <TabsList className="flex w-full overflow-x-auto no-scrollbar h-auto justify-start">
+          <TabsTrigger value="overview" className="flex-1 min-w-[80px] min-h-[44px] sm:min-h-9">Overview</TabsTrigger>
+          <TabsTrigger value="schedule" className="flex-1 min-w-[80px] min-h-[44px] sm:min-h-9">Schedule</TabsTrigger>
+          <TabsTrigger value="payments" className="flex-1 min-w-[80px] min-h-[44px] sm:min-h-9">Payments</TabsTrigger>
+          <TabsTrigger value="collections" className="flex-1 min-w-[80px] min-h-[44px] sm:min-h-9">Collections</TabsTrigger>
+          <TabsTrigger value="ptp" className="flex-1 min-w-[80px] min-h-[44px] sm:min-h-9">PTP</TabsTrigger>
+          <TabsTrigger value="disbursement" className="flex-1 min-w-[80px] min-h-[44px] sm:min-h-9">Disbursement</TabsTrigger>
+          <TabsTrigger value="agreement" className="flex-1 min-w-[80px] min-h-[44px] sm:min-h-9">Agreement</TabsTrigger>
         </TabsList>
 
         {/* Overview */}
         <TabsContent value="overview" className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Card className="shadow-premium">
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold flex items-center gap-2"><User className="h-4 w-4" /> Candidate</CardTitle></CardHeader>
+              <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2"><User className="h-4 w-4" /> Candidate</CardTitle>
+                {hasSensitivePii && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={revealingPii}
+                    onClick={handleTogglePii}
+                    aria-label={showPii ? 'Mask candidate PII' : 'Reveal candidate PII'}
+                    className="h-8 px-2 text-xs text-muted-foreground"
+                  >
+                    {showPii ? <EyeOff className="h-3.5 w-3.5 mr-1" /> : <Eye className="h-3.5 w-3.5 mr-1" />}
+                    {showPii ? 'Mask' : 'Reveal'}
+                  </Button>
+                )}
+              </CardHeader>
               <CardContent className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <Avatar className="h-12 w-12">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Avatar className="h-12 w-12 flex-shrink-0">
                     <AvatarFallback className="bg-primary/10 text-primary font-semibold">
                       {loan.candidate.fullName.split(' ').map(p => p[0]).join('').slice(0, 2)}
                     </AvatarFallback>
                   </Avatar>
-                  <div>
-                    <p className="font-semibold">{loan.candidate.fullName}</p>
+                  <div className="min-w-0">
+                    <p className="font-semibold truncate">{loan.candidate.fullName}</p>
                     <p className="text-xs text-muted-foreground flex items-center gap-1"><Phone className="h-3 w-3" /> {loan.candidate.mobile}</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 pt-3 border-t border-border text-sm">
-                  <div><p className="text-xs text-muted-foreground">Agent</p><p>{loan.candidate.assignedAgent?.name ?? '—'}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Agent</p><p className="truncate">{loan.candidate.assignedAgent?.name ?? '—'}</p></div>
                   <div><p className="text-xs text-muted-foreground">Loan type</p><p>{loan.interestType}</p></div>
+                  {loan.candidate.bankAccount && (
+                    <div><p className="text-xs text-muted-foreground">Bank A/C</p><p className="font-mono text-xs">{showPii ? (revealedPii?.bankAccount ?? loan.candidate.bankAccount) : maskBankAccount(loan.candidate.bankAccount)}</p></div>
+                  )}
+                  {loan.candidate.panMasked && (
+                    <div><p className="text-xs text-muted-foreground">PAN</p><p className="font-mono text-xs">{showPii ? (revealedPii?.pan ?? loan.candidate.panMasked) : maskPan(loan.candidate.panMasked)}</p></div>
+                  )}
+                  {loan.candidate.aadhaarMasked && (
+                    <div className="col-span-2"><p className="text-xs text-muted-foreground">Aadhaar</p><p className="font-mono text-xs">{maskAadhaar(loan.candidate.aadhaarMasked)}</p></div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -321,7 +444,7 @@ export default function LoanDetailPage() {
               <CardDescription>{loan.schedule.length} installments · total {formatPaiseToINR(Number(loan.totalRepayable))}</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="hidden md:block">
+              <div className="hidden md:block overflow-x-auto w-full">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/40">
@@ -382,36 +505,38 @@ export default function LoanDetailPage() {
               {loan.payments.length === 0 ? (
                 <EmptyState icon={<Wallet className="h-6 w-6" />} title="No payments yet" description="Payments will appear here once the candidate pays or agents record cash." />
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/40">
-                      <TableHead className="pl-6">Payment #</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right pr-6">Receipt</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {loan.payments.map((p) => (
-                      <TableRow key={p.id}>
-                        <TableCell className="pl-6 font-mono">{p.paymentNumber}</TableCell>
-                        <TableCell><span className="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium">{p.method.replace(/_/g, ' ')}</span></TableCell>
-                        <TableCell className="text-sm">{fmtDate(p.createdAt)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(p.amount))}</TableCell>
-                        <TableCell><StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge></TableCell>
-                        <TableCell className="text-right pr-6">
-                          {p.receiptNumber ? (
-                            <Button variant="ghost" size="sm" onClick={() => toast.info(`Opening receipt ${p.receiptNumber}`)}>
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          ) : '—'}
-                        </TableCell>
+                <div className="overflow-x-auto w-full">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/40">
+                        <TableHead className="pl-6">Payment #</TableHead>
+                        <TableHead>Method</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right pr-6">Receipt</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {loan.payments.map((p) => (
+                        <TableRow key={p.id}>
+                          <TableCell className="pl-6 font-mono">{p.paymentNumber}</TableCell>
+                          <TableCell><span className="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium">{p.method.replace(/_/g, ' ')}</span></TableCell>
+                          <TableCell className="text-sm">{fmtDate(p.createdAt)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(p.amount))}</TableCell>
+                          <TableCell><StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge></TableCell>
+                          <TableCell className="text-right pr-6">
+                            {p.receiptNumber ? (
+                              <Button variant="ghost" size="sm" aria-label={`View receipt ${p.receiptNumber}`} onClick={() => toast.info(`Opening receipt ${p.receiptNumber}`)}>
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            ) : '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -422,14 +547,20 @@ export default function LoanDetailPage() {
           <Card className="shadow-premium">
             <CardHeader className="pb-2"><CardTitle className="text-base">Cash Collections</CardTitle><CardDescription>Cash pickup records for this loan</CardDescription></CardHeader>
             <CardContent>
-              {loan.disbursements.filter((d) => d.method === 'OFFLINE').length === 0 ? (
+              {loan.payments.filter((p) => p.method === 'CASH').length === 0 ? (
                 <EmptyState icon={<Wallet className="h-6 w-6" />} title="No cash collections recorded" description="Cash collections made by agents will appear here." />
               ) : (
                 <div className="space-y-2">
-                  {loan.disbursements.filter((d) => d.method === 'OFFLINE').map((d) => (
-                    <div key={d.id} className="rounded-xl border border-border p-3 flex justify-between">
-                      <span className="font-mono text-xs">{d.reference ?? '—'}</span>
-                      <span className="font-semibold tabular-nums">{formatPaiseToINR(Number(d.amount))}</span>
+                  {loan.payments.filter((p) => p.method === 'CASH').map((p) => (
+                    <div key={p.id} className="rounded-xl border border-border p-3 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <span className="font-mono text-xs font-medium">{p.receiptNumber ?? p.reference ?? p.paymentNumber}</span>
+                        <p className="text-xs text-muted-foreground mt-0.5">{fmtDate(p.createdAt)}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge>
+                        <span className="font-semibold tabular-nums">{formatPaiseToINR(Number(p.amount))}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -447,19 +578,22 @@ export default function LoanDetailPage() {
                 <EmptyState icon={<ClipboardList className="h-6 w-6" />} title="No PTPs recorded" />
               ) : (
                 <div className="space-y-3">
-                  {loan.ptps.map((p) => (
-                    <div key={p.id} className="rounded-xl border border-border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge>
-                          <span className="text-sm font-medium">Promise on {fmtDate(p.promiseDate)}</span>
+                  {loan.ptps.map((p) => {
+                    const agentLabel = typeof p.agent === 'string' ? p.agent : p.agent?.name ?? loan.candidate.assignedAgent?.name ?? 'Agent'
+                    return (
+                      <div key={p.id} className="rounded-xl border border-border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge>
+                            <span className="text-sm font-medium">Promise on {fmtDate(p.promiseDate)}</span>
+                          </div>
+                          {p.notes && <p className="text-xs text-muted-foreground mt-1">{p.notes}</p>}
+                          <p className="text-xs text-muted-foreground mt-1">By {agentLabel}</p>
                         </div>
-                        {p.notes && <p className="text-xs text-muted-foreground mt-1">{p.notes}</p>}
-                        <p className="text-xs text-muted-foreground mt-1">By {p.agent}</p>
+                        <p className="text-xl font-bold tabular-nums">{formatPaiseToINR(Number(p.promisedAmount))}</p>
                       </div>
-                      <p className="text-xl font-bold tabular-nums">{formatPaiseToINR(Number(p.promisedAmount))}</p>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </CardContent>
@@ -474,30 +608,32 @@ export default function LoanDetailPage() {
               {loan.disbursements.length === 0 ? (
                 <EmptyState icon={<Banknote className="h-6 w-6" />} title="No disbursements yet" description="Click 'Disburse' to initiate a disbursement." />
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/40">
-                      <TableHead className="pl-6">Method</TableHead>
-                      <TableHead>Reference</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Initiated By</TableHead>
-                      <TableHead>Date</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {loan.disbursements.map((d) => (
-                      <TableRow key={d.id}>
-                        <TableCell className="pl-6"><span className="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium">{d.method}</span></TableCell>
-                        <TableCell className="font-mono text-xs">{d.reference ?? '—'}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(d.amount))}</TableCell>
-                        <TableCell><StatusBadge variant={d.status}>{formatStatus(d.status)}</StatusBadge></TableCell>
-                        <TableCell className="text-xs">{d.initiatedBy}</TableCell>
-                        <TableCell className="text-xs">{fmtDateTime(d.initiatedAt)}</TableCell>
+                <div className="overflow-x-auto w-full">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/40">
+                        <TableHead className="pl-6">Method</TableHead>
+                        <TableHead>Reference</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Initiated By</TableHead>
+                        <TableHead>Date</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {loan.disbursements.map((d) => (
+                        <TableRow key={d.id}>
+                          <TableCell className="pl-6"><span className="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium">{d.method}</span></TableCell>
+                          <TableCell className="font-mono text-xs">{d.reference ?? '—'}</TableCell>
+                          <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(d.amount))}</TableCell>
+                          <TableCell><StatusBadge variant={d.status}>{formatStatus(d.status)}</StatusBadge></TableCell>
+                          <TableCell className="text-xs">{d.initiatedBy ?? 'Owner'}</TableCell>
+                          <TableCell className="text-xs">{fmtDateTime(d.initiatedAt)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -513,9 +649,9 @@ export default function LoanDetailPage() {
                 <p className="text-muted-foreground">This agreement is entered into between <strong>Sterling Lending</strong> ("Lender") and <strong>{loan.candidate.fullName}</strong> ("Borrower"). The principal amount of <strong>{formatPaiseToINR(Number(loan.principalAmount))}</strong> shall be repaid in <strong>{loan.installments} {loan.frequency.toLowerCase()}</strong> installments of <strong>{formatPaiseToINR(Number(loan.installmentAmount))}</strong> each, commencing on the disbursement date.</p>
                 <p className="text-muted-foreground mt-2">Interest shall be charged per the agreed terms. Late payment may attract additional charges. This agreement is governed by applicable RBI guidelines and NBFC regulations.</p>
               </div>
-              <div className="flex items-center justify-between pt-3 border-t border-border">
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-border">
                 <StatusBadge variant="VERIFIED">Accepted {fmtDate(loan.disbursedAt)}</StatusBadge>
-                <Button variant="outline" size="sm" onClick={() => toast.info('Generating PDF preview...')}>View Full Agreement</Button>
+                <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-8" onClick={() => toast.info('Generating PDF preview...')}>View Full Agreement</Button>
               </div>
             </CardContent>
           </Card>
@@ -525,7 +661,7 @@ export default function LoanDetailPage() {
       <Dialog open={disburseOpen} onOpenChange={setDisburseOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Disburse Loan — {loan.loanNumber}</DialogTitle>
+            <DialogTitle>Disburse Loan - {loan.loanNumber}</DialogTitle>
             <DialogDescription>Choose a channel and confirm the disbursement.</DialogDescription>
           </DialogHeader>
           <DisburseForm
@@ -536,15 +672,30 @@ export default function LoanDetailPage() {
           />
         </DialogContent>
       </Dialog>
+
+      <Dialog open={restructureOpen} onOpenChange={setRestructureOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Restructure Loan - {loan.loanNumber}</DialogTitle>
+            <DialogDescription>Change the EMI installment amount. This will recalculate the remaining amortization schedule.</DialogDescription>
+          </DialogHeader>
+          <RestructureForm
+            loan={loan}
+            submitting={restructureMutation.isPending}
+            onSubmit={(input) => restructureMutation.mutate(input)}
+            onClose={() => setRestructureOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
 function Term({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-sm font-semibold mt-0.5">{value}</p>
+      <p className="text-sm font-semibold mt-0.5 break-words">{value}</p>
     </div>
   )
 }
@@ -561,13 +712,15 @@ function DisburseForm({ loan, onSubmit, onClose, submitting }: {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {(['ONLINE', 'OFFLINE'] as const).map((c) => (
           <button
             key={c}
+            type="button"
             onClick={() => setChannel(c)}
+            aria-pressed={channel === c}
             className={cn(
-              'rounded-xl border-2 p-4 text-left transition-all',
+              'rounded-xl border-2 p-4 text-left transition-all min-h-[44px]',
               channel === c ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'
             )}
           >
@@ -586,7 +739,7 @@ function DisburseForm({ loan, onSubmit, onClose, submitting }: {
       {channel === 'ONLINE' && (
         <div>
           <Label htmlFor="ref">Reference / UTR</Label>
-          <Input id="ref" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="UTR / Transaction ID" />
+          <Input id="ref" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="UTR / Transaction ID" className="min-h-[44px] sm:min-h-9" />
         </div>
       )}
       <div>
@@ -594,11 +747,60 @@ function DisburseForm({ loan, onSubmit, onClose, submitting }: {
         <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes..." rows={3} />
       </div>
       <DialogFooter>
-        <Button variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
-        <Button onClick={() => onSubmit({ method: channel, reference, notes })} disabled={submitting}>
+        <Button variant="outline" onClick={onClose} disabled={submitting} className="min-h-[44px] sm:min-h-9">Cancel</Button>
+        <Button onClick={() => onSubmit({ method: channel, reference, notes })} disabled={submitting} className="min-h-[44px] sm:min-h-9">
           {submitting ? 'Processing…' : 'Confirm Disbursement'}
         </Button>
       </DialogFooter>
     </div>
   )
 }
+
+function RestructureForm({ loan, onSubmit, onClose, submitting }: {
+  loan: LoanDetail
+  onSubmit: (input: { tenureMonths: number; newFrequency: string; notes: string }) => void
+  onClose: () => void
+  submitting: boolean
+}) {
+  const [tenureMonths, setTenureMonths] = React.useState(12)
+  const [newFreq, setNewFreq] = React.useState(loan.frequency)
+  const [notes, setNotes] = React.useState('')
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg bg-muted/50 p-3 text-sm">
+        <div className="flex justify-between"><span className="text-muted-foreground">Current EMI</span><span className="font-semibold tabular-nums">{formatPaiseToINR(Number(loan.installmentAmount))} ({loan.frequency})</span></div>
+        <div className="flex justify-between mt-1"><span className="text-muted-foreground">Outstanding</span><span className="font-semibold tabular-nums">{formatPaiseToINR(Number(loan.outstandingPrincipal))}</span></div>
+      </div>
+      <div>
+        <Label htmlFor="tenure">Tenure (in Months)</Label>
+        <Input id="tenure" type="number" value={tenureMonths} onChange={(e) => setTenureMonths(Number(e.target.value))} min={1} className="min-h-[44px] sm:min-h-9" />
+        <p className="text-xs text-muted-foreground mt-1">The number of installments will be calculated based on frequency.</p>
+      </div>
+      <div>
+        <Label htmlFor="freq">New Frequency</Label>
+        <select
+          id="freq"
+          value={newFreq}
+          onChange={(e) => setNewFreq(e.target.value)}
+          className="flex min-h-[44px] sm:min-h-10 sm:h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base md:text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <option value="DAILY">Daily</option>
+          <option value="WEEKLY">Weekly</option>
+          <option value="MONTHLY">Monthly</option>
+        </select>
+      </div>
+      <div>
+        <Label htmlFor="rnotes">Restructure Reason / Notes</Label>
+        <Textarea id="rnotes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Customer requested lower EMI..." rows={3} />
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose} disabled={submitting} className="min-h-[44px] sm:min-h-9">Cancel</Button>
+        <Button onClick={() => onSubmit({ tenureMonths, newFrequency: newFreq, notes })} disabled={submitting} className="min-h-[44px] sm:min-h-9">
+          {submitting ? 'Recalculating...' : 'Apply Restructure'}
+        </Button>
+      </DialogFooter>
+    </div>
+  )
+}
+

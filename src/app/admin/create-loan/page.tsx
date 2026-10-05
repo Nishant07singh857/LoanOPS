@@ -3,8 +3,8 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  UserPlus, User, IndianRupee, Percent, Banknote, Calendar, Coins, FileText,
-  ArrowRight, ArrowLeft, CheckCircle2, Link2, Search, Calculator,
+  UserPlus, User, IndianRupee, Percent, Calendar, Coins, FileText,
+  CheckCircle2, Link2, Calculator, QrCode
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -13,14 +13,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { FadeIn, StaggerContainer, StaggerItem } from '@/components/ui/motion'
+import { FadeIn } from '@/components/ui/motion'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
+
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
-import { generateSchedulePreview, type ScheduleInput, type InterestType, type RepaymentFrequency } from '@/lib/financial-engine'
+import { generateSchedulePreview, calculateInstallmentsFromTenure, type ScheduleInput, type InterestType, type RepaymentFrequency } from '@/lib/financial-engine'
+import { QRCodeSVG } from 'qrcode.react'
 import { formatPaiseToINR, formatBpsToPercent, parseDisplayPaise } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
@@ -30,22 +33,8 @@ interface CandidateRow {
   mobile: string
 }
 
-type StepKey = 'candidate' | 'loan' | 'interest' | 'frequency' | 'tenure' | 'fees' | 'preview'
-
-const STEPS: { key: StepKey; label: string; icon: React.ReactNode }[] = [
-  { key: 'candidate', label: 'Candidate', icon: <User className="h-4 w-4" /> },
-  { key: 'loan', label: 'Loan Amount', icon: <IndianRupee className="h-4 w-4" /> },
-  { key: 'interest', label: 'Interest', icon: <Percent className="h-4 w-4" /> },
-  { key: 'frequency', label: 'Frequency', icon: <Calendar className="h-4 w-4" /> },
-  { key: 'tenure', label: 'Tenure', icon: <Coins className="h-4 w-4" /> },
-  { key: 'fees', label: 'Fees', icon: <FileText className="h-4 w-4" /> },
-  { key: 'preview', label: 'Preview', icon: <Calculator className="h-4 w-4" /> },
-]
-
 export default function CreateLoanPage() {
   const router = useRouter()
-  // Step state
-  const [step, setStep] = React.useState<number>(0)
   // Form state
   const [candidateMode, setCandidateMode] = React.useState<'EXISTING' | 'NEW'>('EXISTING')
   const [existingCandidate, setExistingCandidate] = React.useState('')
@@ -57,19 +46,39 @@ export default function CreateLoanPage() {
   const [rateBps, setRateBps] = React.useState('') // input in percent, stored as bps
   const [fixedInterest, setFixedInterest] = React.useState('') // input in rupees
   const [frequency, setFrequency] = React.useState<RepaymentFrequency>('WEEKLY')
-  const [installments, setInstallments] = React.useState('12')
+  const [tenureMonths, setTenureMonths] = React.useState('12')
   const [firstDueDate, setFirstDueDate] = React.useState('')
   const [processingFee, setProcessingFee] = React.useState('')
   const [otherFees, setOtherFees] = React.useState('')
 
+  const [generatedLink, setGeneratedLink] = React.useState<{ publicUrl: string; token: string } | null>(null)
+  const [showSchedule, setShowSchedule] = React.useState(false)
+
+  // Calculate installments based on tenure in months and frequency
+  const getCalculatedInstallments = () => {
+    const months = parseInt(tenureMonths, 10) || 0
+    if (months <= 0) return 0
+    return calculateInstallmentsFromTenure(months, frequency)
+  }
+
+  const installmentsNum = getCalculatedInstallments()
+
   // Build ScheduleInput for preview
   const principalPaise = parseDisplayPaise(amount || '0')
-  const interestRateBps = BigInt(Math.round((Number(rateBps) || 0) * 100)) // percent input → bps
+  const computedRateBps = Math.round((Number(rateBps) || 0) * 100)
+  const interestRateBps = BigInt(computedRateBps)
   const fixedInterestPaise = parseDisplayPaise(fixedInterest || '0')
   const processingFeePaise = parseDisplayPaise(processingFee || '0')
   const otherFeesPaise = parseDisplayPaise(otherFees || '0')
-  const installmentsNum = Math.max(1, parseInt(installments || '12', 10) || 1)
-  const firstDue = firstDueDate ? new Date(firstDueDate) : (() => { const d = new Date(); d.setDate(d.getDate() + 7); return d })()
+  const firstDue = React.useMemo(() => {
+    if (firstDueDate) {
+      const parsed = new Date(firstDueDate)
+      if (!Number.isNaN(parsed.getTime())) return parsed
+    }
+    const d = new Date()
+    d.setDate(d.getDate() + 7)
+    return d
+  }, [firstDueDate])
 
   const scheduleInput: ScheduleInput = {
     principalPaise: BigInt(principalPaise),
@@ -77,457 +86,322 @@ export default function CreateLoanPage() {
     interestRateBps,
     fixedInterestPaise: BigInt(fixedInterestPaise),
     frequency,
-    installments: installmentsNum,
+    installments: Math.max(1, installmentsNum),
     firstDueDate: firstDue,
     processingFeePaise: BigInt(processingFeePaise),
     otherFeesPaise: BigInt(otherFeesPaise),
   }
+
   const preview = React.useMemo(() => {
-    if (principalPaise <= 0) return null
+    if (principalPaise <= 0 || installmentsNum <= 0) return null
     try { return generateSchedulePreview(scheduleInput) } catch { return null }
   }, [principalPaise, interestType, interestRateBps, fixedInterestPaise, frequency, installmentsNum, firstDue, processingFeePaise, otherFeesPaise])
-
-  const next = () => setStep((s) => Math.min(STEPS.length - 1, s + 1))
-  const back = () => setStep((s) => Math.max(0, s - 1))
-
-  const canProceed = () => {
-    if (step === 0) {
-      if (candidateMode === 'EXISTING') return !!existingCandidate
-      return !!newName && !!newMobile
-    }
-    if (step === 1) return principalPaise > 0 && !!purpose
-    if (step === 2) {
-      if (interestType === 'PERCENTAGE') return Number(rateBps) > 0
-      if (interestType === 'FIXED') return fixedInterestPaise > 0
-      return true
-    }
-    if (step === 3) return !!frequency
-    if (step === 4) return installmentsNum > 0
-    if (step === 5) return true
-    if (step === 6) return true
-    return true
-  }
 
   const { data: candidatesData } = useQuery({
     queryKey: ['owner-candidates-create-loan'],
     queryFn: () => api.get<{ items: CandidateRow[] }>('/api/owner/candidates?pageSize=100'),
   })
   const candidates = candidatesData?.items ?? []
-  const candidateNames = Array.from(new Set(candidates.map((c) => c.fullName)))
 
   const createMutation = useMutation({
     mutationFn: () => {
-      // Resolve candidate
-      let candidateId: string | undefined
-      let newCandidate: any = undefined
       if (candidateMode === 'EXISTING') {
-        const c = candidates.find((c) => c.fullName === existingCandidate)
+        const c = candidates.find((c) => c.id === existingCandidate)
         if (!c) throw new Error('Candidate not found')
-        candidateId = c.id
+        
+        return api.post<{ id: string; applicationNumber: string }>('/api/owner/applications', {
+          candidateId: c.id,
+          principalAmount: String(principalPaise),
+          purpose: purpose,
+          interestType: interestType,
+          interestRate: interestType === 'PERCENTAGE' ? computedRateBps : undefined,
+          fixedInterest: interestType === 'FIXED' ? String(fixedInterestPaise) : undefined,
+          frequency: frequency,
+          tenureCount: parseInt(tenureMonths, 10) || 1,
+          installments: Math.max(1, installmentsNum),
+          firstDueDate: firstDue.toISOString(),
+          processingFee: processingFeePaise > 0 ? String(processingFeePaise) : undefined,
+          otherFees: otherFeesPaise > 0 ? String(otherFeesPaise) : undefined,
+        })
       } else {
-        newCandidate = { fullName: newName, mobile: newMobile }
+        return api.post<{ id: string; token: string; publicUrl: string }>('/api/owner/qr-links', {
+          preFullName: newName,
+          preMobile: newMobile,
+          prePrincipal: String(principalPaise),
+          prePurpose: purpose,
+          preInterestType: interestType,
+          preInterestRate: interestType === 'PERCENTAGE' ? computedRateBps : undefined,
+          preFixedInterest: interestType === 'FIXED' ? String(fixedInterestPaise) : undefined,
+          preFrequency: frequency,
+          preTenureMonths: parseInt(tenureMonths, 10) || undefined,
+          preInstallments: Math.max(1, installmentsNum),
+          processingFee: processingFeePaise > 0 ? String(processingFeePaise) : undefined,
+          otherFees: otherFeesPaise > 0 ? String(otherFeesPaise) : undefined,
+        })
       }
-      return api.post<{ id: string; applicationNumber: string }>('/api/owner/applications', {
-        candidateId,
-        newCandidate,
-        principalAmount: String(principalPaise),
-        purpose,
-        interestType,
-        interestRate: interestType === 'PERCENTAGE' ? Number(interestRateBps) : null,
-        fixedInterest: interestType === 'FIXED' ? String(fixedInterestPaise) : null,
-        frequency,
-        tenureCount: installmentsNum,
-        installments: installmentsNum,
-        firstDueDate: firstDue.toISOString(),
-        processingFee: processingFeePaise > 0 ? String(processingFeePaise) : null,
-        otherFees: otherFeesPaise > 0 ? String(otherFeesPaise) : null,
-      })
     },
-    onSuccess: (res) => {
-      const candidateName = candidateMode === 'EXISTING' ? existingCandidate : newName
-      toast.success('Application created!', {
-        description: `${res.applicationNumber} created for ${candidateName} · ${formatPaiseToINR(principalPaise)} ${frequency.toLowerCase()} × ${installmentsNum}.`,
-      })
-      router.push('/admin/applications')
+    onSuccess: (res: any) => {
+      if (candidateMode === 'EXISTING') {
+        toast.success('Application Offer Created & Sent to Borrower!')
+        router.push('/admin/applications')
+      } else {
+        setGeneratedLink(res)
+        toast.success('QR Link Generated!')
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      }
     },
     onError: (e: Error) => toast.error('Failed to create application', { description: e.message }),
   })
 
+  const canSubmit = () => {
+    if (candidateMode === 'EXISTING' && !existingCandidate) return false
+    if (candidateMode === 'NEW' && (!newName || !newMobile)) return false
+    if (principalPaise <= 0 || !purpose) return false
+    if (interestType === 'PERCENTAGE' && Number(rateBps) < 0) return false
+    if (interestType === 'FIXED' && fixedInterestPaise < 0) return false
+    if (!frequency || installmentsNum <= 0) return false
+    return true
+  }
+
   const submit = () => {
+    if (!canSubmit()) {
+      toast.error('Please fill in all required fields.')
+      return
+    }
     createMutation.mutate()
   }
 
+  const formattedInterestDisplay =
+    interestType === 'PERCENTAGE'
+      ? `${Number(rateBps) || 0}% per period`
+      : interestType === 'FIXED'
+        ? `${formatPaiseToINR(fixedInterestPaise)} (Fixed)`
+        : '0% (No Interest)'
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       <SectionHeading
-        title="Create Loan"
-        description="Build a loan with live schedule preview. Submit to generate an application QR link."
+        title="Create Loan Application"
+        description="Fill the form to generate an application QR link for a borrower."
         icon={<UserPlus className="h-5 w-5" />}
       />
 
-      {/* Stepper */}
-      <FadeIn>
-        <Card className="shadow-premium">
-          <CardContent className="p-4">
-            <ol className="flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar">
-              {STEPS.map((s, i) => {
-                const done = i < step
-                const active = i === step
-                return (
-                  <React.Fragment key={s.key}>
-                    <li className="flex-shrink-0">
-                      <button
-                        onClick={() => i <= step && setStep(i)}
-                        className={cn(
-                          'flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium transition-all',
-                          active ? 'bg-primary text-primary-foreground shadow-glow' :
-                          done ? 'bg-success/15 text-success' : 'bg-muted text-muted-foreground'
-                        )}
-                      >
-                        <span className={cn('h-6 w-6 rounded-lg flex items-center justify-center', active ? 'bg-primary-foreground/15' : done ? 'bg-success/15' : 'bg-background')}>
-                          {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : s.icon}
-                        </span>
-                        <span className="hidden sm:inline">{s.label}</span>
-                      </button>
-                    </li>
-                    {i < STEPS.length - 1 && (
-                      <li className={cn('h-px flex-1 min-w-4 transition-colors', i < step ? 'bg-success' : 'bg-border')} />
-                    )}
-                  </React.Fragment>
-                )
-              })}
-            </ol>
-          </CardContent>
-        </Card>
-      </FadeIn>
+      {generatedLink && (
+        <FadeIn>
+          <Card className="shadow-premium border-success/50 bg-success/5">
+            <CardHeader className="pb-2 text-center">
+              <CardTitle className="text-xl flex justify-center items-center gap-2 text-success">
+                <CheckCircle2 className="h-6 w-6" /> Success! Link Generated
+              </CardTitle>
+              <CardDescription>Share this QR code or link with the borrower to proceed.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center space-y-4">
+              <div className="bg-white p-4 rounded-xl shadow-sm inline-block">
+                <QRCodeSVG value={window.location.origin + generatedLink.publicUrl} size={192} />
+              </div>
+              <div className="flex items-center gap-2 max-w-md w-full bg-background p-2 rounded-lg border">
+                <Input readOnly value={window.location.origin + generatedLink.publicUrl} className="flex-1 bg-transparent border-none h-11" />
+                <Button variant="secondary" className="h-11" onClick={() => {
+                  navigator.clipboard.writeText(window.location.origin + generatedLink.publicUrl)
+                  toast.success('Link copied to clipboard')
+                }}>Copy</Button>
+              </div>
+              <div className="flex flex-wrap justify-center gap-3 pt-4">
+                <Button variant="outline" className="h-11" onClick={() => setGeneratedLink(null)}>Create Another</Button>
+                <Button className="h-11" onClick={() => router.push('/admin/applications')}>Go to Applications</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </FadeIn>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          {/* Step 1: Candidate */}
-          {step === 0 && (
-            <FadeIn>
-              <Card className="shadow-premium">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2"><User className="h-4 w-4" /> Candidate</CardTitle>
-                  <CardDescription>Select an existing candidate or onboard a new one.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <RadioGroup value={candidateMode} onValueChange={(v) => setCandidateMode(v as any)} className="grid grid-cols-2 gap-3">
-                    <label className={cn('rounded-xl border-2 p-4 cursor-pointer transition-all flex items-start gap-3', candidateMode === 'EXISTING' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40')}>
-                      <RadioGroupItem value="EXISTING" className="mt-1" />
-                      <div>
-                        <p className="text-sm font-semibold">Existing Candidate</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">Pick from current candidates</p>
-                      </div>
-                    </label>
-                    <label className={cn('rounded-xl border-2 p-4 cursor-pointer transition-all flex items-start gap-3', candidateMode === 'NEW' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40')}>
-                      <RadioGroupItem value="NEW" className="mt-1" />
-                      <div>
-                        <p className="text-sm font-semibold">New Candidate</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">Onboard a new borrower</p>
-                      </div>
-                    </label>
-                  </RadioGroup>
+          <Card className="shadow-premium">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2"><User className="h-4 w-4" /> Candidate</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <RadioGroup value={candidateMode} onValueChange={(v) => setCandidateMode(v as any)} className="grid grid-cols-2 gap-2 sm:gap-3">
+                <label className={cn('rounded-xl border-2 px-2 py-3 sm:p-4 cursor-pointer transition-all flex items-center sm:items-start gap-1.5 sm:gap-3 overflow-hidden min-h-[44px]', candidateMode === 'EXISTING' ? 'border-primary bg-primary/5' : 'border-border')}>
+                  <RadioGroupItem value="EXISTING" className="shrink-0 mt-0 sm:mt-1 scale-90 sm:scale-100" />
+                  <div className="min-w-0">
+                    <p className="text-xs sm:text-sm font-semibold truncate">Existing Candidate</p>
+                  </div>
+                </label>
+                <label className={cn('rounded-xl border-2 px-2 py-3 sm:p-4 cursor-pointer transition-all flex items-center sm:items-start gap-1.5 sm:gap-3 overflow-hidden min-h-[44px]', candidateMode === 'NEW' ? 'border-primary bg-primary/5' : 'border-border')}>
+                  <RadioGroupItem value="NEW" className="shrink-0 mt-0 sm:mt-1 scale-90 sm:scale-100" />
+                  <div className="min-w-0">
+                    <p className="text-xs sm:text-sm font-semibold truncate">New Candidate</p>
+                  </div>
+                </label>
+              </RadioGroup>
 
-                  {candidateMode === 'EXISTING' ? (
-                    <div>
-                      <Label htmlFor="existing">Select Candidate</Label>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          id="existing"
-                          list="candidates-list"
-                          value={existingCandidate}
-                          onChange={(e) => setExistingCandidate(e.target.value)}
-                          placeholder="Search name or mobile..."
-                          className="pl-9"
-                        />
-                        <datalist id="candidates-list">
-                          {candidateNames.map((n) => (
-                            <option key={n} value={n} />
-                          ))}
-                        </datalist>
-                      </div>
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        {candidateNames.slice(0, 6).map((n) => (
-                          <button key={n} onClick={() => setExistingCandidate(n)} className={cn('text-xs px-2.5 py-1 rounded-full border transition-all', existingCandidate === n ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted hover:bg-muted/60')}>
-                            {n}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <Label htmlFor="newName">Full Name</Label>
-                        <Input id="newName" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Priya Sharma" />
-                      </div>
-                      <div>
-                        <Label htmlFor="newMobile">Mobile Number</Label>
-                        <Input id="newMobile" value={newMobile} onChange={(e) => setNewMobile(e.target.value)} placeholder="+91 98200 12345" />
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </FadeIn>
-          )}
+              {candidateMode === 'EXISTING' ? (
+                <div>
+                  <Label htmlFor="existing" className="relative z-10 bg-card px-1 w-fit inline-block -ml-1">Select Candidate</Label>
+                  <Select value={existingCandidate} onValueChange={setExistingCandidate}>
+                    <SelectTrigger id="existing" className="w-full h-11 mt-1">
+                      <SelectValue placeholder="Select candidate by name or mobile..." />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {candidates.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.fullName} ({c.mobile})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Matching from {candidates.length} registered candidates
+                  </p>
+                </div>
+              ) : (
 
-          {/* Step 2: Loan Amount */}
-          {step === 1 && (
-            <FadeIn>
-              <Card className="shadow-premium">
-                <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><IndianRupee className="h-4 w-4" /> Loan Amount</CardTitle><CardDescription>Specify principal, currency, and purpose.</CardDescription></CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="sm:col-span-2">
-                      <Label htmlFor="amount">Principal Amount (₹)</Label>
-                      <div className="relative">
-                        <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input id="amount" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="pl-9" type="text" inputMode="decimal" />
-                      </div>
-                      {principalPaise > 0 && <p className="text-xs text-muted-foreground mt-1">= {formatPaiseToINR(principalPaise)}</p>}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="newName">Full Name</Label>
+                    <Input id="newName" value={newName} onChange={(e) => setNewName(e.target.value)} className="mt-1.5 h-11" />
+                  </div>
+                  <div>
+                    <Label htmlFor="newMobile">Mobile Number</Label>
+                    <Input id="newMobile" type="tel" value={newMobile} onChange={(e) => setNewMobile(e.target.value)} className="mt-1.5 h-11" />
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-premium">
+            <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><IndianRupee className="h-4 w-4" /> Loan Details</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="amount">Principal Amount (₹)</Label>
+                  <div className="relative mt-1.5">
+                    <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input id="amount" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="pl-9 h-11" type="text" inputMode="decimal" />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="purpose">Purpose</Label>
+                  <Input id="purpose" value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="e.g. Home renovation" className="mt-1.5 h-11" />
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-3 border-t border-border">
+                <Label>Interest Type</Label>
+                <RadioGroup value={interestType} onValueChange={(v) => setInterestType(v as InterestType)} className="grid grid-cols-3 gap-1.5 sm:gap-3">
+                  <label className={cn('rounded-xl border-2 px-1 py-2 sm:p-3 cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-3 min-h-[44px]', interestType === 'PERCENTAGE' ? 'border-primary bg-primary/5' : 'border-border')}>
+                    <RadioGroupItem value="PERCENTAGE" className="shrink-0 scale-75 sm:scale-100" />
+                    <span className="text-[10px] sm:text-sm font-semibold truncate">Percentage</span>
+                  </label>
+                  <label className={cn('rounded-xl border-2 px-1 py-2 sm:p-3 cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-3 min-h-[44px]', interestType === 'FIXED' ? 'border-primary bg-primary/5' : 'border-border')}>
+                    <RadioGroupItem value="FIXED" className="shrink-0 scale-75 sm:scale-100" />
+                    <span className="text-[10px] sm:text-sm font-semibold truncate">Fixed</span>
+                  </label>
+                  <label className={cn('rounded-xl border-2 px-1 py-2 sm:p-3 cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-3 min-h-[44px]', interestType === 'NONE' ? 'border-primary bg-primary/5' : 'border-border')}>
+                    <RadioGroupItem value="NONE" className="shrink-0 scale-75 sm:scale-100" />
+                    <span className="text-[10px] sm:text-sm font-semibold truncate">None</span>
+                  </label>
+                </RadioGroup>
+
+                {interestType === 'PERCENTAGE' && (
+                  <div className="mt-2">
+                    <Label htmlFor="rate">Interest Rate (% per period)</Label>
+                    <div className="relative mt-1.5">
+                      <Input id="rate" value={rateBps} onChange={(e) => setRateBps(e.target.value)} placeholder="18" className="h-11 pr-8" type="text" inputMode="decimal" />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">%</span>
                     </div>
-                    <div>
-                      <Label htmlFor="currency">Currency</Label>
-                      <Input id="currency" value="INR" readOnly className="bg-muted/50" />
+                  </div>
+                )}
+                {interestType === 'FIXED' && (
+                  <div className="mt-2">
+                    <Label htmlFor="fixed">Total Fixed Interest (₹)</Label>
+                    <div className="relative mt-1.5">
+                      <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input id="fixed" value={fixedInterest} onChange={(e) => setFixedInterest(e.target.value)} placeholder="0.00" className="pl-9 h-11" type="text" inputMode="decimal" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3 pt-3 border-t border-border">
+                <Label>Repayment Frequency</Label>
+                <RadioGroup value={frequency} onValueChange={(v) => setFrequency(v as RepaymentFrequency)} className="grid grid-cols-3 gap-1.5 sm:gap-3">
+                  <label className={cn('rounded-xl border-2 px-1 py-2 sm:p-3 cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-3 min-h-[44px]', frequency === 'DAILY' ? 'border-primary bg-primary/5' : 'border-border')}>
+                    <RadioGroupItem value="DAILY" className="shrink-0 scale-75 sm:scale-100" />
+                    <span className="text-[10px] sm:text-sm font-semibold truncate">Daily</span>
+                  </label>
+                  <label className={cn('rounded-xl border-2 px-1 py-2 sm:p-3 cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-3 min-h-[44px]', frequency === 'WEEKLY' ? 'border-primary bg-primary/5' : 'border-border')}>
+                    <RadioGroupItem value="WEEKLY" className="shrink-0 scale-75 sm:scale-100" />
+                    <span className="text-[10px] sm:text-sm font-semibold truncate">Weekly</span>
+                  </label>
+                  <label className={cn('rounded-xl border-2 px-1 py-2 sm:p-3 cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-3 min-h-[44px]', frequency === 'MONTHLY' ? 'border-primary bg-primary/5' : 'border-border')}>
+                    <RadioGroupItem value="MONTHLY" className="shrink-0 scale-75 sm:scale-100" />
+                    <span className="text-[10px] sm:text-sm font-semibold truncate">Monthly</span>
+                  </label>
+                </RadioGroup>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                  <div>
+                    <Label htmlFor="tenure">Tenure in Months</Label>
+                    <Input id="tenure" value={tenureMonths} onChange={(e) => setTenureMonths(e.target.value)} type="number" min={1} className="mt-1.5 h-11" />
+                    <p className="text-xs text-muted-foreground mt-1">Calculates to {installmentsNum} {frequency.toLowerCase()} installments</p>
+                  </div>
+                  <div>
+                    <Label htmlFor="firstDue">First Due Date</Label>
+                    <Input id="firstDue" value={firstDueDate} onChange={(e) => setFirstDueDate(e.target.value)} type="date" className="mt-1.5 h-11" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-3 border-t border-border">
+                <Label>Fees</Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-1.5">
+                  <div>
+                    <Label htmlFor="procFee">Processing Fee (₹)</Label>
+                    <div className="relative mt-1.5">
+                      <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input id="procFee" value={processingFee} onChange={(e) => setProcessingFee(e.target.value)} placeholder="0.00" className="pl-9 h-11" type="text" inputMode="decimal" />
                     </div>
                   </div>
                   <div>
-                    <Label htmlFor="purpose">Purpose of Loan</Label>
-                    <Textarea id="purpose" rows={3} value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="e.g. Home renovation, working capital, two-wheeler purchase..." />
-                  </div>
-                </CardContent>
-              </Card>
-            </FadeIn>
-          )}
-
-          {/* Step 3: Interest */}
-          {step === 2 && (
-            <FadeIn>
-              <Card className="shadow-premium">
-                <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Percent className="h-4 w-4" /> Interest Type</CardTitle><CardDescription>Choose how interest is charged.</CardDescription></CardHeader>
-                <CardContent className="space-y-4">
-                  <RadioGroup value={interestType} onValueChange={(v) => setInterestType(v as InterestType)} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <label className={cn('rounded-xl border-2 p-4 cursor-pointer transition-all', interestType === 'PERCENTAGE' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40')}>
-                      <RadioGroupItem value="PERCENTAGE" className="mb-2" />
-                      <p className="text-sm font-semibold">Percentage</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">% per period (flat)</p>
-                    </label>
-                    <label className={cn('rounded-xl border-2 p-4 cursor-pointer transition-all', interestType === 'FIXED' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40')}>
-                      <RadioGroupItem value="FIXED" className="mb-2" />
-                      <p className="text-sm font-semibold">Fixed Amount</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Total interest in ₹</p>
-                    </label>
-                    <label className={cn('rounded-xl border-2 p-4 cursor-pointer transition-all', interestType === 'NONE' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40')}>
-                      <RadioGroupItem value="NONE" className="mb-2" />
-                      <p className="text-sm font-semibold">No Interest</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Principal-only loan</p>
-                    </label>
-                  </RadioGroup>
-
-                  {interestType === 'PERCENTAGE' && (
-                    <div>
-                      <Label htmlFor="rate">Interest Rate (% per period)</Label>
-                      <div className="relative">
-                        <Input id="rate" value={rateBps} onChange={(e) => setRateBps(e.target.value)} placeholder="18" type="text" inputMode="decimal" />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">%</span>
-                      </div>
-                      {Number(rateBps) > 0 && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          = {formatBpsToPercent(Math.round(Number(rateBps) * 100))} bps · Est. interest: {preview ? formatPaiseToINR(Number(preview.totalInterest)) : '—'}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  {interestType === 'FIXED' && (
-                    <div>
-                      <Label htmlFor="fixed">Total Fixed Interest (₹)</Label>
-                      <div className="relative">
-                        <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input id="fixed" value={fixedInterest} onChange={(e) => setFixedInterest(e.target.value)} placeholder="0.00" className="pl-9" type="text" inputMode="decimal" />
-                      </div>
-                      {fixedInterestPaise > 0 && <p className="text-xs text-muted-foreground mt-1">= {formatPaiseToINR(fixedInterestPaise)} over {installmentsNum} installments</p>}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </FadeIn>
-          )}
-
-          {/* Step 4: Frequency */}
-          {step === 3 && (
-            <FadeIn>
-              <Card className="shadow-premium">
-                <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Calendar className="h-4 w-4" /> Repayment Frequency</CardTitle><CardDescription>Choose how often installments are due.</CardDescription></CardHeader>
-                <CardContent>
-                  <RadioGroup value={frequency} onValueChange={(v) => setFrequency(v as RepaymentFrequency)} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <label className={cn('rounded-xl border-2 p-4 cursor-pointer transition-all', frequency === 'DAILY' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40')}>
-                      <RadioGroupItem value="DAILY" className="mb-2" />
-                      <p className="text-sm font-semibold">Daily</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Best for short-term small loans</p>
-                    </label>
-                    <label className={cn('rounded-xl border-2 p-4 cursor-pointer transition-all', frequency === 'WEEKLY' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40')}>
-                      <RadioGroupItem value="WEEKLY" className="mb-2" />
-                      <p className="text-sm font-semibold">Weekly</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Popular for vendor loans</p>
-                    </label>
-                    <label className={cn('rounded-xl border-2 p-4 cursor-pointer transition-all', frequency === 'MONTHLY' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40')}>
-                      <RadioGroupItem value="MONTHLY" className="mb-2" />
-                      <p className="text-sm font-semibold">Monthly</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Best for larger loans</p>
-                    </label>
-                  </RadioGroup>
-                </CardContent>
-              </Card>
-            </FadeIn>
-          )}
-
-          {/* Step 5: Tenure */}
-          {step === 4 && (
-            <FadeIn>
-              <Card className="shadow-premium">
-                <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Coins className="h-4 w-4" /> Tenure & First Due</CardTitle><CardDescription>Number of installments and the first due date.</CardDescription></CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <Label htmlFor="installments">Number of Installments</Label>
-                      <Input id="installments" value={installments} onChange={(e) => setInstallments(e.target.value)} type="number" min={1} />
-                      <p className="text-xs text-muted-foreground mt-1">{frequency.toLowerCase()} schedule</p>
-                    </div>
-                    <div>
-                      <Label htmlFor="firstDue">First Due Date</Label>
-                      <Input id="firstDue" value={firstDueDate} onChange={(e) => setFirstDueDate(e.target.value)} type="date" />
-                      <p className="text-xs text-muted-foreground mt-1">Defaults to {firstDue.toLocaleDateString('en-IN')}</p>
+                    <Label htmlFor="otherFee">Other Fees (₹)</Label>
+                    <div className="relative mt-1.5">
+                      <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input id="otherFee" value={otherFees} onChange={(e) => setOtherFees(e.target.value)} placeholder="0.00" className="pl-9 h-11" type="text" inputMode="decimal" />
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            </FadeIn>
-          )}
-
-          {/* Step 6: Fees */}
-          {step === 5 && (
-            <FadeIn>
-              <Card className="shadow-premium">
-                <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><FileText className="h-4 w-4" /> Fees</CardTitle><CardDescription>Optional processing and other fees — amortized across installments.</CardDescription></CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <Label htmlFor="procFee">Processing Fee (₹)</Label>
-                      <div className="relative">
-                        <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input id="procFee" value={processingFee} onChange={(e) => setProcessingFee(e.target.value)} placeholder="0.00" className="pl-9" type="text" inputMode="decimal" />
-                      </div>
-                      {processingFeePaise > 0 && <p className="text-xs text-muted-foreground mt-1">= {formatPaiseToINR(processingFeePaise)}</p>}
-                    </div>
-                    <div>
-                      <Label htmlFor="otherFee">Other Fees (₹)</Label>
-                      <div className="relative">
-                        <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input id="otherFee" value={otherFees} onChange={(e) => setOtherFees(e.target.value)} placeholder="0.00" className="pl-9" type="text" inputMode="decimal" />
-                      </div>
-                      {otherFeesPaise > 0 && <p className="text-xs text-muted-foreground mt-1">= {formatPaiseToINR(otherFeesPaise)}</p>}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </FadeIn>
-          )}
-
-          {/* Step 7: Preview & Submit */}
-          {step === 6 && (
-            <FadeIn>
-              <Card className="shadow-premium">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2"><Calculator className="h-4 w-4" /> Live Schedule Preview</CardTitle>
-                  <CardDescription>Generated from BigInt paise using the financial engine. Submit to create an application QR link.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {!preview ? (
-                    <div className="rounded-xl bg-warning/5 border border-warning/30 p-4 text-sm text-warning">
-                      Enter a principal amount in Step 2 to generate the schedule preview.
-                    </div>
-                  ) : (
-                    <>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <Stat label="Principal" value={formatPaiseToINR(principalPaise)} />
-                        <Stat label="Total Interest" value={formatPaiseToINR(Number(preview.totalInterest))} tint="text-warning" />
-                        <Stat label="Total Fees" value={formatPaiseToINR(Number(preview.totalFees))} />
-                        <Stat label="Total Repayable" value={formatPaiseToINR(Number(preview.totalRepayable))} tint="text-primary" />
-                        <Stat label="Installments" value={String(installmentsNum)} />
-                        <Stat label="Installment Amt" value={formatPaiseToINR(Number(preview.installmentAmount))} tint="text-success" />
-                        <Stat label="First Due" value={firstDue.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} />
-                        <Stat label="Final Due" value={preview.finalDueDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} />
-                      </div>
-
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">First 3 Installments</p>
-                        <div className="rounded-xl border border-border overflow-hidden">
-                          <Table>
-                            <TableHeader>
-                              <TableRow className="bg-muted/40">
-                                <TableHead className="pl-4">#</TableHead>
-                                <TableHead>Due Date</TableHead>
-                                <TableHead className="text-right">Principal</TableHead>
-                                <TableHead className="text-right">Interest</TableHead>
-                                <TableHead className="text-right">Fees</TableHead>
-                                <TableHead className="text-right pr-4">Total Due</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {preview.installments.slice(0, 3).map((inst) => (
-                                <TableRow key={inst.number}>
-                                  <TableCell className="pl-4 font-mono font-semibold">{inst.number}</TableCell>
-                                  <TableCell>{inst.dueDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</TableCell>
-                                  <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(inst.principal))}</TableCell>
-                                  <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(inst.interest))}</TableCell>
-                                  <TableCell className="text-right tabular-nums">{formatPaiseToINR(Number(inst.fees))}</TableCell>
-                                  <TableCell className="text-right tabular-nums font-medium pr-4">{formatPaiseToINR(Number(inst.totalDue))}</TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                        {preview.installments.length > 3 && (
-                          <p className="text-xs text-muted-foreground mt-2 text-center">
-                            ...and {preview.installments.length - 3} more {preview.installments.length - 3 === 1 ? 'installment' : 'installments'}
-                          </p>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            </FadeIn>
-          )}
-
-          {/* Navigation */}
-          <div className="flex items-center justify-between">
-            <Button variant="outline" onClick={back} disabled={step === 0} className="gap-1">
-              <ArrowLeft className="h-4 w-4" /> Back
+                </div>
+              </div>
+            </CardContent>
+          <div className="p-6 pt-0">
+            <Button onClick={submit} disabled={!preview || createMutation.isPending} className="w-full h-12 text-lg gap-2 bg-gradient-fintech text-primary-foreground shadow-glow border-none hover:opacity-90 transition-opacity">
+              {createMutation.isPending ? (
+                <><span className="h-5 w-5 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" /> {candidateMode === 'EXISTING' ? 'Sending Offer...' : 'Generating...'}</>
+              ) : candidateMode === 'EXISTING' ? (
+                <><UserPlus className="h-5 w-5" /> Send Offer to Borrower</>
+              ) : (
+                <><QrCode className="h-5 w-5" /> Generate QR Link</>
+              )}
             </Button>
-            {step < STEPS.length - 1 ? (
-              <Button onClick={next} disabled={!canProceed()} className="gap-1">
-                Continue <ArrowRight className="h-4 w-4" />
-              </Button>
-            ) : (
-              <Button onClick={submit} disabled={!preview || createMutation.isPending} className="gap-1">
-                <Link2 className="h-4 w-4" /> Generate Application Link
-              </Button>
-            )}
           </div>
+          </Card>
         </div>
 
-        {/* Live preview sidebar — always visible */}
         <div className="lg:col-span-1">
           <Card className="shadow-premium lg:sticky lg:top-20">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center gap-2"><Calculator className="h-4 w-4" /> Live Preview</CardTitle>
-              <CardDescription>Updates as you fill the form</CardDescription>
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="text-sm flex items-center gap-2"><Calculator className="h-4 w-4" /> Live Preview</CardTitle>
+                <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">
+                  <CheckCircle2 className="h-3 w-3" /> Zero Hidden Charges
+                </span>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="rounded-xl bg-gradient-fintech text-primary-foreground p-4">
+              <div className={cn("rounded-xl p-4 transition-all duration-300", preview ? "bg-gradient-fintech text-primary-foreground shadow-glow" : "bg-muted border border-border text-muted-foreground")}>
                 <p className="text-xs opacity-90">Installment Amount</p>
                 <p className="text-2xl font-bold tabular-nums mt-1">
                   {preview ? formatPaiseToINR(Number(preview.installmentAmount)) : '—'}
@@ -538,16 +412,11 @@ export default function CreateLoanPage() {
               </div>
               <div className="space-y-2">
                 <Row label="Principal" value={principalPaise > 0 ? formatPaiseToINR(principalPaise) : '—'} />
-                <Row label="Interest Type" value={interestType === 'PERCENTAGE' ? 'Percentage' : interestType === 'FIXED' ? 'Fixed' : 'None'} />
-                {interestType === 'PERCENTAGE' && Number(rateBps) > 0 && (
-                  <Row label="Rate" value={`${rateBps}% (${formatBpsToPercent(Math.round(Number(rateBps) * 100))} bps)`} />
-                )}
-                {interestType === 'FIXED' && fixedInterestPaise > 0 && (
-                  <Row label="Fixed Interest" value={formatPaiseToINR(fixedInterestPaise)} />
-                )}
+                <Row label="Interest Rate" value={formattedInterestDisplay} />
                 <Row label="Frequency" value={frequency.charAt(0) + frequency.slice(1).toLowerCase()} />
                 <Row label="Installments" value={String(installmentsNum)} />
-                {processingFeePaise > 0 && <Row label="Processing Fee" value={formatPaiseToINR(processingFeePaise)} />}
+                <Row label="First Due Date" value={firstDue.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} />
+                <Row label="Processing Fee" value={formatPaiseToINR(processingFeePaise)} />
                 {otherFeesPaise > 0 && <Row label="Other Fees" value={formatPaiseToINR(otherFeesPaise)} />}
               </div>
               {preview && (
@@ -557,19 +426,51 @@ export default function CreateLoanPage() {
                   <Row label="Total Repayable" value={formatPaiseToINR(Number(preview.totalRepayable))} bold tint="text-primary" />
                 </div>
               )}
+              {preview && preview.installments.length > 0 && (
+                <div className="pt-2 border-t border-border space-y-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full h-9 text-xs"
+                    onClick={() => setShowSchedule((s) => !s)}
+                  >
+                    {showSchedule ? 'Hide Schedule Breakdown' : `View ${preview.installments.length}-Installment Schedule`}
+                  </Button>
+                  {showSchedule && (
+                    <div className="max-h-60 overflow-y-auto overflow-x-auto w-full rounded-lg border border-border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/40 text-[11px]">
+                            <TableHead className="px-2 py-1.5">#</TableHead>
+                            <TableHead className="px-2 py-1.5">Due</TableHead>
+                            <TableHead className="px-2 py-1.5 text-right">Prin.</TableHead>
+                            <TableHead className="px-2 py-1.5 text-right">Int.</TableHead>
+                            <TableHead className="px-2 py-1.5 text-right">EMI</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {preview.installments.map((row) => (
+                            <TableRow key={row.number} className="text-[11px]">
+                              <TableCell className="px-2 py-1 font-mono">{row.number}</TableCell>
+                              <TableCell className="px-2 py-1 whitespace-nowrap">
+                                {row.dueDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                              </TableCell>
+                              <TableCell className="px-2 py-1 text-right tabular-nums">{formatPaiseToINR(Number(row.principal))}</TableCell>
+                              <TableCell className="px-2 py-1 text-right tabular-nums">{formatPaiseToINR(Number(row.interest))}</TableCell>
+                              <TableCell className="px-2 py-1 text-right tabular-nums font-medium">{formatPaiseToINR(Number(row.totalDue))}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
       </div>
-    </div>
-  )
-}
-
-function Stat({ label, value, tint }: { label: string; value: string; tint?: string }) {
-  return (
-    <div className="rounded-xl border border-border p-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={cn('text-sm font-bold tabular-nums mt-1', tint)}>{value}</p>
     </div>
   )
 }
