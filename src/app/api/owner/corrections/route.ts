@@ -37,6 +37,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
       candidateName: c.loan.candidate.fullName,
       candidateMobile: c.loan.candidate.mobile,
       paymentId: c.paymentId,
+      amount: (c as any).amount ?? null,
       reason: c.reason,
       evidenceUrl: c.evidenceUrl,
       status: c.status,
@@ -49,7 +50,15 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const schema = z.object({}).strict()
+// A correction is a PARTIAL reversal of one specific payment, so the
+// payment and the amount (paise, > 0) are both required at creation time.
+const schema = z.object({
+  loanId: z.string().min(1),
+  paymentId: z.string().min(1),
+  amount: z.number().int().positive(),
+  reason: z.string().min(1),
+  evidenceUrl: z.string().optional().nullable(),
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()
@@ -62,10 +71,16 @@ export const POST = apiHandler(async (req: NextRequest) => {
   })
   if (!loan) return notFound('Loan not found')
 
+  const payment = await db.payment.findFirst({
+    where: { id: data.paymentId, loanId: loan.id, organizationId: ctx.user.organizationId },
+  })
+  if (!payment) return notFound('Payment not found for this loan')
+
   const correction = await db.financialCorrection.create({
     data: {
       loanId: data.loanId,
-      paymentId: data.paymentId ?? null,
+      paymentId: data.paymentId,
+      amount: data.amount,
       requestedById: ctx.user.id,
       reason: data.reason,
       evidenceUrl: data.evidenceUrl ?? null,
@@ -73,11 +88,13 @@ export const POST = apiHandler(async (req: NextRequest) => {
     },
   })
 
-  await audit(ctx, 'CORRECT', 'FinancialCorrection', correction.id, `Correction requested for loan ${loan.loanNumber}: ${data.reason}`)
+  await audit(ctx, 'CORRECT', 'FinancialCorrection', correction.id, `Correction requested for loan ${loan.loanNumber}: ${data.reason} (amount ₹${data.amount / 100}, payment ${payment.paymentNumber})`)
 
   return created({
     id: correction.id,
     loanId: loan.id,
+    paymentId: payment.id,
+    amount: data.amount,
     status: correction.status,
   })
 })

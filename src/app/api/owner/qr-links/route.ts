@@ -3,9 +3,9 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { requireOwner, audit } from '@/lib/server/auth'
-import { apiHandler, success, validate, genToken, paginate } from '@/lib/server/api'
+import { apiHandler, success, validate, genToken, paginate, paginationSchema } from '@/lib/server/api'
 
-const querySchema = z.object({}).strict()
+const querySchema = paginationSchema
 
 export const GET = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()
@@ -51,7 +51,29 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const createSchema = z.object({}).strict()
+// Money fields arrive as digit-strings (paise) from the admin pages; plain numbers are also accepted.
+const paiseValue = z.union([
+  z.string().trim().regex(/^\d+$/, 'Must be a non-negative integer amount in paise'),
+  z.number().int().nonnegative(),
+])
+
+const createSchema = z.object({
+  prePrincipal: paiseValue.optional().nullable(),
+  preInterestType: z.enum(['PERCENTAGE', 'FIXED', 'NONE']).optional().nullable(),
+  preInterestRate: z.number().int().min(0).max(10000).optional().nullable(),
+  preFixedInterest: paiseValue.optional().nullable(),
+  preFrequency: z.enum(['DAILY', 'WEEKLY', 'MONTHLY']).optional().nullable(),
+  preTenureMonths: z.number().int().min(1).max(360).optional().nullable(),
+  preInstallments: z.number().int().min(1).max(360).optional().nullable(),
+  prePurpose: z.string().trim().min(1).max(500).optional().nullable(),
+  processingFee: paiseValue.optional().nullable(),
+  otherFees: paiseValue.optional().nullable(),
+  preFullName: z.string().trim().min(2).max(100).optional().nullable(),
+  preMobile: z.string().trim().regex(/^\+?[0-9]{10,15}$/, 'Invalid mobile number').optional().nullable(),
+  preAadhaar: z.string().trim().max(20).optional().nullable(),
+  prePan: z.string().trim().max(20).optional().nullable(),
+  expiresInDays: z.number().int().min(1).max(365).optional().nullable(),
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()

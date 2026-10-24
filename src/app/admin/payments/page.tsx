@@ -99,7 +99,7 @@ export default function PaymentsPage() {
 
       <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
         <StaggerItem>
-          <KPICard label="Total Collected" value={formatPaiseToINRShort(totalToday)} icon={<Receipt className="h-5 w-5" />} variant="success" spark={[200, 240, 280, 300, 320, 360, 380]} />
+          <KPICard label="Total Collected" value={formatPaiseToINRShort(totalToday)} icon={<Receipt className="h-5 w-5" />} variant="success" />
         </StaggerItem>
         <StaggerItem>
           <KPICard label="Total Disbursed" value={totalDisbursedVal} icon={<Banknote className="h-5 w-5" />} variant="default" />
@@ -108,10 +108,10 @@ export default function PaymentsPage() {
           <KPICard label="Online vs Cash" value={onlineTotal + cashTotal > 0 ? `${Math.round(onlineTotal / (onlineTotal + cashTotal) * 100)}% / ${Math.round(cashTotal / (onlineTotal + cashTotal) * 100)}%` : '—'} icon={<Building2 className="h-5 w-5" />} variant="info" />
         </StaggerItem>
         <StaggerItem>
-          <KPICard label="Pending Verification" value={String(pendingVerify)} icon={<Clock className="h-5 w-5" />} variant="warning" spark={[3, 4, 5, 6, 7, 8, 9]} />
+          <KPICard label="Pending Verification" value={String(pendingVerify)} icon={<Clock className="h-5 w-5" />} variant="warning" />
         </StaggerItem>
         <StaggerItem>
-          <KPICard label="Failed / Rejected" value={String(failed)} icon={<XCircle className="h-5 w-5" />} variant="destructive" spark={[1, 1, 2, 2, 1, 1, 1]} />
+          <KPICard label="Failed / Rejected" value={String(failed)} icon={<XCircle className="h-5 w-5" />} variant="destructive" />
         </StaggerItem>
       </StaggerContainer>
 
@@ -337,7 +337,7 @@ export default function PaymentsPage() {
             <Button variant="outline" className="h-11" onClick={() => setSelectedReceipt(null)}>Close</Button>
             {selectedReceipt && (
               <Button asChild variant="outline" className="h-11">
-                <Link href={`/portal/receipts/${selectedReceipt.id}`}>
+                <Link href={`/admin/receipts/${selectedReceipt.id}`}>
                   <Receipt className="h-4 w-4" /> Open Printable Receipt Page
                 </Link>
               </Button>

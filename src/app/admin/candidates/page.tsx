@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Users, Search, Phone, Mail, MapPin, Eye } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
@@ -11,7 +12,6 @@ import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
 import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 
 interface CandidateRow {
@@ -54,8 +54,9 @@ function maskBankAccount(val?: string | null) {
   return `••••••${clean.slice(-4)}`
 }
 
-export default function CandidatesPage() {
-  const [search, setSearch] = React.useState('')
+function CandidatesPageInner() {
+  const searchParams = useSearchParams()
+  const [search, setSearch] = React.useState(() => searchParams.get('q') ?? '')
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['owner-candidates', search],
@@ -160,12 +161,22 @@ export default function CandidatesPage() {
                     )}
                   </div>
                   <div className="flex gap-2 pt-2 border-t border-border">
-                    <Button variant="outline" size="sm" className="flex-1 min-h-[44px] sm:min-h-8" aria-label={`Call ${c.fullName}`} onClick={() => toast.info(`Calling ${c.fullName}...`)}>
-                      <Phone className="h-3.5 w-3.5" /> Call
+                    <Button asChild variant="outline" size="sm" className="flex-1 min-h-[44px] sm:min-h-8" aria-label={`Call ${c.fullName}`}>
+                      <a href={`tel:${c.mobile.replace(/\s/g, '')}`}>
+                        <Phone className="h-3.5 w-3.5" /> Call
+                      </a>
                     </Button>
-                    <Button variant="ghost" size="sm" className="flex-1 min-h-[44px] sm:min-h-8" aria-label={`Email ${c.fullName}`} onClick={() => toast.info(`Emailing ${c.email ?? c.fullName}...`)}>
-                      <Mail className="h-3.5 w-3.5" /> Email
-                    </Button>
+                    {c.email ? (
+                      <Button asChild variant="ghost" size="sm" className="flex-1 min-h-[44px] sm:min-h-8" aria-label={`Email ${c.fullName}`}>
+                        <a href={`mailto:${c.email}`}>
+                          <Mail className="h-3.5 w-3.5" /> Email
+                        </a>
+                      </Button>
+                    ) : (
+                      <Button variant="ghost" size="sm" className="flex-1 min-h-[44px] sm:min-h-8" aria-label={`Email ${c.fullName}`} disabled>
+                        <Mail className="h-3.5 w-3.5" /> No email
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -174,5 +185,13 @@ export default function CandidatesPage() {
         </StaggerContainer>
       )}
     </div>
+  )
+}
+
+export default function CandidatesPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <CandidatesPageInner />
+    </React.Suspense>
   )
 }

@@ -128,7 +128,7 @@ export default function AgentDashboardPage() {
     weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
   })
 
-  const onCall = (name: string) => toast.info(`Calling ${name}…`, { description: 'Connecting via IVR.' })
+  const onCall = (name: string) => toast.info(`Calling ${name}…`, { description: 'Opening your phone dialer — the call is placed by your device.' })
   const onWhatsApp = (name: string, mobile: string, loanNumber: string, amountPaise: string, dueDate: string) => {
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.PAYMENT_REMINDER, {
       candidateName: name,
@@ -137,7 +137,7 @@ export default function AgentDashboardPage() {
       dueDate,
     })
     openWhatsApp(mobile, msg)
-    toast.success('WhatsApp draft opened', { description: `Reminder sent to ${name}` })
+    toast.success('WhatsApp draft opened', { description: `Press Send in WhatsApp to deliver the reminder to ${name}.` })
   }
 
   return (

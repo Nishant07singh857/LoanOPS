@@ -5,7 +5,10 @@ import { db } from '@/lib/db'
 import { requireAgent, audit } from '@/lib/server/auth'
 import { apiHandler, success, notFound, badRequest, validate, conflict } from '@/lib/server/api'
 
-const schema = z.object({}).strict()
+const schema = z.object({
+  outcome: z.string().min(1).max(500).optional(),
+  notes: z.string().max(5000).optional().nullable(),
+}).strict()
 
 export const POST = apiHandler(async (
   req: NextRequest,

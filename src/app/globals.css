@@ -284,6 +284,25 @@
   .no-scrollbar::-webkit-scrollbar {
     display: none;               /* Chrome / Safari / Opera */
   }
+
+  /* Sidebar nav: thin VISIBLE scrollbar. The owner sidebar holds 16 items
+     across 4 groups (~850px of content); on laptop-height viewports it must
+     scroll, and a hidden scrollbar made the lower items look cut off /
+     unreachable. A visible thin bar signals scrollability. */
+  .sidebar-scroll {
+    scrollbar-width: thin;        /* Firefox */
+    scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent) transparent;
+  }
+  .sidebar-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+  .sidebar-scroll::-webkit-scrollbar-thumb {
+    background: color-mix(in oklch, var(--muted-foreground) 35%, transparent);
+    border-radius: 999px;
+  }
+  .sidebar-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }
 
 /* Disable animations for users who prefer reduced motion */

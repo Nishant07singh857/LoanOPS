@@ -25,6 +25,12 @@ if (process.env.DATABASE_URL) {
 export default defineConfig({
   timeout: 120000,
   testDir: './tests',
+  // Only browser specs belong to Playwright. tests/unit/*.test.ts is a
+  // tsx-run unit suite (npm run test:unit) whose files execute their own
+  // runner at import time; Playwright's default testMatch also matches
+  // *.test.ts, which made it import (and run) the unit suite and crash
+  // before any real E2E spec executed.
+  testMatch: '**/*.spec.ts',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

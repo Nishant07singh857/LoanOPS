@@ -11,7 +11,7 @@ import {
   Banknote, TrendingUp, Wallet, AlertTriangle, Landmark, Activity,
   FileText, Clock, ArrowRight, Sparkles, Plus, QrCode, FileCheck,
 } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { KPICard } from '@/components/ui/kpi-card'
 import { StatusBadge, formatStatus, statusToVariant } from '@/components/ui/status-badge'
@@ -65,6 +65,7 @@ interface AnalyticsData {
   collectionTrend: { label: string; value: number }[]
   outstandingTrend: { label: string; value: number }[]
   overdueTrend: { label: string; value: number }[]
+  overdueAging: { bucket: string; count: number; amount: number }[]
 }
 
 interface AuditItem {
@@ -133,8 +134,55 @@ function timeAgo(dateStr: string): string {
   return d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
 }
 
+// Real agent assignment for a dashboard alert: pick an active agent and
+// PATCH the candidate (PATCH /api/owner/candidates/[id]). Assignment is
+// what every agent-side ownership check keys off, so this has immediate
+// effect — the previous button only showed a success toast and did nothing.
+function AssignAgentControl({ candidateId, candidateName }: { candidateId: string; candidateName?: string }) {
+  const [agentId, setAgentId] = React.useState('')
+  const queryClient = useQueryClient()
+  const { data: agentsData } = useQuery({
+    queryKey: ['owner-agents-list'],
+    queryFn: () => api.get<{ items: { id: string; name: string; isActive: boolean }[] }>('/api/owner/agents'),
+    staleTime: 60 * 1000,
+  })
+  const agents = (agentsData?.items ?? []).filter((a) => a.isActive)
+  const mutation = useMutation({
+    mutationFn: () => api.patch(`/api/owner/candidates/${candidateId}`, { assignedAgentId: agentId }),
+    onSuccess: () => {
+      toast.success('Agent assigned', { description: `${candidateName ?? 'Candidate'} has been assigned.` })
+      queryClient.invalidateQueries({ queryKey: ['owner-dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['owner-analytics'] })
+    },
+    onError: (e: Error) => toast.error('Assignment failed', { description: e.message }),
+  })
+
+  return (
+    <div className="flex items-center gap-2">
+      <select
+        aria-label={`Assign an agent to ${candidateName ?? 'candidate'}`}
+        value={agentId}
+        onChange={(e) => setAgentId(e.target.value)}
+        className="h-8 max-w-[150px] rounded-lg border border-border bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+      >
+        <option value="">Select agent…</option>
+        {agents.map((a) => (
+          <option key={a.id} value={a.id}>{a.name}</option>
+        ))}
+      </select>
+      <Button
+        size="sm"
+        className="min-h-[44px] sm:min-h-8"
+        disabled={!agentId || mutation.isPending}
+        onClick={() => mutation.mutate()}
+      >
+        {mutation.isPending ? 'Assigning…' : 'Assign agent'}
+      </Button>
+    </div>
+  )
+}
+
 export default function AdminDashboardPage() {
-  const spark = (arr: number[]) => arr
 
   const { data: kpis, isLoading: kpiLoading, isError: kpiError, refetch: refetchKpis } = useQuery({
     queryKey: ['owner-dashboard'],
@@ -177,18 +225,16 @@ export default function AdminDashboardPage() {
     outstanding: analyticsData?.outstandingTrend[i]?.value ?? 0,
   }))
 
-  // Overdue aging (compute from overdue trend if available; otherwise show empty)
-  const overdueAging = [
+  // Overdue aging — real buckets from /api/owner/analytics (computed
+  // server-side from open OVERDUE installments). The zero array is only
+  // the loading placeholder before analytics arrive.
+  const overdueAging = analyticsData?.overdueAging ?? [
     { bucket: '1-7 days', count: 0, amount: 0 },
     { bucket: '8-15 days', count: 0, amount: 0 },
     { bucket: '16-30 days', count: 0, amount: 0 },
     { bucket: '31-60 days', count: 0, amount: 0 },
     { bucket: '60+ days', count: 0, amount: 0 },
   ]
-
-  const onAssign = (name?: string) => toast.success(`Agent assignment queued for ${name ?? 'candidate'}`, {
-    description: 'A collection follow-up task has been created.',
-  })
 
   return (
     <div className="space-y-6 sm:space-y-8">
@@ -268,7 +314,7 @@ export default function AdminDashboardPage() {
                 delta={{ value: 'live', positive: true }}
                 icon={<Banknote className="h-5 w-5" />}
                 variant="default"
-                spark={spark([300, 340, 380, 410, 420, 460, 500, 560])}
+               
               />
             </StaggerItem>
             <StaggerItem>
@@ -278,7 +324,7 @@ export default function AdminDashboardPage() {
                 delta={{ value: 'live', positive: false }}
                 icon={<Wallet className="h-5 w-5" />}
                 variant="info"
-                spark={spark([980, 1020, 1060, 1100, 1150, 1190, 1210, 1240])}
+               
               />
             </StaggerItem>
             <StaggerItem>
@@ -288,7 +334,7 @@ export default function AdminDashboardPage() {
                 delta={{ value: 'live', positive: true }}
                 icon={<TrendingUp className="h-5 w-5" />}
                 variant="success"
-                spark={spark([310, 340, 360, 390, 420, 460, 480, 502])}
+               
               />
             </StaggerItem>
             <StaggerItem>
@@ -298,7 +344,7 @@ export default function AdminDashboardPage() {
                 delta={{ value: 'live', positive: false }}
                 icon={<AlertTriangle className="h-5 w-5" />}
                 variant="destructive"
-                spark={spark([60, 72, 78, 82, 80, 84, 86, 84])}
+               
               />
             </StaggerItem>
             <StaggerItem>
@@ -308,7 +354,7 @@ export default function AdminDashboardPage() {
                 delta={{ value: 'live', positive: true }}
                 icon={<Landmark className="h-5 w-5" />}
                 variant="default"
-                spark={spark([560, 580, 590, 600, 605, 608, 610, 612])}
+               
               />
             </StaggerItem>
             <StaggerItem>
@@ -318,7 +364,7 @@ export default function AdminDashboardPage() {
                 delta={{ value: 'live', positive: true }}
                 icon={<Activity className="h-5 w-5" />}
                 variant="success"
-                spark={spark([88, 90, 91, 92, 93, 93.5, 94, 94.2])}
+               
               />
             </StaggerItem>
             <StaggerItem>
@@ -328,7 +374,7 @@ export default function AdminDashboardPage() {
                 delta={{ value: 'live', positive: false }}
                 icon={<FileText className="h-5 w-5" />}
                 variant="warning"
-                spark={spark([20, 24, 26, 30, 28, 25, 27, 27])}
+               
               />
             </StaggerItem>
             <StaggerItem>
@@ -338,7 +384,7 @@ export default function AdminDashboardPage() {
                 delta={{ value: 'live', positive: false }}
                 icon={<AlertTriangle className="h-5 w-5" />}
                 variant="destructive"
-                spark={spark([28, 32, 35, 40, 38, 36, 38, 38])}
+               
               />
             </StaggerItem>
           </>
@@ -532,7 +578,9 @@ export default function AdminDashboardPage() {
                           <Link href={`/admin/loans/${a.loanId}`}>View loan</Link>
                         </Button>
                       )}
-                      <Button size="sm" onClick={() => onAssign(a.candidateName)} className="min-h-[44px] sm:min-h-8">Assign agent</Button>
+                      {a.candidateId && (
+                        <AssignAgentControl candidateId={a.candidateId} candidateName={a.candidateName} />
+                      )}
                     </div>
                   </motion.div>
                 ))

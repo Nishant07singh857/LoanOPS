@@ -173,7 +173,7 @@ export default function AgentTasksPage() {
     onError: (e: Error) => toast.error('Failed to complete task', { description: e.message }),
   })
 
-  const onCall = (n: string) => toast.info(`Calling ${n}…`, { description: 'Connecting via IVR.' })
+  const onCall = (n: string) => toast.info(`Calling ${n}…`, { description: 'Opening your phone dialer — the call is placed by your device.' })
   const onWhatsApp = (t: TaskRow) => {
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.PAYMENT_REMINDER, {
       candidateName: t.candidate.fullName,
@@ -182,7 +182,7 @@ export default function AgentTasksPage() {
       dueDate: new Date(t.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
     })
     openWhatsApp(t.candidate.mobile, msg)
-    toast.success('WhatsApp draft opened', { description: `Reminder sent to ${t.candidate.fullName}` })
+    toast.success('WhatsApp draft opened', { description: `Press Send in WhatsApp to deliver the reminder to ${t.candidate.fullName}.` })
   }
 
   return (

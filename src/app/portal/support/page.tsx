@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  LifeBuoy, MessageCircle, Plus, Paperclip, Send, Clock,
+  LifeBuoy, MessageCircle, Plus, Send, Clock,
   HelpCircle, UserCog, ShieldCheck,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
@@ -28,9 +28,6 @@ import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
 import { useSession } from '@/lib/session'
-
-const AGENT_PHONE = '+91 98201 44556'
-const OWNER_PHONE = '+91 98200 11223'
 
 const CATEGORIES = ['Repayment', 'Receipt', 'KYC', 'Agreement', 'Disbursement', 'Other']
 
@@ -95,21 +92,24 @@ export default function SupportPage() {
   })
   const tickets = data?.items ?? []
 
+  const { data: loanData } = useQuery({
+    queryKey: ['candidate-loan'],
+    queryFn: () => api.get<{ loanNumber?: string; assignedAgent?: { name?: string; phone?: string | null } | null }>('/api/candidate/loan'),
+    retry: false,
+  })
+  const assignedAgent = loanData?.assignedAgent ?? null
+
   const onWhatsAppAgent = () => {
+    if (!assignedAgent?.phone) {
+      toast.error('No agent assigned yet', { description: 'Please raise a support ticket below and the lender will assign an agent.' })
+      return
+    }
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.CANDIDATE_TO_AGENT, {
       candidateName,
-      loanNumber: '',
+      loanNumber: loanData?.loanNumber ?? '',
     })
-    openWhatsApp(AGENT_PHONE, msg)
-    toast.success('WhatsApp draft opened', { description: 'Your agent Arjun will respond shortly.' })
-  }
-  const onWhatsAppOwner = () => {
-    const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.CANDIDATE_TO_OWNER, {
-      candidateName,
-      loanNumber: '',
-    })
-    openWhatsApp(OWNER_PHONE, msg)
-    toast.success('WhatsApp draft opened', { description: 'Owner notified.' })
+    openWhatsApp(assignedAgent.phone, msg)
+    toast.success('WhatsApp draft opened', { description: 'Message your assigned agent in WhatsApp.' })
   }
 
   return (
@@ -136,8 +136,11 @@ export default function SupportPage() {
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold">WhatsApp Your Agent</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Arjun Nair · {AGENT_PHONE}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">Fastest response · avg 5 min</p>
+                    {assignedAgent?.phone ? (
+                      <p className="text-xs text-muted-foreground mt-0.5">{assignedAgent.name ?? 'Assigned Agent'} · {assignedAgent.phone}</p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground mt-0.5">No agent assigned yet — please raise a ticket below.</p>
+                    )}
                   </div>
                 </div>
                 <Button
@@ -145,6 +148,7 @@ export default function SupportPage() {
                   variant="outline"
                   className="w-full sm:w-auto"
                   onClick={onWhatsAppAgent}
+                  disabled={!assignedAgent?.phone}
                 >
                   <MessageCircle className="h-3.5 w-3.5" /> Message
                 </Button>
@@ -161,8 +165,8 @@ export default function SupportPage() {
                     <UserCog className="h-6 w-6" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold">WhatsApp the Owner</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Ravi Mehta · {OWNER_PHONE}</p>
+                    <p className="text-sm font-semibold">Escalate to the Lender</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Raise a support ticket — the lender team responds here.</p>
                     <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium mt-0.5">For escalations only</p>
                   </div>
                 </div>
@@ -170,9 +174,9 @@ export default function SupportPage() {
                   size="sm"
                   variant="gold"
                   className="w-full sm:w-auto"
-                  onClick={onWhatsAppOwner}
+                  onClick={() => setNewOpen(true)}
                 >
-                  <MessageCircle className="h-3.5 w-3.5" /> Message
+                  <LifeBuoy className="h-3.5 w-3.5" /> Raise Ticket
                 </Button>
               </div>
             </CardContent>
@@ -292,18 +296,17 @@ function NewTicketDialog({ open, onOpenChange, onCreated }: {
   const [category, setCategory] = React.useState('Repayment')
   const [subject, setSubject] = React.useState('')
   const [description, setDescription] = React.useState('')
-  const [attachmentName, setAttachmentName] = React.useState('')
 
   const mutation = useMutation({
     mutationFn: () => api.post<{ id: string; ticketNumber: string }>('/api/candidate/support', {
       category,
       subject,
-      description: attachmentName ? `${description}\n\n[Attached: ${attachmentName}]` : description,
+      description,
     }),
     onSuccess: (res) => {
       toast.success('Support request created', { description: `${res.ticketNumber} · ${category}` })
       onCreated()
-      setCategory('Repayment'); setSubject(''); setDescription(''); setAttachmentName('')
+      setCategory('Repayment'); setSubject(''); setDescription('')
       onOpenChange(false)
     },
     onError: (e: Error) => toast.error('Failed to create ticket', { description: e.message }),
@@ -339,27 +342,6 @@ function NewTicketDialog({ open, onOpenChange, onCreated }: {
           <div className="space-y-1.5">
             <Label>Description</Label>
             <Textarea placeholder="Describe your issue in detail..." value={description} onChange={(e) => setDescription(e.target.value)} className="min-h-[110px]" />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Attachment (optional)</Label>
-            <label className="block rounded-xl border-2 border-dashed border-border p-4 text-center text-xs text-muted-foreground hover:border-primary/40 hover:bg-muted/20 transition-colors cursor-pointer">
-              <Paperclip className="h-5 w-5 mx-auto mb-1.5 opacity-50" />
-              {attachmentName ? `Attached: ${attachmentName}` : 'Tap to add screenshot (PNG/JPG, max 5 MB)'}
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                className="sr-only"
-                onChange={(e) => {
-                  const f = e.target.files?.[0]
-                  if (!f) return
-                  if (f.size > 5 * 1024 * 1024) {
-                    toast.error('File too large', { description: 'Maximum file size is 5 MB.' })
-                    return
-                  }
-                  setAttachmentName(f.name)
-                }}
-              />
-            </label>
           </div>
         </div>
         <DialogFooter>

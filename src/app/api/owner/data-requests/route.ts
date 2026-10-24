@@ -28,7 +28,11 @@ export const GET = apiHandler(async () => {
   return success(requests)
 })
 
-const reviewSchema = z.object({}).strict()
+const reviewSchema = z.object({
+  id: z.string().trim().min(1),
+  status: z.enum(['PENDING', 'IN_REVIEW', 'COMPLETED', 'REJECTED', 'REJECTED_LEGAL_RETENTION']),
+  reviewNotes: z.string().trim().max(2000).optional().nullable(),
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()

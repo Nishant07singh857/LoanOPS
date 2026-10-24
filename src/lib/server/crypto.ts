@@ -14,10 +14,21 @@ function deriveKey(secret: string): Buffer {
 }
 
 function getEncryptionKey(): Buffer {
-  const secret =
-    process.env.PII_ENCRYPTION_KEY ||
-    process.env.SESSION_SECRET ||
-    DEFAULT_DEV_SECRET
+  const configuredSecret =
+    process.env.PII_ENCRYPTION_KEY || process.env.SESSION_SECRET
+
+  if (!configuredSecret && process.env.NODE_ENV === 'production') {
+    // Never fall back to a publicly-known secret in production: anything
+    // encrypted with it would be decryptable by anyone who can read the
+    // source code. Fail closed instead.
+    throw new Error(
+      'PII_ENCRYPTION_KEY (or SESSION_SECRET) must be set in production — refusing to use the development fallback secret'
+    )
+  }
+
+  // Development/test only: deterministic fallback so local tooling works
+  // without configured secrets. Never reached in production (see above).
+  const secret = configuredSecret || DEFAULT_DEV_SECRET
 
   if (cachedKey && cachedSecret === secret) {
     return cachedKey
@@ -59,16 +70,53 @@ function tryDecryptWithKey(key: Buffer, iv: Buffer, tag: Buffer, encrypted: Buff
 }
 
 /**
+ * Masking-only decrypt: resolves a stored PII value to the string a
+ * masker (maskAadhaar / maskPan / maskBankAccount) should consume.
+ *
+ * Stored values are heterogeneous by era: `enc:v1:` ciphertext (current),
+ * legacy plaintext written before encryption-at-rest, and already-masked
+ * display strings (e.g. Candidate.aadhaarMasked holds "XXXX-XXXX-1234").
+ * decryptPII() deliberately fails closed on non-ciphertext in production —
+ * correct for full-value reads, but list/detail endpoints that only ever
+ * return a MASKED value must not 500 on legacy rows. The maskers expose at
+ * most the last 4 characters, so passing a legacy value through here never
+ * widens exposure beyond what the mask itself reveals.
+ *
+ * Use ONLY where the result is immediately masked. Full-value paths
+ * (audited PII reveal) must keep using decryptPII().
+ */
+export function decryptPIIForMask(value?: string | null): string {
+  if (!value) return ''
+  const str = String(value)
+  if (str.startsWith(PREFIX)) return decryptPII(str)
+  return str
+}
+
+/**
  * Decrypts an `enc:v1:`-prefixed ciphertext back to UTF-8 plaintext.
  * Automatically falls back to `PII_ENCRYPTION_KEY_PREVIOUS` during key rotation.
  */
 export function decryptPII(value?: string | null): string {
   if (!value) return ''
   const str = String(value)
-  if (!str.startsWith(PREFIX)) return str
+  if (!str.startsWith(PREFIX)) {
+    if (process.env.NODE_ENV === 'production') {
+      // In production a non-prefixed value is either plaintext PII that was
+      // stored incorrectly or corrupt data. Returning it silently would
+      // propagate unencrypted PII; fail closed instead. Development stays
+      // lenient for legacy/seed data.
+      throw new Error('decryptPII: value is not in enc:v1: format (refusing to return it as plaintext in production)')
+    }
+    return str
+  }
 
   const parts = str.slice(PREFIX.length).split(':')
-  if (parts.length !== 3) return str
+  if (parts.length !== 3) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('decryptPII: malformed enc:v1: value (expected iv:tag:ciphertext)')
+    }
+    return str
+  }
   const [ivHex, tagHex, cipherHex] = parts
   const iv = Buffer.from(ivHex, 'hex')
   const tag = Buffer.from(tagHex, 'hex')
@@ -81,6 +129,13 @@ export function decryptPII(value?: string | null): string {
     const prevKey = deriveKey(process.env.PII_ENCRYPTION_KEY_PREVIOUS)
     const fallbackPlain = tryDecryptWithKey(prevKey, iv, tag, encrypted)
     if (fallbackPlain !== null) return fallbackPlain
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    // Undecryptable ciphertext in production means a wrong/rotated-away key
+    // or data corruption. Returning the ciphertext as if it were plaintext
+    // silently corrupts downstream PII handling; fail closed instead.
+    throw new Error('decryptPII: unable to decrypt value with the configured PII keys')
   }
 
   return str

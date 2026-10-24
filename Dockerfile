@@ -13,13 +13,15 @@ COPY package.json package-lock.json* bun.lock* ./
 COPY prisma ./prisma
 COPY scripts/pre-generate.js ./scripts/pre-generate.js
 
-RUN npm install --legacy-peer-deps && npx prisma generate
+RUN npm ci --legacy-peer-deps && npx prisma generate
 
 # --- Stage 2: Build application ---
 FROM base AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
+# COPY respects .dockerignore: .env*, .git, node_modules, .next, db/,
+# result.json, audit artifacts, logs and test output never enter the image.
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1

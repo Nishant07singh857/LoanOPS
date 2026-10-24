@@ -35,6 +35,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Full history: the gitleaks action scans the PR commit range
+          # (base..head) and fails on a shallow (fetch-depth: 1) checkout
+          # because the parent commit is missing from the working tree.
+          fetch-depth: 0
+
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
@@ -43,10 +53,10 @@ jobs:
           cache: "npm"
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: npm ci --legacy-peer-deps
 
       - name: Supply chain security check (npm audit)
-        run: npm audit --audit-level=critical || true
+        run: npm audit --audit-level=critical
 
       - name: Generate Prisma Client & Apply Migrations
         env:
@@ -75,15 +85,60 @@ jobs:
         env:
           DATABASE_URL: "postgresql://postgres:postgrespassword@localhost:5432/loanops_ci"
           DIRECT_URL: "postgresql://postgres:postgrespassword@localhost:5432/loanops_ci"
+          # seed.ts and playwright.config.ts both hard-require DATABASE_URL_TEST;
+          # it is exported from DATABASE_URL in the run block below (same CI DB)
+          # so no second connection-string literal lives in this file.
           ALLOW_PROD_SEED: "true"
+          # seed.ts refuses to run without explicit seed passwords (no defaults
+          # exist anymore) and the Playwright specs read the same variables.
+          # These are CI-only throwaway credentials for the ephemeral CI DB.
+          SEED_OWNER_PASSWORD: "CiOwner#2026x"
+          SEED_AGENT_PASSWORD: "CiAgent#2026x"
+          SEED_AGENT2_PASSWORD: "CiAgent2#2026x"
+          SEED_CANDIDATE_PASSWORD: "CiCandidate#2026x"
+          # The standalone server validates env strictly at boot (production).
+          # SESSION_SECRET and PII_ENCRYPTION_KEY come from the workflow-level
+          # env above; only the boot-specific values are set here.
+          AADHAAR_HASH_PEPPER: "ci-aadhaar-pepper-ci-aadhaar-pepper-0123456789"
+          NEXT_PUBLIC_APP_URL: "https://localhost:3000"
+          COOKIE_SECURE: "true"
+          ENABLE_ONLINE_PAYMENTS: "false"
+          # TEST ONLY: the specs simulate distinct client IPs via
+          # x-forwarded-for (the login limiter is 8 attempts / 15 min per
+          # IP+account). Without this, every request collapses to 127.0.0.1
+          # and the suite rate-limits itself. Production must NOT set this
+          # unless it really sits behind a trusted proxy.
+          TRUST_PROXY: "true"
         run: |
+          # seed.ts refuses to run unless DATABASE_URL_TEST points at a
+          # DIFFERENT database than DATABASE_URL (production-safety guard),
+          # so the E2E suite gets its own throwaway database: created here,
+          # migrated, seeded, and used by both the app server and Playwright.
+          # Values are derived from DATABASE_URL - no new literals in this file.
+          export DATABASE_URL_TEST="${DATABASE_URL%/*}/loanops_test"
+          _pgpass="${DATABASE_URL#*://postgres:}"
+          export PGPASSWORD="${_pgpass%%@*}"
+          docker run --rm --network host -e PGPASSWORD postgres:16-alpine \
+            createdb -h localhost -U postgres loanops_test
+          DATABASE_URL="$DATABASE_URL_TEST" DIRECT_URL="$DATABASE_URL_TEST" \
+            npx prisma migrate deploy
           npx tsx scripts/seed.ts
           npx playwright install --with-deps chromium
-          node .next/standalone/server.js &
-          sleep 4
+          # Playwright boots the app server itself (webServer block in
+          # playwright.config.ts) with DATABASE_URL overridden to
+          # DATABASE_URL_TEST. Do NOT start a server here and do NOT export
+          # DATABASE_URL=$DATABASE_URL_TEST into this shell: the config's own
+          # safety guard refuses to run when the two URLs are equal, and a
+          # pre-bound :3000 would collide with Playwright's webServer.
           npx playwright test --reporter=list
-
-      - name: Secret scanning (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Keep Playwright's error contexts and traces from failed runs so a
+      # red E2E step is debuggable from the run page (the list reporter
+      # alone truncates the actionability call-log).
+      - name: Upload Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7

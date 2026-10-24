@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { requireAgent, audit } from '@/lib/server/auth'
-import { apiHandler, success, badRequest, notFound, validate } from '@/lib/server/api'
+import { apiHandler, success, badRequest, notFound, forbidden, validate } from '@/lib/server/api'
 import { genNumber } from '@/lib/server/api'
 
 const createSchema = z.object({
@@ -35,6 +35,9 @@ export const POST = apiHandler(async (req: NextRequest) => {
     return badRequest('candidateId or newCandidate is required')
   }
 
+  const agentProfile = await ctx.db.agentProfile.findUnique({ where: { userId: ctx.user.id } })
+  if (!agentProfile) return forbidden('Agent profile not found')
+
   let candidate;
   if (input.candidateId) {
     // Verify candidate belongs to org
@@ -42,11 +45,19 @@ export const POST = apiHandler(async (req: NextRequest) => {
       where: { id: input.candidateId, organizationId: ctx.user.organizationId },
     })
     if (!candidate) return notFound('Candidate not found')
+    // Assignment enforcement (same check sibling agent routes use):
+    // an agent may only create applications for candidates assigned to them.
+    if (candidate.assignedAgentId !== agentProfile.id) {
+      return forbidden('You do not have access to this candidate')
+    }
   } else if (input.newCandidate) {
     // Best effort: find existing by mobile
     candidate = await ctx.db.candidate.findFirst({
       where: { mobile: input.newCandidate.mobile, organizationId: ctx.user.organizationId },
     })
+    if (candidate && candidate.assignedAgentId !== agentProfile.id) {
+      return forbidden('You do not have access to this candidate')
+    }
     if (!candidate) {
       candidate = await ctx.db.candidate.create({
         data: {

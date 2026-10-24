@@ -4,6 +4,7 @@ import { requireOwner } from '@/lib/server/auth'
 import { apiHandler, success } from '@/lib/server/api'
 import { db } from '@/lib/db'
 import { withCache } from '@/lib/redis'
+import { refreshOverdueStatuses } from '@/lib/server/overdue'
 
 async function getDashboardData(orgId: string) {
   // Run aggregations in parallel
@@ -114,6 +115,14 @@ async function getDashboardData(orgId: string) {
 export const GET = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()
   const orgId = ctx.user.organizationId
+
+  // Age this org's installments first so overdue KPIs below are truthful.
+  // Best-effort: a sweep failure must not take the dashboard down.
+  try {
+    await refreshOverdueStatuses(orgId)
+  } catch {
+    // ignore — the standalone cron (scripts/mark-overdue.ts) is the backstop
+  }
 
   // Cache dashboard data in Redis for 5 minutes (300 seconds)
   const data = await withCache(`dashboard-kpis:${orgId}`, 300, () => getDashboardData(orgId))

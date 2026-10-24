@@ -2,9 +2,13 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { requireOwner } from '@/lib/server/auth'
-import { apiHandler, success, validate, paginate } from '@/lib/server/api'
+import { apiHandler, success, validate, paginate, paginationSchema } from '@/lib/server/api'
 
-const querySchema = z.object({}).strict()
+const querySchema = paginationSchema.extend({
+  status: z.string().trim().optional(),
+  search: z.string().trim().optional(),
+  frequency: z.string().trim().optional(),
+})
 
 export const GET = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()

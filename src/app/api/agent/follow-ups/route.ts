@@ -54,7 +54,16 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const schema = z.object({}).strict()
+const schema = z.object({
+  candidateId: z.string().min(1),
+  loanId: z.string().min(1).optional().nullable(),
+  contactMethod: z.enum(['PHONE', 'WHATSAPP', 'IN_APP', 'FIELD_VISIT']),
+  outcome: z.string().max(500).optional().nullable(),
+  notes: z.string().max(5000).optional().nullable(),
+  nextFollowUp: z.string().min(1).max(40).optional().nullable(),
+  // Sent by the candidate-detail frontend; the handler records contactDate as now:
+  contactDate: z.string().min(1).max(40).optional().nullable(),
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireAgent()
@@ -71,7 +80,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
   })
   if (!candidate) return notFound('Candidate not found')
 
-  if (candidate.assignedAgentId !== agentProfile.id) {
+  if (candidate.assignedAgentId && candidate.assignedAgentId !== agentProfile.id) {
     const taskCount = await db.collectionTask.count({
       where: {
         candidateId: candidate.id,

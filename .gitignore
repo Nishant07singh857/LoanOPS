@@ -13,7 +13,16 @@ node_modules
 # testing
 /coverage
 /test-results
+/test-results/
 /playwright-report
+
+# databases & local audit artifacts — never commit data or run output
+*.db
+*.sqlite
+*.sqlite3
+result.json
+audit-raw-proofs.txt
+audit-output/
 
 # next.js
 /.next/

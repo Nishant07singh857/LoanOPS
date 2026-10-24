@@ -25,7 +25,15 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const schema = z.object({}).strict()
+const schema = z.object({
+  name: z.string().trim().min(2).max(200),
+  version: z.string().trim().min(1).max(50),
+  body: z.string().trim().min(1).max(100000),
+  effectiveDate: z.string().trim().min(1).refine((v) => !Number.isNaN(Date.parse(v)), {
+    message: 'Invalid effectiveDate',
+  }),
+  isActive: z.boolean().optional().default(true),
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()

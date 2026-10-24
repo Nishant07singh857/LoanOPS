@@ -60,5 +60,10 @@ report.push('\n## I38. TODOs and console.log');
 report.push(grep('console.log', 'src'));
 report.push(grep('TODO', 'src'));
 
-fs.writeFileSync('audit-raw-proofs.txt', report.join('\n'));
-console.log('Audit script finished.');
+// Audit output is a local run artifact, not source: write it under
+// audit-output/ (gitignored) instead of polluting the repository root.
+const outputDir = path.join(process.cwd(), 'audit-output');
+fs.mkdirSync(outputDir, { recursive: true });
+const outputPath = path.join(outputDir, 'audit-raw-proofs.txt');
+fs.writeFileSync(outputPath, report.join('\n'));
+console.log(`Audit script finished. Report written to ${outputPath}`);

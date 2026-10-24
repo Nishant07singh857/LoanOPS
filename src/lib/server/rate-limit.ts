@@ -1,7 +1,18 @@
 // Central Rate Limiter & Abuse Protection (Phase 4)
-// Supports Redis via Upstash/REST if REDIS_REST_URL & REDIS_REST_TOKEN are configured,
-// with a bounded, deterministic in-memory sliding-window fallback.
+//
+// HONEST LIMITATION: rate limits are IN-MEMORY and PER-INSTANCE only.
+// There is no Redis/distributed backend in this module (the Upstash Redis
+// client in src/lib/redis.ts is used for caching, not for rate limiting).
+// On multi-instance or serverless deployments each instance keeps its own
+// buckets, so effective limits multiply by the instance count and reset on
+// cold start / restart. Do not treat these limits as a distributed control.
+//
+// Client IP handling: forwarded headers (x-forwarded-for etc.) are only
+// trusted when the deployment explicitly opts in via TRUST_PROXY="true" or
+// by naming a header in TRUSTED_PROXY_HEADER — otherwise any client could
+// spoof its IP and reset every limit at will.
 
+import { createHash } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { logger } from '@/lib/server/logger'
 
@@ -59,12 +70,31 @@ function cleanupBuckets(now: number) {
 
 export function extractClientIp(req?: NextRequest | null): string {
   if (!req) return 'unknown'
-  const forwarded = req.headers.get('x-forwarded-for')
-  if (forwarded) {
-    const first = forwarded.split(',')[0]?.trim()
-    if (first) return first
+
+  const trustedProxyHeader = process.env.TRUSTED_PROXY_HEADER?.trim()
+  const trustProxy = process.env.TRUST_PROXY === 'true' || Boolean(trustedProxyHeader)
+
+  if (trustProxy) {
+    // A trusted proxy (e.g. Caddy) is in front of the app and overwrites /
+    // appends the forwarding header, so its value can be believed.
+    const headerName = (trustedProxyHeader || 'x-forwarded-for').toLowerCase()
+    const forwarded = req.headers.get(headerName)
+    if (forwarded) {
+      const first = forwarded.split(',')[0]?.trim()
+      if (first) return first
+    }
+    const realIp = req.headers.get('x-real-ip')
+    if (realIp) return realIp
   }
-  return req.headers.get('x-real-ip') || '127.0.0.1'
+
+  // No trusted proxy: forwarding headers are client-controlled and MUST NOT
+  // be used as a rate-limit key (rotating them would reset every limit).
+  // Bucket all direct callers together, differentiated only by a hash of
+  // their User-Agent, and rely on per-account identifiers (passed by
+  // callers as additional key parts) for finer-grained limits.
+  const userAgent = req.headers.get('user-agent') || ''
+  const uaHash = createHash('sha256').update(userAgent).digest('hex').slice(0, 12)
+  return `direct:${uaHash}`
 }
 
 export interface RateLimitResult {

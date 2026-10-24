@@ -3,9 +3,9 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { requireAgent, audit } from '@/lib/server/auth'
-import { apiHandler, success, validate, genToken, paginate } from '@/lib/server/api'
+import { apiHandler, success, validate, genToken, paginate, paginationSchema } from '@/lib/server/api'
 
-const querySchema = z.object({}).strict()
+const querySchema = paginationSchema
 
 export const GET = apiHandler(async (req: NextRequest) => {
   const ctx = await requireAgent()
@@ -51,7 +51,23 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const createSchema = z.object({}).strict()
+const createSchema = z.object({
+  prePrincipal: z.union([z.string().regex(/^\d+$/), z.number().int().nonnegative()]).optional().nullable(),
+  preInterestType: z.enum(['PERCENTAGE', 'FIXED', 'NONE']).optional().nullable(),
+  preInterestRate: z.number().int().min(0).optional().nullable(),
+  preFixedInterest: z.union([z.string().regex(/^\d+$/), z.number().int().nonnegative()]).optional().nullable(),
+  preFrequency: z.enum(['DAILY', 'WEEKLY', 'MONTHLY']).optional().nullable(),
+  preTenureMonths: z.number().int().min(1).max(360).optional().nullable(),
+  preInstallments: z.number().int().min(1).max(360).optional().nullable(),
+  prePurpose: z.string().min(1).max(500).optional().nullable(),
+  processingFee: z.union([z.string().regex(/^\d+$/), z.number().int().nonnegative()]).optional().nullable(),
+  otherFees: z.union([z.string().regex(/^\d+$/), z.number().int().nonnegative()]).optional().nullable(),
+  preFullName: z.string().min(1).max(100).optional().nullable(),
+  preMobile: z.string().min(10).max(15).optional().nullable(),
+  preAadhaar: z.string().max(20).optional().nullable(),
+  prePan: z.string().max(20).optional().nullable(),
+  expiresInDays: z.number().int().min(1).max(365).optional().nullable(),
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireAgent()

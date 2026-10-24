@@ -61,9 +61,9 @@ export function KPICard({ label, value, delta, icon, variant = 'default', classN
                 <p className="text-[11px] sm:text-xs font-medium text-muted-foreground tracking-wide">
                   {label}
                 </p>
-                <div className="text-[10px] flex items-center text-muted-foreground opacity-50 group-hover:opacity-100 transition-opacity">
-                  View <ArrowUpRight className="h-3 w-3 ml-0.5" />
-                </div>
+{/* (A "View ↗" affordance used to render here as a plain div with no
+                  action behind it — removed; it was a dead control on every
+                  KPI card across the owner and agent portals.) */}
               </div>
               <p className="text-xl sm:text-2xl font-bold tracking-tight mt-1.5 tabular-nums">{value}</p>
               {delta && (

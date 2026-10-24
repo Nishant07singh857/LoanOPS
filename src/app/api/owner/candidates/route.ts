@@ -8,8 +8,11 @@ import {
   apiHandler, success, created, paginate, validate, validateBody,
   paginationSchema, badRequest,
 } from '@/lib/server/api'
-import { encryptPII, decryptPII } from '@/lib/server/crypto'
-import { maskAadhaar, maskPan, maskBankAccount } from '@/lib/utils'
+import { encryptPII, decryptPIIForMask } from '@/lib/server/crypto'
+import {
+  maskAadhaar, maskPan, maskBankAccount,
+  AADHAAR_REGEX, PAN_REGEX, IFSC_REGEX, BANK_ACCOUNT_REGEX, MOBILE_REGEX,
+} from '@/lib/utils'
 
 const listSchema = paginationSchema.extend({
   search: z.string().trim().optional().default(''),
@@ -78,9 +81,9 @@ export const GET = apiHandler(async (req: NextRequest) => {
       occupation: c.occupation,
       employer: c.employer,
       monthlyIncome: c.monthlyIncome,
-      aadhaarMasked: c.aadhaarMasked ? maskAadhaar(decryptPII(c.aadhaarMasked)) : null,
-      panMasked: c.panMasked ? maskPan(decryptPII(c.panMasked)) : null,
-      bankAccount: c.bankAccount ? maskBankAccount(decryptPII(c.bankAccount)) : null,
+      aadhaarMasked: c.aadhaarMasked ? maskAadhaar(decryptPIIForMask(c.aadhaarMasked)) : null,
+      panMasked: c.panMasked ? maskPan(decryptPIIForMask(c.panMasked)) : null,
+      bankAccount: c.bankAccount ? maskBankAccount(decryptPIIForMask(c.bankAccount)) : null,
       assignedAgent: c.assignedAgent ? {
         id: c.assignedAgent.id,
         name: c.assignedAgent.user.name,
@@ -96,7 +99,32 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const createSchema = z.object({}).strict()
+const createSchema = z.object({
+  fullName: z.string().trim().min(2).max(100),
+  mobile: z.string().trim().regex(MOBILE_REGEX, 'Invalid mobile number'),
+  email: z.string().trim().email('Invalid email').max(200).optional().nullable(),
+  dob: z.string().trim().refine((v) => !Number.isNaN(Date.parse(v)), {
+    message: 'Invalid dob',
+  }).optional().nullable(),
+  address: z.string().trim().max(500).optional().nullable(),
+  occupation: z.string().trim().max(100).optional().nullable(),
+  employer: z.string().trim().max(100).optional().nullable(),
+  monthlyIncome: z.number().int().nonnegative().optional().nullable(),
+  bankName: z.string().trim().min(2).max(100).optional().nullable(),
+  bankAccount: z.string().trim().regex(BANK_ACCOUNT_REGEX, 'Invalid bank account number').optional().nullable(),
+  bankIfsc: z.string().trim().toUpperCase().regex(IFSC_REGEX, 'Invalid IFSC format').optional().nullable(),
+  upiId: z.string().trim().max(100).optional().nullable(),
+  // Masked values (containing X/*) are accepted as-is; a raw value must match the full format.
+  aadhaarMasked: z.string().trim().refine(
+    (v) => /[X*]/.test(v) || AADHAAR_REGEX.test(v),
+    { message: 'Invalid Aadhaar format' }
+  ).optional().nullable(),
+  panMasked: z.string().trim().toUpperCase().refine(
+    (v) => /[X*]/.test(v) || PAN_REGEX.test(v),
+    { message: 'Invalid PAN format' }
+  ).optional().nullable(),
+  assignedAgentId: z.string().trim().min(1).optional().nullable(),
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()
@@ -139,8 +167,8 @@ export const POST = apiHandler(async (req: NextRequest) => {
       bankAccount: data.bankAccount ? encryptPII(data.bankAccount) : null,
       bankIfsc: data.bankIfsc ?? null,
       upiId: data.upiId ?? null,
-      aadhaarMasked: data.aadhaarMasked ? maskAadhaar(decryptPII(data.aadhaarMasked)) : null,
-      panMasked: data.panMasked ? maskPan(decryptPII(data.panMasked)) : null,
+      aadhaarMasked: data.aadhaarMasked ? maskAadhaar(decryptPIIForMask(data.aadhaarMasked)) : null,
+      panMasked: data.panMasked ? maskPan(decryptPIIForMask(data.panMasked)) : null,
       assignedAgentId: data.assignedAgentId ?? null,
       status: 'ACTIVE',
     },

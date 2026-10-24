@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAgent } from '@/lib/server/auth'
 import { apiHandler, success, notFound, forbidden } from '@/lib/server/api'
-import { decryptPII } from '@/lib/server/crypto'
+import { decryptPIIForMask } from '@/lib/server/crypto'
 import { maskAadhaar, maskPan, maskBankAccount } from '@/lib/utils'
 
 export const GET = apiHandler(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
@@ -35,8 +35,11 @@ export const GET = apiHandler(async (req: NextRequest, { params }: { params: Pro
   })
   if (!c) return notFound('Candidate not found')
 
-  // Strict IDOR protection: agent must be assigned to the candidate OR have an assigned CollectionTask for this candidate
-  if (c.assignedAgentId !== agentProfile.id) {
+  // IDOR protection: a candidate assigned to a DIFFERENT agent is off
+  // limits (unless this agent holds a CollectionTask for them). An
+  // UNASSIGNED candidate (e.g. QR self-apply) is pool work — any agent
+  // in the org may open and work them, same rule collectCashPayment uses.
+  if (c.assignedAgentId && c.assignedAgentId !== agentProfile.id) {
     const taskCount = await db.collectionTask.count({
       where: {
         candidateId: c.id,
@@ -62,14 +65,20 @@ export const GET = apiHandler(async (req: NextRequest, { params }: { params: Pro
     employer: c.employer,
     monthlyIncome: c.monthlyIncome,
     bankName: c.bankName,
-    bankAccount: c.bankAccount ? maskBankAccount(decryptPII(c.bankAccount)) : null,
+    bankAccount: c.bankAccount ? maskBankAccount(decryptPIIForMask(c.bankAccount)) : null,
     bankIfsc: c.bankIfsc,
     upiId: c.upiId,
-    aadhaarMasked: c.aadhaarMasked || rawKyc?.aadhaarNumber || null,
+    // Aadhaar is ALWAYS masked for agents (same pattern as the owner route) —
+    // never return the raw KYC value or its ciphertext.
+    aadhaarMasked: c.aadhaarMasked
+      ? maskAadhaar(decryptPIIForMask(c.aadhaarMasked))
+      : rawKyc?.aadhaarNumber
+        ? maskAadhaar(decryptPIIForMask(rawKyc.aadhaarNumber))
+        : null,
     panMasked: c.panMasked
-      ? maskPan(decryptPII(c.panMasked))
+      ? maskPan(decryptPIIForMask(c.panMasked))
       : rawKyc?.panNumber
-        ? maskPan(decryptPII(rawKyc.panNumber))
+        ? maskPan(decryptPIIForMask(rawKyc.panNumber))
         : null,
     status: c.status,
     assignedAgent: c.assignedAgent ? {
@@ -133,8 +142,8 @@ export const GET = apiHandler(async (req: NextRequest, { params }: { params: Pro
     kyc: rawKyc
       ? {
           ...rawKyc,
-          aadhaarNumber: rawKyc.aadhaarNumber,
-          panNumber: rawKyc.panNumber ? maskPan(decryptPII(rawKyc.panNumber)) : null,
+          aadhaarNumber: rawKyc.aadhaarNumber ? maskAadhaar(decryptPIIForMask(rawKyc.aadhaarNumber)) : null,
+          panNumber: rawKyc.panNumber ? maskPan(decryptPIIForMask(rawKyc.panNumber)) : null,
         }
       : null,
     createdAt: c.createdAt,

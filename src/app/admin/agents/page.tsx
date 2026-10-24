@@ -113,7 +113,7 @@ export default function AgentsPage() {
         <StaggerItem>
           <Card className="shadow-premium"><CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Active Agents</p>
-            <p className="text-2xl font-bold tabular-nums">{agents.length}</p>
+            <p className="text-2xl font-bold tabular-nums">{agents.filter((a) => a.isActive).length}</p>
           </CardContent></Card>
         </StaggerItem>
         <StaggerItem>
@@ -181,7 +181,6 @@ export default function AgentsPage() {
                         <TableHead className="text-center">
                           <SortBtn label="Success" active={sortKey === 'successRate'} dir={sortDir} onClick={() => toggleSort('successRate')} />
                         </TableHead>
-                        <TableHead className="text-center">Trend</TableHead>
                         <TableHead className="pr-6"></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -207,9 +206,6 @@ export default function AgentsPage() {
                               a.successRate >= 90 ? 'bg-success/15 text-success' : a.successRate >= 75 ? 'bg-warning/15 text-warning' : 'bg-destructive/15 text-destructive')}>
                               {a.successRate}%
                             </span>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <Sparkline data={Array.from({ length: 8 }, (_, i) => Math.sin(i + a.successRate / 10) * 10 + a.successRate)} className={a.successRate >= 90 ? 'stroke-success' : 'stroke-warning'} />
                           </TableCell>
                           <TableCell className="pr-6 text-right">
                             <Button variant="ghost" size="sm" aria-label={`View details for ${a.name}`}><ChevronRight className="h-4 w-4" /></Button>
@@ -314,9 +310,17 @@ export default function AgentsPage() {
               </div>
 
               <SheetFooter>
-                <Button className="w-full min-h-[44px] sm:min-h-9" onClick={() => toast.success(`Calling ${selected.name}...`)}>
-                  <Phone className="h-4 w-4" /> Call Agent
-                </Button>
+                {selected.phone ? (
+                  <Button asChild className="w-full min-h-[44px] sm:min-h-9">
+                    <a href={`tel:${selected.phone.replace(/\s/g, '')}`}>
+                      <Phone className="h-4 w-4" /> Call Agent
+                    </a>
+                  </Button>
+                ) : (
+                  <Button className="w-full min-h-[44px] sm:min-h-9" disabled>
+                    <Phone className="h-4 w-4" /> No phone number on record
+                  </Button>
+                )}
               </SheetFooter>
             </>
           )}
@@ -347,12 +351,13 @@ function CreateAgentForm({ onSubmit, onClose, submitting }: {
   const [name, setName] = React.useState('')
   const [email, setEmail] = React.useState('')
   const [phone, setPhone] = React.useState('')
+  const [employeeCode, setEmployeeCode] = React.useState('')
   const [zone, setZone] = React.useState('')
   const [password, setPassword] = React.useState('')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onSubmit({ name, email, phone, zone, password })
+    onSubmit({ name, email, phone, employeeCode, zone, password })
   }
 
   return (
@@ -367,15 +372,21 @@ function CreateAgentForm({ onSubmit, onClose, submitting }: {
       </div>
       <div>
         <Label htmlFor="phone">Phone Number</Label>
-        <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="min-h-[44px] sm:min-h-9" />
+        <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required placeholder="e.g., 9876543210" className="min-h-[44px] sm:min-h-9" />
+      </div>
+      <div>
+        <Label htmlFor="employeeCode">Employee Code</Label>
+        <Input id="employeeCode" value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} required minLength={2} placeholder="e.g., AGT-001" className="min-h-[44px] sm:min-h-9" />
+        <p className="text-xs text-muted-foreground mt-1">Unique code for this agent (minimum 2 characters).</p>
       </div>
       <div>
         <Label htmlFor="zone">Operating Zone</Label>
-        <Input id="zone" value={zone} onChange={(e) => setZone(e.target.value)} placeholder="e.g., North Mumbai" className="min-h-[44px] sm:min-h-9" />
+        <Input id="zone" value={zone} onChange={(e) => setZone(e.target.value)} required minLength={2} placeholder="e.g., North Mumbai" className="min-h-[44px] sm:min-h-9" />
       </div>
       <div>
         <Label htmlFor="password">Temporary Password</Label>
-        <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} className="min-h-[44px] sm:min-h-9" />
+        <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={10} className="min-h-[44px] sm:min-h-9" />
+        <p className="text-xs text-muted-foreground mt-1">Minimum 10 characters. Share it with the agent securely — they should change it after first login.</p>
       </div>
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onClose} disabled={submitting} className="min-h-[44px] sm:min-h-9">Cancel</Button>

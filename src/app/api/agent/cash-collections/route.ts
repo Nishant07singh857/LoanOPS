@@ -111,7 +111,20 @@ export const GET = apiHandler(async (req: NextRequest) => {
 import { enforceRateLimit } from '@/lib/server/rate-limit'
 import { validateAndStoreDataUrlUpload } from '@/lib/server/security'
 
-const schema = z.object({}).strict()
+const schema = z.object({
+  candidateId: z.string().min(1),
+  loanId: z.string().min(1),
+  amount: z.union([z.string().regex(/^\d+$/), z.number().int().nonnegative()]),
+  method: z.enum(['CASH']).optional(),
+  proofUrl: z.string().max(10_000_000).optional().nullable(),
+  idempotencyKey: z.string().min(1).max(200).optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
+  collectionDate: z.string().min(1).max(40).optional().nullable(),
+  // Sent by the agent frontends but not persisted by collectCashPayment:
+  collectionTime: z.string().max(40).optional().nullable(),
+  installmentNumber: z.number().int().positive().optional().nullable(),
+  reference: z.string().max(200).optional().nullable(),
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireAgent()

@@ -170,6 +170,8 @@ model Candidate {
   aadhaarHash         String?
   panMasked           String?
   assignedAgentId     String?
+  claimCodeHash       String?
+  claimCodeExpiresAt  DateTime?
   status              CandidateStatus @default(ACTIVE)
   deletedAt           DateTime?
   createdAt           DateTime        @default(now())
@@ -442,6 +444,8 @@ model Installment {
   @@index([loanId])
   @@index([status])
   @@index([dueDate])
+  @@index([loanId, status])
+  @@index([status, dueDate])
 }
 
 // ============================================================
@@ -544,6 +548,8 @@ model Payment {
   @@index([status])
   @@index([createdAt])
   @@index([organizationId, status])
+  @@index([loanId, status])
+  @@index([organizationId, createdAt])
 }
 
 // ============================================================
@@ -710,11 +716,15 @@ model LedgerEntry {
   amount         Int // paise
   description    String?
   reference      String?
+  loanId         String?
+  paymentId      String?
   createdAt      DateTime        @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId])
+  @@index([reference])
+  @@index([loanId])
 }
 
 enum RefundStatus {
@@ -728,6 +738,7 @@ enum RefundStatus {
 model Refund {
   id            String       @id @default(cuid())
   loanId        String
+  paymentId     String?
   amount        Int // paise
   reason        String
   status        RefundStatus @default(REQUESTED)
@@ -741,6 +752,8 @@ model Refund {
   initiatedBy User @relation(fields: [initiatedById], references: [id])
 
   @@index([loanId])
+  @@index([paymentId])
+  @@index([status])
 }
 
 enum CorrectionStatus {
@@ -755,6 +768,7 @@ model FinancialCorrection {
   id            String           @id @default(cuid())
   loanId        String
   paymentId     String?
+  amount        Int? // paise
   requestedById String
   reason        String
   evidenceUrl   String?
@@ -977,7 +991,7 @@ model WebhookEvent {
   processedAt     DateTime?
   organization    Organization? @relation(fields: [organizationId], references: [id])
 
-  @@index([provider, eventId])
+  @@unique([provider, eventId])
   @@index([organizationId])
 }
 
@@ -988,7 +1002,7 @@ model WebhookEvent {
 model ReconciliationRun {
   id              String   @id @default(cuid())
   organizationId  String
-  runNumber       String
+  runNumber       String   @unique
   periodStart     DateTime
   periodEnd       DateTime
   totalExpected   Int

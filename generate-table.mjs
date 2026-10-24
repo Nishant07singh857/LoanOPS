@@ -8,10 +8,14 @@ console.log('|---|---|---|---|---|---|');
 for (const f of files) {
   const content = fs.readFileSync(f, 'utf8');
   const methods = [];
-  if (content.includes('export const GET =')) methods.push('GET');
-  if (content.includes('export const POST =')) methods.push('POST');
-  if (content.includes('export const PATCH =')) methods.push('PATCH');
-  if (content.includes('export const DELETE =')) methods.push('DELETE');
+  // Detect both handler styles used in this repo:
+  //   export const GET = apiHandler(...)
+  //   export async function GET(...) { ... }
+  for (const method of ['GET', 'POST', 'PATCH', 'PUT', 'DELETE']) {
+    const constStyle = new RegExp(`export\\s+const\\s+${method}\\s*=`);
+    const functionStyle = new RegExp(`export\\s+(?:async\\s+)?function\\s+${method}\\s*\\(`);
+    if (constStyle.test(content) || functionStyle.test(content)) methods.push(method);
+  }
   
   let auth = 'None';
   if (content.includes('requireOwner')) auth = 'Owner';

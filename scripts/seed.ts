@@ -2,14 +2,17 @@
 // sample candidates, applications, loans, schedules, agreements, and notifications.
 // All money in paise. Run with: bun run scripts/seed.ts
 //
-// Demo credentials (env-controllable, default shown):
-//   owner@loanops.in / Owner@123  (OWNER)
-//   agent@loanops.in / Agent@123  (AGENT)
-//   9820277789 / Candidate@123    (CANDIDATE — Priya Sharma, mobile login)
+// Seed account passwords come ONLY from the environment — there are no
+// hardcoded defaults. The operator must set:
+//   SEED_OWNER_PASSWORD, SEED_AGENT_PASSWORD, SEED_AGENT2_PASSWORD,
+//   SEED_CANDIDATE_PASSWORD
+// Accounts created: owner@loanops.in (OWNER), agent@loanops.in and
+// agent2@loanops.in (AGENT), and Priya Sharma (CANDIDATE, mobile login).
 
 import { PrismaClient, UserRole, InterestType, RepaymentFrequency, ApplicationStatus, LoanStatus, InstallmentStatus, PaymentMethod, PaymentStatus, PtpStatus, EscalationReason, EscalationStatus, TaskStatus, TaskPriority, AuditAction, NotificationType, DocumentType } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import { encryptPII } from '../src/lib/server/crypto'
+import { generateSchedule } from '../src/lib/server/financial'
 import { maskAadhaar, maskPan } from '../src/lib/utils'
 
 // --- Safety: seed only against DATABASE_URL_TEST, never the main DB ---
@@ -34,11 +37,22 @@ if (process.env.DATABASE_URL) {
 
 const db = new PrismaClient({ datasourceUrl: testUrl })
 
+function requireSeedPassword(envName: string): string {
+  const value = process.env[envName]
+  if (!value) {
+    throw new Error(
+      `${envName} is not set. Seed refuses to create accounts with a default or hardcoded password — ` +
+        `set ${envName} (and SEED_OWNER_PASSWORD, SEED_AGENT_PASSWORD, SEED_AGENT2_PASSWORD, SEED_CANDIDATE_PASSWORD) in the environment before running the seed.`
+    )
+  }
+  return value
+}
+
 const SEED_PASSWORDS = {
-  owner: process.env.SEED_OWNER_PASSWORD || 'Owner@123',
-  agent: process.env.SEED_AGENT_PASSWORD || 'Agent@123',
-  agent2: process.env.SEED_AGENT2_PASSWORD || 'Agent2@123',
-  candidate: process.env.SEED_CANDIDATE_PASSWORD || 'Candidate@123',
+  owner: requireSeedPassword('SEED_OWNER_PASSWORD'),
+  agent: requireSeedPassword('SEED_AGENT_PASSWORD'),
+  agent2: requireSeedPassword('SEED_AGENT2_PASSWORD'),
+  candidate: requireSeedPassword('SEED_CANDIDATE_PASSWORD'),
 }
 
 async function hash(p: string) {
@@ -373,11 +387,36 @@ By accepting this Agreement, the Borrower confirms that all information provided
   })
 
   // --- Approved loan for candidate2 ---
+  // The schedule, loan totals and payment allocation are ALL derived from
+  // the real server engine (src/lib/server/financial.ts generateSchedule),
+  // so the seeded loan row, its installments and its payment can never
+  // disagree: feesComponent carries the processing fee, and the loan's
+  // outstanding*/totalCollected are exactly the schedule sums minus the
+  // first (paid) installment's components.
   const principal2 = 7500000
   const interestRate2 = 1800 // bps
   const installments2 = 12
-  const installmentAmount2 = Math.ceil((principal2 + (principal2 * interestRate2 / 10000)) / installments2) // 74250 → 742500 paise (₹7,425)
-  const totalRepayable2 = installmentAmount2 * installments2
+  const processingFee2 = 75000
+
+  const schedule2 = generateSchedule({
+    principalPaise: BigInt(principal2),
+    interestType: InterestType.PERCENTAGE,
+    interestRateBps: BigInt(interestRate2),
+    fixedInterestPaise: BigInt(0),
+    frequency: RepaymentFrequency.MONTHLY,
+    installments: installments2,
+    firstDueDate: new Date('2024-08-20'),
+    processingFeePaise: BigInt(processingFee2),
+    otherFeesPaise: BigInt(0),
+  })
+  const installmentAmount2 = Number(schedule2.installmentAmount)
+  const totalRepayable2 = Number(schedule2.totalRepayable)
+  const firstInstallment2 = schedule2.installments[0]
+  // Installment #1 is the one paid installment in this seed.
+  const totalCollected2 = Number(firstInstallment2.totalDue)
+  const outstandingPrincipal2 = principal2 - Number(firstInstallment2.principalComponent)
+  const outstandingInterest2 = Number(schedule2.totalInterest) - Number(firstInstallment2.interestComponent)
+  const outstandingFees2 = Number(schedule2.totalFees) - Number(firstInstallment2.feesComponent)
 
   const termsSnapshot = {
     principalAmount: principal2,
@@ -386,8 +425,8 @@ By accepting this Agreement, the Borrower confirms that all information provided
     frequency: 'MONTHLY',
     installments: installments2,
     firstDueDate: new Date('2024-08-20').toISOString(),
-    finalDueDate: new Date('2025-07-20').toISOString(),
-    processingFee: 75000,
+    finalDueDate: schedule2.finalDueDate.toISOString(),
+    processingFee: processingFee2,
     otherFees: 0,
     totalRepayable: totalRepayable2,
     installmentAmount: installmentAmount2,
@@ -408,59 +447,50 @@ By accepting this Agreement, the Borrower confirms that all information provided
       frequency: RepaymentFrequency.MONTHLY,
       installments: installments2,
       firstDueDate: new Date('2024-08-20'),
-      finalDueDate: new Date('2025-07-20'),
-      processingFee: 75000,
+      finalDueDate: schedule2.finalDueDate,
+      processingFee: processingFee2,
       otherFees: 0,
       totalRepayable: totalRepayable2,
       installmentAmount: installmentAmount2,
       termsSnapshot,
       status: LoanStatus.ACTIVE,
       disbursedAt: new Date('2024-08-12'),
-      outstandingPrincipal: 7000000,
-      outstandingInterest: 1185000,
-      totalCollected: 742500,
+      outstandingPrincipal: outstandingPrincipal2,
+      outstandingInterest: outstandingInterest2,
+      outstandingFees: outstandingFees2,
+      totalCollected: totalCollected2,
     },
   })
 
-  // --- Generate schedule for loan-001 (12 monthly installments) ---
-  for (let i = 0; i < 12; i++) {
-    const dueDate = new Date('2024-08-20')
-    dueDate.setMonth(dueDate.getMonth() + i)
-    const principalComp = Math.ceil(principal2 / 12)
-    const interestComp = installmentAmount2 - principalComp
-    const isLast = i === 11
-    const openingPrincipal = principal2 - (principalComp * i)
-    const closingPrincipal = isLast ? 0 : openingPrincipal - principalComp
-    const totalDue = installmentAmount2
+  // --- Generate schedule for loan-001 (12 monthly installments, from the engine) ---
+  for (let i = 0; i < schedule2.installments.length; i++) {
+    const plan = schedule2.installments[i]
     const isPaid = i === 0
     const isDue = i === 1
-    const isOverdue = false
 
     const status: InstallmentStatus = isPaid
       ? InstallmentStatus.PAID
-      : isOverdue
-        ? InstallmentStatus.OVERDUE
-        : isDue
-          ? InstallmentStatus.DUE
-          : InstallmentStatus.UPCOMING
+      : isDue
+        ? InstallmentStatus.DUE
+        : InstallmentStatus.UPCOMING
 
     await db.installment.upsert({
-      where: { loanId_installmentNumber: { loanId: loan2.id, installmentNumber: i + 1 } },
+      where: { loanId_installmentNumber: { loanId: loan2.id, installmentNumber: plan.installmentNumber } },
       update: {},
       create: {
         loanId: loan2.id,
-        installmentNumber: i + 1,
-        dueDate,
-        openingPrincipal,
-        principalComponent: isLast ? openingPrincipal : principalComp,
-        interestComponent: interestComp,
-        feesComponent: 0,
-        totalDue,
-        closingPrincipal,
-        paidFees: isPaid ? 0 : 0,
-        paidInterest: isPaid ? interestComp : 0,
-        paidPrincipal: isPaid ? principalComp : 0,
-        paidAmount: isPaid ? totalDue : 0,
+        installmentNumber: plan.installmentNumber,
+        dueDate: plan.dueDate,
+        openingPrincipal: Number(plan.openingPrincipal),
+        principalComponent: Number(plan.principalComponent),
+        interestComponent: Number(plan.interestComponent),
+        feesComponent: Number(plan.feesComponent),
+        totalDue: Number(plan.totalDue),
+        closingPrincipal: Number(plan.closingPrincipal),
+        paidFees: isPaid ? Number(plan.feesComponent) : 0,
+        paidInterest: isPaid ? Number(plan.interestComponent) : 0,
+        paidPrincipal: isPaid ? Number(plan.principalComponent) : 0,
+        paidAmount: isPaid ? Number(plan.totalDue) : 0,
         status,
         paidAt: isPaid ? new Date('2024-08-20') : null,
       },
@@ -468,6 +498,8 @@ By accepting this Agreement, the Borrower confirms that all information provided
   }
 
   // --- Payment for installment 1 (already captured) ---
+  // Allocation follows the engine's Fees -> Interest -> Principal waterfall
+  // for installment #1, so it matches the installment's paid* fields exactly.
   await db.payment.upsert({
     where: { paymentNumber: 'PAY-2024-8841' },
     update: {},
@@ -481,9 +513,9 @@ By accepting this Agreement, the Borrower confirms that all information provided
       amount: installmentAmount2,
       reference: 'UPI-9876543210',
       status: PaymentStatus.ALLOCATED,
-      allocatedFees: 0,
-      allocatedInterest: installmentAmount2 - Math.ceil(principal2 / 12),
-      allocatedPrincipal: Math.ceil(principal2 / 12),
+      allocatedFees: Number(firstInstallment2.feesComponent),
+      allocatedInterest: Number(firstInstallment2.interestComponent),
+      allocatedPrincipal: Number(firstInstallment2.principalComponent),
       unallocated: 0,
       allocatedAt: new Date('2024-08-20'),
       receiptNumber: 'RCP-2024-8841',
@@ -556,7 +588,7 @@ By accepting this Agreement, the Borrower confirms that all information provided
         userId: agentUser.id,
         type: NotificationType.COLLECTION_REMINDER,
         title: 'Payment due reminder',
-        message: 'Rahul Verma installment #2 (₹7,425) due 20 Sep.',
+        message: 'Rahul Verma installment #2 (₹7,437.50) due 20 Sep.',
         isRead: false,
       },
     ],
@@ -674,11 +706,11 @@ By accepting this Agreement, the Borrower confirms that all information provided
 
   console.log(`  ✓ Sample applications, loan, schedule, payment, tasks, notifications, audit, QR link`)
   console.log(`✅ Seeded successfully.`)
-  console.log(`\n📋 Demo credentials:`)
-  console.log(`   Owner:   owner@loanops.in / ${SEED_PASSWORDS.owner}`)
-  console.log(`   Agent:   agent@loanops.in / ${SEED_PASSWORDS.agent}`)
-  console.log(`   Agent2:  agent2@loanops.in / ${SEED_PASSWORDS.agent2}`)
-  console.log(`   Candidate (mobile login): 9820277789 / ${SEED_PASSWORDS.candidate}`)
+  console.log(`\n📋 Seeded accounts (passwords are the SEED_*_PASSWORD values you set — never printed here):`)
+  console.log(`   Owner:   owner@loanops.in`)
+  console.log(`   Agent:   agent@loanops.in`)
+  console.log(`   Agent2:  agent2@loanops.in`)
+  console.log(`   Candidate (mobile login): 9820277789`)
   console.log(`   Secure application link: /apply/a3f8d2e91b7c4f0a8e2d1b6c9f4a3e8d`)
 }
 

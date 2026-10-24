@@ -7,8 +7,10 @@ import fs from 'fs'
 import path from 'path'
 
 // Best-effort .env loader (Next.js usually loads .env but Turbopack has quirks)
-// IMPORTANT: .env file values take PRECEDENCE over inherited shell env vars
-// (so a sandbox-provided DATABASE_URL=sqlite won't override our Neon config).
+// IMPORTANT: variables already present in process.env (container / CI /
+// platform-injected secrets) take PRECEDENCE over the .env file. The file
+// only fills in values that are not already set, so a stale or baked-in
+// .env can never silently override deployed secrets.
 function loadEnvFile() {
   try {
     const envPath = path.join(process.cwd(), '.env')
@@ -18,13 +20,14 @@ function loadEnvFile() {
       for (const line of lines) {
         const trimmed = line.trim()
         if (!trimmed || trimmed.startsWith('#')) continue
-        const m = trimmed.match(/^([A-Z_]+)=(.*)$/)
+        const m = trimmed.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/)
         if (m) {
           const key = m[1]
+          // Only set when undefined — real environment wins over the file.
+          if (process.env[key] !== undefined) continue
           let val = m[2]
           // Strip surrounding quotes
           val = val.replace(/^["']|["']$/g, '')
-          // Always override — .env is authoritative for this project
           process.env[key] = val
         }
       }

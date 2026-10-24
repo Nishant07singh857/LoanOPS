@@ -14,7 +14,7 @@ import {
   maskPan,
   maskBankAccount,
 } from '@/lib/utils'
-import { encryptPII, decryptPII } from '@/lib/server/crypto'
+import { encryptPII, decryptPIIForMask } from '@/lib/server/crypto'
 
 export const GET = apiHandler(async (req: NextRequest) => {
   const ctx = await requireCandidate()
@@ -35,7 +35,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
     ? {
         id: rawKyc.id,
         aadhaarNumber: rawKyc.aadhaarNumber,
-        panNumber: rawKyc.panNumber ? maskPan(decryptPII(rawKyc.panNumber)) : null,
+        panNumber: rawKyc.panNumber ? maskPan(decryptPIIForMask(rawKyc.panNumber)) : null,
         status: rawKyc.status,
         verifiedAt: rawKyc.verifiedAt,
       }
@@ -52,14 +52,14 @@ export const GET = apiHandler(async (req: NextRequest) => {
     employer: c.employer,
     monthlyIncome: c.monthlyIncome,
     bankName: c.bankName,
-    bankAccount: c.bankAccount ? maskBankAccount(decryptPII(c.bankAccount)) : null,
+    bankAccount: c.bankAccount ? maskBankAccount(decryptPIIForMask(c.bankAccount)) : null,
     bankIfsc: c.bankIfsc,
     upiId: c.upiId,
     aadhaarMasked: c.aadhaarMasked || rawKyc?.aadhaarNumber || null,
     panMasked: c.panMasked
-      ? maskPan(decryptPII(c.panMasked))
+      ? maskPan(decryptPIIForMask(c.panMasked))
       : rawKyc?.panNumber
-        ? maskPan(decryptPII(rawKyc.panNumber))
+        ? maskPan(decryptPIIForMask(rawKyc.panNumber))
         : null,
     status: c.status,
     assignedAgent: c.assignedAgent ? {
@@ -73,7 +73,22 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const updateProfileSchema = z.object({}).strict()
+const updateProfileSchema = z.object({
+  fullName: z.string().min(2).max(100).optional(),
+  email: z.string().email().max(200).optional().nullable(),
+  dob: z.string().min(1).max(40).optional().nullable(),
+  address: z.string().max(1000).optional().nullable(),
+  occupation: z.string().max(200).optional().nullable(),
+  employer: z.string().max(200).optional().nullable(),
+  monthlyIncome: z.number().int().nonnegative().optional().nullable(),
+  existingObligations: z.number().int().nonnegative().optional().nullable(),
+  bankName: z.string().max(200).optional().nullable(),
+  bankAccount: z.string().regex(BANK_ACCOUNT_REGEX, 'Invalid bank account number').optional().nullable(),
+  bankIfsc: z.string().regex(IFSC_REGEX, 'Invalid IFSC code').optional().nullable(),
+  upiId: z.string().max(100).optional().nullable(),
+  aadhaarNumber: z.string().regex(AADHAAR_REGEX, 'Invalid Aadhaar number').optional().nullable(),
+  panNumber: z.string().regex(PAN_REGEX, 'Invalid PAN').optional().nullable(),
+}).strict()
 
 export const PATCH = apiHandler(async (req: NextRequest) => {
   const ctx = await requireCandidate()
@@ -142,11 +157,11 @@ export const PATCH = apiHandler(async (req: NextRequest) => {
     employer: updated.employer,
     monthlyIncome: updated.monthlyIncome,
     bankName: updated.bankName,
-    bankAccount: updated.bankAccount ? maskBankAccount(decryptPII(updated.bankAccount)) : null,
+    bankAccount: updated.bankAccount ? maskBankAccount(decryptPIIForMask(updated.bankAccount)) : null,
     bankIfsc: updated.bankIfsc,
     upiId: updated.upiId,
-    aadhaarMasked: updated.aadhaarMasked ? maskAadhaar(decryptPII(updated.aadhaarMasked)) : null,
-    panMasked: updated.panMasked ? maskPan(decryptPII(updated.panMasked)) : null,
+    aadhaarMasked: updated.aadhaarMasked ? maskAadhaar(decryptPIIForMask(updated.aadhaarMasked)) : null,
+    panMasked: updated.panMasked ? maskPan(decryptPIIForMask(updated.panMasked)) : null,
   })
 })
 

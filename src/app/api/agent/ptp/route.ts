@@ -57,7 +57,13 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const schema = z.object({}).strict()
+const schema = z.object({
+  candidateId: z.string().min(1),
+  loanId: z.string().min(1),
+  promisedAmount: z.union([z.string().min(1).max(40), z.number()]),
+  promiseDate: z.string().min(1).max(40),
+  notes: z.string().max(5000).optional().nullable(),
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireAgent()
@@ -74,7 +80,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
   })
   if (!loan) return notFound('Loan not found')
 
-  if (loan.candidate.assignedAgentId !== agentProfile.id) {
+  if (loan.candidate.assignedAgentId && loan.candidate.assignedAgentId !== agentProfile.id) {
     const taskCount = await db.collectionTask.count({
       where: {
         candidateId: loan.candidateId,

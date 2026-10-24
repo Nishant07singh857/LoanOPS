@@ -1,12 +1,16 @@
 // POST /api/owner/cash-collections/[id]/verify — owner verifies or rejects a cash collection
-// VERIFY: creates a Payment with method=CASH, status=ALLOCATED, runs capturePayment()
-// REJECT: updates status=REJECTED with reason
+// VERIFY: verifyCashPayment() — confirms a collection whose allocation was
+//         applied at collection time (installments/loan/ledger already
+//         reflect it) and marks the payment VERIFIED.
+// REJECT: reverseCashPayment() — full reversal of the collection-time
+//         allocation (installments recomputed, balances restored, ledger
+//         REVERSAL entries, closed loan reopened), payment REJECTED.
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requireOwner, audit } from '@/lib/server/auth'
-import { apiHandler, success, badRequest, notFound, conflict, validate, genNumber } from '@/lib/server/api'
-import { capturePayment } from '@/lib/server/payments'
+import { apiHandler, success, badRequest, notFound, conflict, validate } from '@/lib/server/api'
+import { verifyCashPayment, reverseCashPayment } from '@/lib/server/payments'
 
 const schema = z.object({
   action: z.enum(['VERIFY', 'REJECT']),
@@ -29,8 +33,7 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
   if (data.action === 'REJECT') {
     if (!data.rejectionReason) return badRequest('rejectionReason is required when rejecting')
 
-    const { reverseCashPayment } = await import('@/lib/server/payments')
-    await reverseCashPayment({
+    const reversal = await reverseCashPayment({
       paymentId: cc.id,
       organizationId: ctx.user.organizationId,
       ownerUserId: ctx.user.id,
@@ -38,43 +41,45 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
     })
 
     // Notify the agent who recorded it
-    await db.notification.create({
-      data: {
-        organizationId: ctx.user.organizationId,
-        userId: cc.recordedById!,
-        type: 'AI_INSIGHT',
-        title: 'Cash collection rejected',
-        message: `Cash collection of ₹${cc.amount / 100} for ${cc.candidate.fullName} (${cc.loan.loanNumber}) was rejected: ${data.rejectionReason}`,
-        isRead: false,
-        metadata: { cashCollectionId: cc.id },
-      },
-    })
+    if (cc.recordedById) {
+      await db.notification.create({
+        data: {
+          organizationId: ctx.user.organizationId,
+          userId: cc.recordedById,
+          type: 'AI_INSIGHT',
+          title: 'Cash collection rejected',
+          message: `Cash collection of ₹${cc.amount / 100} for ${cc.candidate.fullName} (${cc.loan.loanNumber}) was rejected: ${data.rejectionReason}`,
+          isRead: false,
+          metadata: { cashCollectionId: cc.id },
+        },
+      })
+    }
 
     await audit(ctx, 'REJECT', 'Payment', cc.id, `Rejected cash collection ₹${cc.amount / 100} for ${cc.candidate.fullName} (${cc.loan.loanNumber}): ${data.rejectionReason}`)
 
-    return success({ id: cc.id, status: 'REJECTED' })
+    return success({ id: cc.id, status: 'REJECTED', reversed: reversal.reversed })
   }
 
-  // VERIFY -> just mark it as VERIFIED
-  await db.payment.update({
-    where: { id: cc.id },
-    data: {
-      status: 'VERIFIED',
-      verifiedById: ctx.user.id,
-      verifiedAt: new Date(),
-    },
+  // VERIFY -> confirm the collection-time allocation (verifyCashPayment
+  // flips the status, stamps the verifier, settles collection tasks).
+  const result = await verifyCashPayment({
+    paymentId: cc.id,
+    organizationId: ctx.user.organizationId,
+    verifiedById: ctx.user.id,
   })
 
-  await audit(ctx, 'VERIFY', 'Payment', cc.id, `Verified cash collection ₹${cc.amount / 100} for ${cc.candidate.fullName} (${cc.loan.loanNumber}). Payment ${cc.paymentNumber}.`)
+  await audit(ctx, 'VERIFY', 'Payment', cc.id, `Verified cash collection ₹${cc.amount / 100} for ${cc.candidate.fullName} (${cc.loan.loanNumber}). Payment ${cc.paymentNumber}, allocated fees=${result.allocatedFees} interest=${result.allocatedInterest} principal=${result.allocatedPrincipal}.`)
 
   return success({
     id: cc.id,
     status: 'VERIFIED',
     paymentId: cc.id,
     paymentNumber: cc.paymentNumber,
-    receiptNumber: cc.receiptNumber,
-    allocatedFees: String(cc.allocatedFees),
-    allocatedInterest: String(cc.allocatedInterest),
-    allocatedPrincipal: String(cc.allocatedPrincipal),
+    receiptNumber: result.receiptNumber,
+    allocatedFees: result.allocatedFees,
+    allocatedInterest: result.allocatedInterest,
+    allocatedPrincipal: result.allocatedPrincipal,
+    unallocated: result.unallocated,
+    loanClosed: result.loanClosed,
   })
 })

@@ -12,17 +12,6 @@ import { Label } from '@/components/ui/label'
 import { SessionProvider, useSession, type Role } from '@/lib/session'
 import { LegalFooter } from '@/components/legal/legal-footer'
 
-const DEMO_CREDENTIALS: Array<{
-  role: Role
-  label: string
-  identifier: string
-  password: string
-}> = [
-  { role: 'OWNER', label: 'Owner', identifier: 'owner@loanops.in', password: 'Owner@123' },
-  { role: 'AGENT', label: 'Agent', identifier: 'agent@loanops.in', password: 'Agent@123' },
-  { role: 'CANDIDATE', label: 'Candidate', identifier: '9820277789', password: 'Candidate@123' },
-]
-
 function LoginInner() {
   const router = useRouter()
   const params = useSearchParams()
@@ -32,22 +21,23 @@ function LoginInner() {
   const defaultRedirect =
     requestedRole === 'CANDIDATE' ? '/portal' : requestedRole === 'AGENT' ? '/agent' : '/admin'
   const explicitRedirect = params.get('redirect')
-  const redirect = explicitRedirect || defaultRedirect
+  // ?next= deep link (e.g. from EnsureRole) — internal paths only; a value
+  // starting with '//' would be a protocol-relative external URL, reject it.
+  const nextParam = params.get('next')
+  const nextRedirect =
+    nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : null
+  const redirect = nextRedirect || explicitRedirect || defaultRedirect
   const { user, loading, login, loginCandidate } = useSession()
 
-  const [selectedRole, setSelectedRole] = React.useState<Role>(requestedRole)
   const [identifier, setIdentifier] = React.useState('')
   const [password, setPassword] = React.useState('')
   const [showPass, setShowPass] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
-  React.useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSelectedRole(requestedRole)
-  }, [requestedRole])
-
   // Redirect already-authenticated users away from /login.
+  // A valid ?next= deep link wins over the role home; EnsureRole on the
+  // target page still enforces that the user's role may view it.
   React.useEffect(() => {
     if (loading) return
     if (user) {
@@ -57,21 +47,16 @@ function LoginInner() {
         ((user.role === 'OWNER' && explicitRedirect.startsWith('/admin')) ||
           (user.role === 'AGENT' && explicitRedirect.startsWith('/agent')) ||
           (user.role === 'CANDIDATE' && explicitRedirect.startsWith('/portal')))
-      const target = isCompatibleRedirect
-        ? explicitRedirect
-        : user.role === requestedRole
-          ? redirect
-          : userHome
+      const target = nextRedirect
+        ? nextRedirect
+        : isCompatibleRedirect
+          ? explicitRedirect
+          : user.role === requestedRole
+            ? redirect
+            : userHome
       router.replace(target)
     }
-  }, [user, loading, redirect, explicitRedirect, requestedRole, router])
-
-  const fillDemo = (demo: (typeof DEMO_CREDENTIALS)[number]) => {
-    setSelectedRole(demo.role)
-    setIdentifier(demo.identifier)
-    setPassword(demo.password)
-    setError(null)
-  }
+  }, [user, loading, redirect, explicitRedirect, nextRedirect, requestedRole, router])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -168,36 +153,6 @@ function LoginInner() {
               <h1 className="text-2xl font-bold tracking-tight">Sign in</h1>
               <p className="text-sm text-muted-foreground mt-1.5">Enter your email or mobile number to continue.</p>
 
-              {/* Demo credentials quick-fill (development only) */}
-              {process.env.NODE_ENV === 'development' && (
-                <div className="mt-4 rounded-xl bg-muted/60 border border-border/60 p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium text-muted-foreground">Quick-fill demo account</span>
-                    <span className="text-[11px] text-muted-foreground font-mono">
-                      {DEMO_CREDENTIALS.find((d) => d.role === selectedRole)?.identifier}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {DEMO_CREDENTIALS.map((demo) => {
-                      const active = selectedRole === demo.role && identifier === demo.identifier
-                      return (
-                        <Button
-                          key={demo.role}
-                          type="button"
-                          variant={active ? 'default' : 'outline'}
-                          size="sm"
-                          aria-label={`Fill ${demo.label} demo credentials`}
-                          onClick={() => fillDemo(demo)}
-                          className="h-9 text-xs rounded-lg"
-                        >
-                          {demo.label}
-                        </Button>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-
               <form onSubmit={submit} className="mt-5 space-y-4" aria-describedby={error ? 'login-error' : undefined} noValidate>
                 <div className="space-y-1.5">
                   <Label htmlFor="identifier">Email or Mobile Number</Label>
@@ -272,6 +227,11 @@ function LoginInner() {
               </form>
 
               <div className="mt-5 space-y-2 text-center">
+                <p className="text-xs text-muted-foreground">
+                  <Link href="/forgot-password" className="text-primary hover:underline underline-offset-2 font-medium">
+                    Forgot password?
+                  </Link>
+                </p>
                 <p className="text-xs text-muted-foreground">
                   New candidate?{' '}
                   <Link href="/signup" className="text-primary hover:underline underline-offset-2 font-medium">

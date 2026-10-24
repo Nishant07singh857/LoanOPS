@@ -97,7 +97,7 @@ export default function CreateLoanPage() {
     try { return generateSchedulePreview(scheduleInput) } catch { return null }
   }, [principalPaise, interestType, interestRateBps, fixedInterestPaise, frequency, installmentsNum, firstDue, processingFeePaise, otherFeesPaise])
 
-  const { data: candidatesData } = useQuery({
+  const { data: candidatesData, isLoading: candidatesLoading, isError: candidatesError, refetch: refetchCandidates } = useQuery({
     queryKey: ['owner-candidates-create-loan'],
     queryFn: () => api.get<{ items: CandidateRow[] }>('/api/owner/candidates?pageSize=100'),
   })
@@ -252,9 +252,16 @@ export default function CreateLoanPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Matching from {candidates.length} registered candidates
-                  </p>
+                  {candidatesError ? (
+                    <div className="mt-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 flex items-center justify-between gap-2">
+                      <p className="text-xs text-destructive">Could not load candidates. The list below may be empty because the request failed — not because no candidates exist.</p>
+                      <Button type="button" size="sm" variant="outline" onClick={() => refetchCandidates()}>Retry</Button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {candidatesLoading ? 'Loading candidates…' : `Matching from ${candidates.length} registered candidates`}
+                    </p>
+                  )}
                 </div>
               ) : (
 

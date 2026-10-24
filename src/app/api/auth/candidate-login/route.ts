@@ -47,24 +47,57 @@ export const POST = apiHandler(async (req: NextRequest) => {
     return tooMany(`Too many login attempts. Please try again in ${Math.ceil(rl.retryAfterMs! / 1000)} seconds.`)
   }
 
-  const candidate = await db.candidate.findFirst({
+  // Resolve the candidate BY userId first: find the CANDIDATE user for this
+  // mobile (their login email/phone IS the mobile), then load the candidate
+  // linked to that user. This avoids the old first-mobile-match behaviour,
+  // which could pick another organisation's candidate sharing the mobile.
+  // The mobile lookup is kept only as a fallback for legacy records whose
+  // user has no matching email/phone.
+  const loadCandidateByMobile = () =>
+    db.candidate.findFirst({
+      where: {
+        mobile: { in: [parsed.mobile, cleanMobile] },
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+      include: { organization: true, assignedAgent: true },
+    })
+  type CandidateWithOrg = NonNullable<Awaited<ReturnType<typeof loadCandidateByMobile>>>
+  let candidate: CandidateWithOrg | null = null
+  let user: Awaited<ReturnType<typeof db.user.findUnique>> = null
+
+  const userMatch = await db.user.findFirst({
     where: {
-      mobile: { in: [parsed.mobile, cleanMobile] },
-      status: 'ACTIVE',
-      deletedAt: null,
+      role: 'CANDIDATE',
+      OR: [{ email: cleanMobile }, { phone: cleanMobile }],
     },
-    include: { organization: true, assignedAgent: true },
   })
+  if (userMatch) {
+    const linked = await db.candidate.findUnique({
+      where: { userId: userMatch.id },
+      include: { organization: true, assignedAgent: true },
+    })
+    if (linked && linked.status === 'ACTIVE' && !linked.deletedAt) {
+      candidate = linked
+      user = userMatch
+    }
+  }
+
+  if (!candidate) {
+    candidate = await loadCandidateByMobile()
+
+    if (candidate?.userId) {
+      user = await db.user.findUnique({
+        where: { id: candidate.userId },
+      })
+    }
+  }
 
   if (!candidate || !candidate.userId) {
     await constantTimeDummyVerify(parsed.password)
     recordLoginFailure(rateKey)
     return unauthorized('Invalid credentials')
   }
-
-  const user = await db.user.findUnique({
-    where: { id: candidate.userId },
-  })
 
   if (!user || !user.isActive || user.role !== 'CANDIDATE') {
     await constantTimeDummyVerify(parsed.password)

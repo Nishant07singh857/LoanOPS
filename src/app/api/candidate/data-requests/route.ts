@@ -158,7 +158,10 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const createDataRequestSchema = z.object({}).strict()
+const createDataRequestSchema = z.object({
+  requestType: z.enum(['EXPORT', 'DELETION', 'CORRECTION', 'WITHDRAW_CONSENT']),
+  reason: z.string().max(2000).optional().nullable(),
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireCandidate()

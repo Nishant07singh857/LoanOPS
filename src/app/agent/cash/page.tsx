@@ -138,7 +138,7 @@ export default function AgentCashPage() {
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [newOpen, setNewOpen] = React.useState(false)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['agent-cash', chip],
     queryFn: () => api.get<CashListResponse>(
       `/api/agent/cash-collections?pageSize=100${chip !== 'ALL' ? `&status=${chip}` : ''}`
@@ -179,6 +179,15 @@ export default function AgentCashPage() {
           </Button>
         }
       />
+
+      {isError && (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-destructive font-medium">Could not load cash collections. Figures below may be incomplete — this is a loading error, not empty data.</p>
+            <Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Notice */}
       <FadeIn>
@@ -312,7 +321,7 @@ export default function AgentCashPage() {
                           <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{r.notes || '—'}</TableCell>
                           <TableCell className="text-right pr-6">
                             <Button asChild size="sm" variant="outline" className="h-8">
-                              <Link href={`/portal/receipts/${r.id}`}>
+                              <Link href={`/agent/receipts/${r.id}`}>
                                 <Receipt className="h-3.5 w-3.5" /> Receipt
                               </Link>
                             </Button>
@@ -344,7 +353,7 @@ export default function AgentCashPage() {
                         {r.notes && <p className="text-xs text-muted-foreground mt-2 pt-2 border-t border-border">{r.notes}</p>}
                         <div className="mt-3 pt-3 border-t border-border flex justify-end">
                           <Button asChild size="sm" variant="outline" className="h-9">
-                            <Link href={`/portal/receipts/${r.id}`}>
+                            <Link href={`/agent/receipts/${r.id}`}>
                               <Receipt className="h-3.5 w-3.5" /> View Receipt
                             </Link>
                           </Button>

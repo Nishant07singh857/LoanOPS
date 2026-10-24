@@ -282,13 +282,15 @@ function NewPtpDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v:
       return api.post('/api/agent/ptp', {
         candidateId,
         loanId,
-        promisedAmount: amount,
+        // The form collects RUPEES; the API stores PAISE. Convert here —
+        // sending the raw rupee value stored promises 100x too small.
+        promisedAmount: String(Math.round(Number(amount) * 100)),
         promiseDate,
         notes,
       })
     },
     onSuccess: () => {
-      toast.success('PTP created', { description: `${candidates.find((c) => c.id === candidateId)?.fullName ?? ''} promised ${amount}` })
+      toast.success('PTP created', { description: `${candidates.find((c) => c.id === candidateId)?.fullName ?? ''} promised ${formatPaiseToINR(Number(amount) * 100)}` })
       queryClient.invalidateQueries({ queryKey: ['agent-ptp'] })
       queryClient.invalidateQueries({ queryKey: ['agent-dashboard'] })
       setCandidateId(''); setLoanId(''); setLoanNumber(''); setLoadingLoan(false); setAmount(''); setPromiseDate(''); setNotes('')

@@ -120,8 +120,10 @@ export default function AgentEscalationsPage() {
   })
 
   const onInReview = (id: string) => {
-    updateMutation.mutate({ id, status: 'IN_REVIEW' })
-    toast.info('Marked IN_REVIEW')
+    updateMutation.mutate(
+      { id, status: 'IN_REVIEW' },
+      { onSuccess: () => toast.info('Marked IN_REVIEW') }
+    )
   }
   const onResolve = () => {
     if (!resolveTarget) return
@@ -136,8 +138,10 @@ export default function AgentEscalationsPage() {
     )
   }
   const onClose = (id: string) => {
-    updateMutation.mutate({ id, status: 'CLOSED' })
-    toast.success('Escalation closed')
+    updateMutation.mutate(
+      { id, status: 'CLOSED' },
+      { onSuccess: () => toast.success('Escalation closed') }
+    )
   }
   const onWhatsApp = (e: EscalationRow) => {
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.GENERAL_FOLLOW_UP, {
@@ -146,7 +150,7 @@ export default function AgentEscalationsPage() {
       agentName: user?.name ?? 'Agent',
     })
     openWhatsApp(e.candidate.mobile, msg)
-    toast.success('WhatsApp sent')
+    toast.success('WhatsApp draft opened', { description: 'Press Send in WhatsApp to deliver the message.' })
   }
 
   return (

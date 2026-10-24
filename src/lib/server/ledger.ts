@@ -48,6 +48,11 @@ export async function postLedger(entry: PostEntry, tx: any = db): Promise<{ entr
   const created = await tx.ledgerEntry.create({
     data: {
       organizationId: entry.organizationId,
+      // Persist the loan/payment linkage — LedgerEntry.loanId/paymentId exist
+      // so entries can be joined back to the loan/payment they belong to
+      // instead of relying only on the mutable free-text `reference` string.
+      loanId: entry.loanId ?? null,
+      paymentId: entry.paymentId ?? null,
       entryNumber,
       type: entry.type,
       debitAccount: entry.debitAccount,
@@ -89,6 +94,8 @@ export async function postReversal(original: ReversalInput, tx: any = db): Promi
     }
     return postLedger({
       organizationId: entry.organizationId,
+      loanId: (entry as any).loanId ?? undefined,
+      paymentId: (entry as any).paymentId ?? undefined,
       type: 'REVERSAL',
       debitAccount: entry.creditAccount,
       creditAccount: entry.debitAccount,

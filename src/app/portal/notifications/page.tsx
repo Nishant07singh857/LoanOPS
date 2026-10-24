@@ -85,15 +85,18 @@ export default function NotificationsPage() {
   const markReadMutation = useMutation({
     mutationFn: (id: string) => api.post('/api/candidate/notifications', { id }),
     onSuccess: () => {
+      toast.success('Marked as read')
       queryClient.invalidateQueries({ queryKey: ['candidate-notifications-list'] })
       queryClient.invalidateQueries({ queryKey: ['candidate-notifications'] })
       queryClient.invalidateQueries({ queryKey: ['candidate-notifications-count'] })
+    },
+    onError: () => {
+      toast.error('Could not mark as read', { description: 'Please try again.' })
     },
   })
 
   const onMarkRead = (id: string) => {
     markReadMutation.mutate(id)
-    toast.success('Marked as read')
   }
 
   const onMarkAllRead = async () => {
@@ -101,8 +104,14 @@ export default function NotificationsPage() {
       await api.post('/api/candidate/notifications', { all: true })
     } catch {
       const unread = items.filter((n) => !n.isRead)
+      let failed = 0
       for (const n of unread) {
-        try { await api.post(`/api/notifications/${n.id}/read`) } catch {}
+        try { await api.post(`/api/notifications/${n.id}/read`) } catch { failed++ }
+      }
+      if (failed > 0) {
+        toast.error('Some notifications could not be marked as read', { description: `${failed} failed — please try again.` })
+        queryClient.invalidateQueries({ queryKey: ['candidate-notifications-list'] })
+        return
       }
     }
     queryClient.invalidateQueries({ queryKey: ['candidate-notifications-list'] })

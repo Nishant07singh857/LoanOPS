@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -182,6 +183,28 @@ export default function LoanDetailPage() {
     enabled: !!params.id,
   })
 
+  const [agreementOpen, setAgreementOpen] = React.useState(false)
+  const [agreementDoc, setAgreementDoc] = React.useState<{ name: string; version: string; body: string } | null>(null)
+  const [agreementLoading, setAgreementLoading] = React.useState(false)
+
+  const viewAgreement = async () => {
+    setAgreementLoading(true)
+    try {
+      const res = await api.get<{ items: { id: string; name: string; version: string; body: string; isActive: boolean }[] }>('/api/owner/agreements')
+      const found = res.items.find((a) => a.isActive) ?? res.items[0]
+      if (!found) {
+        toast.error('No agreement template exists yet', { description: 'Create one under Owner → Agreements first.' })
+        return
+      }
+      setAgreementDoc(found)
+      setAgreementOpen(true)
+    } catch {
+      toast.error('Could not load the agreement', { description: 'Please try again.' })
+    } finally {
+      setAgreementLoading(false)
+    }
+  }
+
   const [disburseOpen, setDisburseOpen] = React.useState(false)
   const [restructureOpen, setRestructureOpen] = React.useState(false)
   const [showPii, setShowPii] = React.useState(false)
@@ -319,9 +342,17 @@ export default function LoanDetailPage() {
             <Button variant="outline" size="sm" onClick={onWhatsApp} className="min-h-[44px] sm:min-h-8">
               <MessageCircle className="h-4 w-4" /> WhatsApp
             </Button>
-            <Button variant="outline" size="sm" onClick={() => toast.info('Opening receipts...')} className="min-h-[44px] sm:min-h-8">
-              <Receipt className="h-4 w-4" /> View Receipts
-            </Button>
+            {loan.payments?.find((p) => p.receiptNumber) ? (
+              <Button asChild variant="outline" size="sm" className="min-h-[44px] sm:min-h-8">
+                <Link href={`/admin/receipts/${loan.payments.find((p) => p.receiptNumber)!.id}`}>
+                  <Receipt className="h-4 w-4" /> Latest Receipt
+                </Link>
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" disabled className="min-h-[44px] sm:min-h-8">
+                <Receipt className="h-4 w-4" /> No Receipts Yet
+              </Button>
+            )}
             {loan.status === 'PENDING_DISBURSEMENT' && (
               <Button size="sm" onClick={() => setDisburseOpen(true)} className="min-h-[44px] sm:min-h-8">
                 <Banknote className="h-4 w-4" /> Disburse
@@ -411,7 +442,7 @@ export default function LoanDetailPage() {
                     <div><p className="text-xs text-muted-foreground">PAN</p><p className="font-mono text-xs">{showPii ? (revealedPii?.pan ?? loan.candidate.panMasked) : maskPan(loan.candidate.panMasked)}</p></div>
                   )}
                   {loan.candidate.aadhaarMasked && (
-                    <div className="col-span-2"><p className="text-xs text-muted-foreground">Aadhaar</p><p className="font-mono text-xs">{maskAadhaar(loan.candidate.aadhaarMasked)}</p></div>
+                    <div className="col-span-2"><p className="text-xs text-muted-foreground">Aadhaar</p><p className="font-mono text-xs">{showPii ? (revealedPii?.aadhaar ?? maskAadhaar(loan.candidate.aadhaarMasked)) : maskAadhaar(loan.candidate.aadhaarMasked)}</p></div>
                   )}
                 </div>
               </CardContent>
@@ -527,8 +558,10 @@ export default function LoanDetailPage() {
                           <TableCell><StatusBadge variant={p.status}>{formatStatus(p.status)}</StatusBadge></TableCell>
                           <TableCell className="text-right pr-6">
                             {p.receiptNumber ? (
-                              <Button variant="ghost" size="sm" aria-label={`View receipt ${p.receiptNumber}`} onClick={() => toast.info(`Opening receipt ${p.receiptNumber}`)}>
-                                <Eye className="h-4 w-4" />
+                              <Button asChild variant="ghost" size="sm" aria-label={`View receipt ${p.receiptNumber}`}>
+                                <Link href={`/admin/receipts/${p.id}`}>
+                                  <Eye className="h-4 w-4" />
+                                </Link>
                               </Button>
                             ) : '—'}
                           </TableCell>
@@ -646,12 +679,16 @@ export default function LoanDetailPage() {
             <CardContent className="space-y-4">
               <div className="rounded-xl bg-muted/40 p-4 text-sm leading-relaxed">
                 <p className="font-semibold mb-2"># Loan Agreement</p>
-                <p className="text-muted-foreground">This agreement is entered into between <strong>Sterling Lending</strong> ("Lender") and <strong>{loan.candidate.fullName}</strong> ("Borrower"). The principal amount of <strong>{formatPaiseToINR(Number(loan.principalAmount))}</strong> shall be repaid in <strong>{loan.installments} {loan.frequency.toLowerCase()}</strong> installments of <strong>{formatPaiseToINR(Number(loan.installmentAmount))}</strong> each, commencing on the disbursement date.</p>
-                <p className="text-muted-foreground mt-2">Interest shall be charged per the agreed terms. Late payment may attract additional charges. This agreement is governed by applicable RBI guidelines and NBFC regulations.</p>
+                <p className="text-muted-foreground">This agreement is entered into between the Lender and <strong>{loan.candidate.fullName}</strong> ("Borrower"). The principal amount of <strong>{formatPaiseToINR(Number(loan.principalAmount))}</strong> shall be repaid in <strong>{loan.installments} {loan.frequency.toLowerCase()}</strong> installments of <strong>{formatPaiseToINR(Number(loan.installmentAmount))}</strong> each, commencing on the disbursement date.</p>
+                <p className="text-muted-foreground mt-2">The complete, legally binding agreement text for this loan is the document opened by "View Full Agreement" below — this summary is only a convenience overview of the loan's own figures.</p>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-border">
-                <StatusBadge variant="VERIFIED">Accepted {fmtDate(loan.disbursedAt)}</StatusBadge>
-                <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-8" onClick={() => toast.info('Generating PDF preview...')}>View Full Agreement</Button>
+                {loan.disbursedAt ? (
+                  <StatusBadge variant="VERIFIED">Accepted {fmtDate(loan.disbursedAt)}</StatusBadge>
+                ) : (
+                  <StatusBadge variant={loan.status}>{formatStatus(loan.status)}</StatusBadge>
+                )}
+                <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-8" onClick={viewAgreement} disabled={agreementLoading}>{agreementLoading ? 'Loading…' : 'View Full Agreement'}</Button>
               </div>
             </CardContent>
           </Card>
@@ -685,6 +722,21 @@ export default function LoanDetailPage() {
             onSubmit={(input) => restructureMutation.mutate(input)}
             onClose={() => setRestructureOpen(false)}
           />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={agreementOpen} onOpenChange={setAgreementOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{agreementDoc?.name ?? 'Agreement'}</DialogTitle>
+            <DialogDescription>{agreementDoc ? `Version ${agreementDoc.version}` : ''}</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto rounded-xl bg-muted/40 p-4">
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">{agreementDoc?.body}</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAgreementOpen(false)}>Close</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
