@@ -94,7 +94,16 @@ export const POST = apiHandler(async (req: NextRequest) => {
     where: {
       candidateId: ctx.user.candidateId,
       organizationId: ctx.user.organizationId,
-      status: { in: ['DRAFT', 'INFORMATION_REQUESTED'] },
+      OR: [
+        // Owner/agent-created applications start as DRAFT for candidate
+        // completion through this endpoint.
+        { status: { in: ['DRAFT', 'INFORMATION_REQUESTED'] } },
+        // QR self-apply creates a SUBMITTED application up front (terms +
+        // agreement + consents are collected on the public form), but the
+        // applicant still completes KYC afterwards here — until an
+        // Aadhaar snapshot is on file.
+        { status: 'SUBMITTED', kycAadhaar: null },
+      ],
     },
     orderBy: { createdAt: 'desc' },
   })

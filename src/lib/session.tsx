@@ -2,8 +2,8 @@
 // Backed by HTTP-only cookie set by /api/auth/login (owner/agent) or
 // /api/auth/candidate-login (candidate). On mount, fetches /api/auth/me
 // to hydrate the current user. login() posts to the real API.
-// loginAs() is retained as a dev convenience that hits a /api/auth/dev-login
-// endpoint only when NODE_ENV !== 'production'.
+// There are NO demo/quick-login credentials in client code — every login
+// goes through the real API with credentials supplied by the user.
 
 'use client'
 
@@ -27,7 +27,6 @@ interface SessionContextValue {
   loading: boolean
   login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>
   loginCandidate: (mobile: string, password: string) => Promise<{ ok: boolean; error?: string }>
-  loginAs: (role: Role) => Promise<void>
   logout: () => Promise<void>
   refresh: () => Promise<void>
 }
@@ -99,16 +98,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const loginAs = async (role: Role) => {
-    if (role === 'OWNER') {
-      await login('owner@loanops.in', 'Owner@123')
-    } else if (role === 'AGENT') {
-      await login('agent@loanops.in', 'Agent@123')
-    } else {
-      await loginCandidate('9820277789', 'Candidate@123')
-    }
-  }
-
   const logout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
@@ -122,7 +111,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <SessionContext.Provider value={{ user, loading, login, loginCandidate, loginAs, logout, refresh }}>
+    <SessionContext.Provider value={{ user, loading, login, loginCandidate, logout, refresh }}>
       {children}
     </SessionContext.Provider>
   )

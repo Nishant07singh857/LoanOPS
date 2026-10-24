@@ -98,12 +98,35 @@ export const GET = apiHandler(async (req: NextRequest) => {
     _count: true,
   })
 
+  // Overdue aging (real buckets): open OVERDUE installments grouped by
+  // days past due; amount is the outstanding paise (totalDue - paidAmount).
+  // The dashboard's aging chart consumes exactly this shape — it previously
+  // rendered a hardcoded all-zero array.
+  const overdueInstallments = await db.installment.findMany({
+    where: { status: 'OVERDUE', loan: { organizationId: orgId } },
+    select: { dueDate: true, totalDue: true, paidAmount: true },
+  })
+  const overdueAging = [
+    { bucket: '1-7 days', count: 0, amount: 0 },
+    { bucket: '8-15 days', count: 0, amount: 0 },
+    { bucket: '16-30 days', count: 0, amount: 0 },
+    { bucket: '31-60 days', count: 0, amount: 0 },
+    { bucket: '60+ days', count: 0, amount: 0 },
+  ]
+  for (const inst of overdueInstallments) {
+    const days = Math.floor((now.getTime() - inst.dueDate.getTime()) / 86400000)
+    const idx = days <= 7 ? 0 : days <= 15 ? 1 : days <= 30 ? 2 : days <= 60 ? 3 : 4
+    overdueAging[idx].count += 1
+    overdueAging[idx].amount += Math.max(0, inst.totalDue - inst.paidAmount)
+  }
+
   return success({
     trend,
     disbursementTrend,
     collectionTrend,
     outstandingTrend,
     overdueTrend,
+    overdueAging,
     repaymentFrequency: freqDist.map((f) => ({ frequency: f.frequency, count: f._count })),
     collectionByMethod: methodAgg.map((m) => ({
       method: m.method,

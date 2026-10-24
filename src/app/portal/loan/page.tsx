@@ -25,8 +25,6 @@ import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/wh
 import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
-const AGENT_PHONE = '+91 98201 44556'
-
 interface CandidateLoan {
   id: string
   loanNumber?: string
@@ -71,6 +69,7 @@ interface CandidateLoan {
     body: string
     isActive: boolean
   } | null
+  assignedAgent?: { name?: string; phone?: string | null } | null
 }
 
 function fmtDate(d?: string | null) {
@@ -82,7 +81,7 @@ export default function LoanDetailPage() {
   const { user } = useSession()
   const candidateName = user?.name || 'Candidate'
 
-  const { data: loan, isLoading } = useQuery({
+  const { data: loan, isLoading, isError, refetch } = useQuery({
     queryKey: ['candidate-loan'],
     queryFn: () => api.get<CandidateLoan>('/api/candidate/loan'),
     retry: false,
@@ -91,15 +90,44 @@ export default function LoanDetailPage() {
   const activeAgreement = loan?.agreement ?? null
 
   const onWhatsAppAgent = () => {
+    const agentPhone = loan?.assignedAgent?.phone
+    if (!agentPhone) {
+      toast.error('No agent assigned yet', { description: 'Please raise a support request and the lender will assign an agent.' })
+      return
+    }
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.CANDIDATE_TO_AGENT, {
       candidateName,
       loanNumber: loan?.loanNumber ?? '',
     })
-    openWhatsApp(AGENT_PHONE, msg)
+    openWhatsApp(agentPhone, msg)
     toast.success('WhatsApp draft opened', { description: 'Your agent will respond shortly.' })
   }
 
-  const onDownloadDoc = (name: string) => toast.success('Download started', { description: `${name} is being prepared…` })
+  // Real download: the agreement body is already loaded with the loan
+  // (see the agreement dialog below), so save exactly that text as a file.
+  const onDownloadAgreement = () => {
+    if (!activeAgreement?.body) {
+      toast.error('Agreement unavailable', { description: 'The agreement text could not be loaded. Please try again.' })
+      return
+    }
+    const header = [
+      activeAgreement.name ?? 'Loan Agreement',
+      `Version: ${activeAgreement.version ?? '—'}`,
+      loan?.loanNumber ? `Loan Number: ${loan.loanNumber}` : '',
+      '',
+      '',
+    ].join('\n')
+    const blob = new Blob([header + activeAgreement.body], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `Loan-Agreement-${loan?.loanNumber ?? 'copy'}.txt`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    toast.success('Agreement downloaded', { description: 'A copy of your loan agreement has been saved to your device.' })
+  }
 
   const [agreementOpen, setAgreementOpen] = React.useState(false)
 
@@ -111,6 +139,25 @@ export default function LoanDetailPage() {
           <Skeleton className="h-64 lg:col-span-2" />
           <Skeleton className="h-64" />
         </div>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="space-y-6">
+        <SectionHeading
+          title="My Loan"
+          description="Full details of your active loan."
+          icon={<Wallet className="h-5 w-5" />}
+        />
+        <Card>
+          <CardContent className="py-10 text-center">
+            <p className="text-sm font-medium text-destructive">Could not load your loan details.</p>
+            <p className="text-xs text-muted-foreground mt-1">This is a loading error — it does not mean you have no loan. Please try again.</p>
+            <Button size="sm" variant="outline" className="mt-4" onClick={() => refetch()}>Retry</Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }
@@ -231,11 +278,16 @@ export default function LoanDetailPage() {
                 <CardDescription className="text-xs">The complete principal, interest, and fee structure of your loan</CardDescription>
               </div>
               <Button variant="outline" size="sm" onClick={() => {
+                const agentPhone = loan?.assignedAgent?.phone
+                if (!agentPhone) {
+                  toast.error('No agent assigned yet', { description: 'Please raise a support request to ask for a restructure.' })
+                  return
+                }
                 const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.CANDIDATE_TO_AGENT, {
                   candidateName,
                   loanNumber: loan?.loanNumber ?? '',
                 }) + '\n\nI would like to request an EMI restructure (e.g. switch to Monthly).'
-                openWhatsApp(AGENT_PHONE, msg)
+                openWhatsApp(agentPhone, msg)
                 toast.success('Restructure request opened in WhatsApp')
               }}>Request Restructure</Button>
             </CardHeader>
@@ -370,8 +422,8 @@ export default function LoanDetailPage() {
             <pre className="text-xs whitespace-pre-wrap font-mono">{activeAgreement?.body ?? 'Agreement body unavailable.'}</pre>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => onDownloadDoc('Loan Agreement')}>
-              <Download className="h-4 w-4" /> Download PDF
+            <Button variant="outline" onClick={onDownloadAgreement}>
+              <Download className="h-4 w-4" /> Download copy
             </Button>
             <Button onClick={() => setAgreementOpen(false)}>Close</Button>
           </DialogFooter>

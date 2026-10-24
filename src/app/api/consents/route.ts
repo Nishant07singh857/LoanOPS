@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { apiHandler, success, badRequest, validate } from '@/lib/server/api'
+import { apiHandler, success, badRequest, unauthorized, validate } from '@/lib/server/api'
 import { getSessionCookie, getSession, getClientIp, auditRaw } from '@/lib/server/auth'
 import { COMPLIANCE_CONFIG, REQUIRED_CONSENTS } from '@/lib/compliance-config'
 
@@ -72,48 +72,39 @@ const postConsentSchema = z.object({
 }).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
+  // Consent records are legal evidence — writing them requires an
+  // authenticated session. Unauthenticated callers must never be able to
+  // forge or revoke consent on behalf of a borrower. (Public applicants
+  // record their consents inside the POST /api/apply/[token] transaction.)
+  const token = await getSessionCookie()
+  const sessionUser = await getSession(token)
+  if (!sessionUser) return unauthorized('Authentication required to record consent')
+
   const body = await req.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON payload')
   const input = validate(postConsentSchema, body)
 
   const ipAddress = getClientIp(req)
   const userAgent = req.headers.get('user-agent') || 'unknown'
-  const token = await getSessionCookie()
-  const sessionUser = await getSession(token)
 
-  let organizationId = sessionUser?.organizationId ?? null
-  let userId = sessionUser?.id ?? null
-  let candidateId = sessionUser?.candidateId ?? input.candidateId ?? null
+  const organizationId: string = sessionUser.organizationId
+  const userId: string = sessionUser.id
+  // Client-supplied candidateId is honoured only when it is the session
+  // user's OWN candidate profile — never a way to write consent for others.
+  const candidateId: string | null =
+    sessionUser.candidateId && input.candidateId === sessionUser.candidateId
+      ? sessionUser.candidateId
+      : (sessionUser.candidateId ?? null)
 
-  if (!organizationId && candidateId) {
-    const cand = await db.candidate.findUnique({
-      where: { id: candidateId },
-      select: { organizationId: true, userId: true },
-    })
-    if (cand) {
-      organizationId = cand.organizationId
-      userId = userId ?? cand.userId ?? null
-    }
-  }
-
-  if (!organizationId && input.applicationId) {
-    const app = await db.application.findUnique({
-      where: { id: input.applicationId },
-      select: { organizationId: true, candidateId: true },
-    })
-    if (app) {
-      organizationId = app.organizationId
-      candidateId = candidateId ?? app.candidateId
-    }
-  }
-
-  if (!organizationId) {
-    const defaultOrg = await db.organization.findFirst({
-      where: { isActive: true },
+  // Same rule for applicationId: it must belong to the session user's own
+  // candidate profile, otherwise it is ignored.
+  let applicationId: string | null = null
+  if (input.applicationId && candidateId) {
+    const app = await db.application.findFirst({
+      where: { id: input.applicationId, organizationId, candidateId },
       select: { id: true },
     })
-    if (!defaultOrg) return badRequest('Organization not initialized')
-    organizationId = defaultOrg.id
+    if (app) applicationId = app.id
   }
 
   const version = input.policyVersion || COMPLIANCE_CONFIG.policyVersion
@@ -122,10 +113,10 @@ export const POST = apiHandler(async (req: NextRequest) => {
     input.consents.map((item) =>
       db.consentRecord.create({
         data: {
-          organizationId: organizationId!,
+          organizationId,
           userId,
           candidateId,
-          applicationId: input.applicationId ?? null,
+          applicationId,
           consentType: item.consentType,
           policyVersion: version,
           granted: item.granted,
@@ -141,14 +132,14 @@ export const POST = apiHandler(async (req: NextRequest) => {
     userId,
     'CONSENT_GIVEN',
     'ConsentRecord',
-    candidateId ?? userId ?? null,
+    candidateId ?? userId,
     `Recorded ${createdRecords.length} DPDP consent preference(s) under policy v${version}`,
     {
       ipAddress,
       userAgent,
       policyVersion: version,
       consents: input.consents,
-      applicationId: input.applicationId ?? null,
+      applicationId,
     }
   )
 

@@ -69,7 +69,13 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const schema = z.object({}).strict()
+const schema = z.object({
+  loanId: z.string().min(1),
+  amount: z.union([z.string().min(1).max(40), z.number()]),
+  method: z.enum(['ONLINE_UPI', 'ONLINE_NETBANKING', 'ONLINE_CARD', 'CASH', 'BANK_TRANSFER']),
+  idempotencyKey: z.string().min(1).max(200).optional().nullable(),
+  reference: z.string().max(200).optional().nullable(),
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireCandidate()
@@ -93,8 +99,36 @@ export const POST = apiHandler(async (req: NextRequest) => {
   const amountPaise = parsePaise(data.amount)
   if (amountPaise <= BigInt(0)) return badRequest('Amount must be positive')
 
+  const totalOutstandingPaise =
+    BigInt(loan.outstandingPrincipal) + BigInt(loan.outstandingInterest) + BigInt(loan.outstandingFees)
+  if (amountPaise > totalOutstandingPaise) {
+    return badRequest('Amount exceeds total outstanding for this loan')
+  }
+
   const paymentNumber = genNumber('PAY')
-  const idempotencyKey = genToken(16)
+  // Prefer the client-supplied idempotency key so a retried submit dedupes
+  // instead of creating a second INITIATED payment; mint one only if absent.
+  const idempotencyKey = data.idempotencyKey || genToken(16)
+
+  if (data.idempotencyKey) {
+    const existingPayment = await db.payment.findUnique({ where: { idempotencyKey } })
+    if (existingPayment) {
+      if (existingPayment.candidateId !== ctx.user.candidateId || existingPayment.loanId !== loan.id) {
+        return badRequest('Idempotency key already used for a different payment')
+      }
+      return success({
+        id: existingPayment.id,
+        paymentNumber: existingPayment.paymentNumber,
+        loanId: existingPayment.loanId,
+        loanNumber: loan.loanNumber,
+        amount: String(existingPayment.amount),
+        method: existingPayment.method,
+        status: existingPayment.status,
+        idempotencyKey,
+        idempotentReplay: true,
+      })
+    }
+  }
 
   const payment = await db.payment.create({
     data: {

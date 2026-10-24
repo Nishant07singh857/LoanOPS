@@ -7,7 +7,16 @@ import { db } from '@/lib/db'
 import { requireOwner, audit } from '@/lib/server/auth'
 import { apiHandler, success, badRequest, validate, genNumber } from '@/lib/server/api'
 
-const schema = z.object({}).strict().refine((d) => (d.from && d.to) || (d.periodStart && d.periodEnd), {
+const dateString = z.string().trim().min(1).refine((v) => !Number.isNaN(Date.parse(v)), {
+  message: 'Invalid date',
+})
+
+const schema = z.object({
+  from: dateString.optional(),
+  to: dateString.optional(),
+  periodStart: dateString.optional(),
+  periodEnd: dateString.optional(),
+}).strict().refine((d) => (d.from && d.to) || (d.periodStart && d.periodEnd), {
   message: 'Provide either (from, to) or (periodStart, periodEnd)',
 })
 
@@ -19,22 +28,35 @@ export const POST = apiHandler(async (req: NextRequest) => {
   const toStr = data.to ?? data.periodEnd!
   const from = new Date(fromStr)
   const to = new Date(toStr)
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+    return badRequest('Invalid from/to date')
+  }
+  if (from.getTime() > to.getTime()) {
+    return badRequest('from must be on or before to')
+  }
+
+  // Aggregation window is [from, periodEnd). The stored periodEnd is exactly the
+  // window end used by every aggregate below — no silent drift between the two.
+  // A date-only `to` (what the admin page sends) means "the whole of that day",
+  // so its exclusive end is the following midnight; a full datetime `to` is used as-is.
+  const isDateOnlyTo = /^\d{4}-\d{2}-\d{2}$/.test(toStr.trim())
+  const periodEnd = isDateOnlyTo ? new Date(to.getTime() + 24 * 60 * 60 * 1000) : to
 
   const run = await db.reconciliationRun.create({
     data: {
       organizationId: ctx.user.organizationId,
       runNumber: genNumber('RECON'),
       periodStart: from,
-      periodEnd: to,
+      periodEnd,
       totalExpected: 0,
       totalCaptured: 0,
       totalAllocated: 0,
       exceptionsCount: 0,
-      status: 'COMPLETED',
+      status: 'RUNNING',
     },
   })
 
-  const periodEnd = new Date(to.getTime() + 24 * 60 * 60 * 1000)
+  try {
 
   // Expected: sum of installments due in period
   const expectedAgg = await db.installment.aggregate({
@@ -46,26 +68,32 @@ export const POST = apiHandler(async (req: NextRequest) => {
   })
   const totalExpected = expectedAgg._sum.totalDue ?? 0
 
-  // Captured: payments created in period (INITIATED + ALLOCATED + FAILED)
+  // Captured: only payments that actually captured money count — ALLOCATED or
+  // VERIFIED. INITIATED/FAILED/REJECTED payments never captured anything.
   const capturedAgg = await db.payment.aggregate({
     where: {
       organizationId: ctx.user.organizationId,
+      status: { in: ['ALLOCATED', 'VERIFIED'] },
       createdAt: { gte: from, lt: periodEnd },
     },
     _sum: { amount: true },
   })
   const totalCaptured = capturedAgg._sum.amount ?? 0
 
-  // Allocated: payments with allocatedAt in period
+  // Allocated: sum of the allocation breakdown only. The full payment `amount`
+  // must NOT be used — it includes the unallocated (excess) portion.
   const allocatedAgg = await db.payment.aggregate({
     where: {
       organizationId: ctx.user.organizationId,
       status: 'ALLOCATED',
       allocatedAt: { gte: from, lt: periodEnd },
     },
-    _sum: { amount: true },
+    _sum: { allocatedFees: true, allocatedInterest: true, allocatedPrincipal: true },
   })
-  const totalAllocated = allocatedAgg._sum.amount ?? 0
+  const totalAllocated =
+    (allocatedAgg._sum.allocatedFees ?? 0) +
+    (allocatedAgg._sum.allocatedInterest ?? 0) +
+    (allocatedAgg._sum.allocatedPrincipal ?? 0)
 
   // Ledger: sum of PAYMENT_PRINCIPAL + PAYMENT_INTEREST + PAYMENT_FEES in period
   const ledgerAgg = await db.ledgerEntry.aggregate({
@@ -146,16 +174,18 @@ export const POST = apiHandler(async (req: NextRequest) => {
     }
   }
 
-  await db.reconciliationException.createMany({
-    data: exceptions.map((e) => ({
-      organizationId: ctx.user.organizationId,
-      runId: run.id,
-      type: e.type,
-      severity: e.severity,
-      description: e.description,
-      reference: e.reference,
-    })),
-  })
+  if (exceptions.length > 0) {
+    await db.reconciliationException.createMany({
+      data: exceptions.map((e) => ({
+        organizationId: ctx.user.organizationId,
+        runId: run.id,
+        type: e.type,
+        severity: e.severity,
+        description: e.description,
+        reference: e.reference,
+      })),
+    })
+  }
 
   await db.reconciliationRun.update({
     where: { id: run.id },
@@ -164,15 +194,16 @@ export const POST = apiHandler(async (req: NextRequest) => {
       totalCaptured,
       totalAllocated,
       exceptionsCount: exceptions.length,
+      status: 'COMPLETED',
     },
   })
 
-  await audit(ctx, 'CREATE', 'ReconciliationRun', run.id, `Reconciliation run ${run.runNumber} for ${from.toISOString()} → ${to.toISOString()}: ${exceptions.length} exception(s)`)
+  await audit(ctx, 'CREATE', 'ReconciliationRun', run.id, `Reconciliation run ${run.runNumber} for ${from.toISOString()} → ${periodEnd.toISOString()}: ${exceptions.length} exception(s)`)
 
   return success({
     runNumber: run.runNumber,
     periodStart: from,
-    periodEnd: to,
+    periodEnd,
     totalExpected: String(totalExpected),
     totalCaptured: String(totalCaptured),
     totalAllocated: String(totalAllocated),
@@ -180,4 +211,11 @@ export const POST = apiHandler(async (req: NextRequest) => {
     exceptionsCount: exceptions.length,
     exceptions,
   })
+  } catch (err) {
+    await db.reconciliationRun.update({
+      where: { id: run.id },
+      data: { status: 'FAILED' },
+    }).catch(() => null)
+    throw err
+  }
 })

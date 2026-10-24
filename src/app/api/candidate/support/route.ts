@@ -6,7 +6,12 @@ import { db } from '@/lib/db'
 import { requireCandidate, audit } from '@/lib/server/auth'
 import { apiHandler, success, created, badRequest, validate, genNumber } from '@/lib/server/api'
 
-const schema = z.object({}).strict()
+const schema = z.object({
+  category: z.string().min(1).max(100),
+  subject: z.string().min(1).max(300),
+  description: z.string().min(1).max(10000),
+  attachmentUrl: z.string().max(2000).optional().nullable(),
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireCandidate()

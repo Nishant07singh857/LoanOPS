@@ -2,17 +2,24 @@ import { test, expect, type APIRequestContext } from '@playwright/test'
 
 const BASE_URL = 'http://localhost:3000'
 
+// Credentials come from the environment — NO hardcoded password fallbacks.
+function requiredEnv(name: string): string {
+  const v = process.env[name]
+  if (!v) throw new Error(`${name} must be set to run E2E tests (see README > Testing)`)
+  return v
+}
+
 const OWNER_EMAIL = 'owner@loanops.in'
-const OWNER_PASSWORD = process.env.SEED_OWNER_PASSWORD || 'Owner@123'
+const OWNER_PASSWORD = requiredEnv('SEED_OWNER_PASSWORD')
 
 const AGENT1_EMAIL = 'agent@loanops.in'
-const AGENT1_PASSWORD = process.env.SEED_AGENT_PASSWORD || 'Agent@123'
+const AGENT1_PASSWORD = requiredEnv('SEED_AGENT_PASSWORD')
 
 const AGENT2_EMAIL = 'agent2@loanops.in'
-const AGENT2_PASSWORD = process.env.SEED_AGENT2_PASSWORD || 'Agent2@123'
+const AGENT2_PASSWORD = requiredEnv('SEED_AGENT2_PASSWORD')
 
 const CANDIDATE_MOBILE = '9820277789'
-const CANDIDATE_PASSWORD = process.env.SEED_CANDIDATE_PASSWORD || 'Candidate@123'
+const CANDIDATE_PASSWORD = requiredEnv('SEED_CANDIDATE_PASSWORD')
 
 async function apiLogin(
   request: APIRequestContext,
@@ -667,7 +674,8 @@ test.describe('Task 4: Auth & Session Security', () => {
     
     expect(res.status()).toBe(429)
     const body = await res.json()
-    expect(body.error).toContain('Too many login attempts')
+    // API error shape is { error: { code, message } } (see src/lib/server/api.ts).
+    expect(body.error.message).toContain('Too many login attempts')
   })
 
   test('Session rotation on login', async ({ request }) => {

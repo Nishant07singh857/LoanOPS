@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import {
   Users, Search, Filter, X, MessageCircle, PhoneCall, ChevronRight,
@@ -52,18 +52,11 @@ function fmtDateShort(d?: string | null) {
   return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
 }
 
-export default function AgentCandidatesPage() {
+function AgentCandidatesPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [chip, setChip] = React.useState<ChipKey>('ALL')
-  const [search, setSearch] = React.useState('')
-
-  React.useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const q = new URLSearchParams(window.location.search).get('q')
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (q) setSearch(q)
-    }
-  }, [])
+  const [search, setSearch] = React.useState(() => searchParams.get('q') ?? '')
 
   const { data, isLoading } = useQuery({
     queryKey: ['agent-candidates', search],
@@ -92,7 +85,7 @@ export default function AgentCandidatesPage() {
       dueDate: fmtDateShort(c.nextFollowUp),
     })
     openWhatsApp(c.mobile, msg)
-    toast.success('WhatsApp draft opened', { description: `Reminder sent to ${c.fullName}` })
+    toast.success('WhatsApp draft opened', { description: `Press Send in WhatsApp to deliver the reminder to ${c.fullName}.` })
   }
 
   return (
@@ -246,5 +239,13 @@ export default function AgentCandidatesPage() {
         </StaggerContainer>
       )}
     </div>
+  )
+}
+
+export default function AgentCandidatesPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <AgentCandidatesPageInner />
+    </React.Suspense>
   )
 }

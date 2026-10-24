@@ -57,7 +57,16 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
 })
 
-const createSchema = z.object({}).strict()
+const createSchema = z.object({
+  candidateId: z.string().min(1),
+  loanId: z.string().min(1),
+  title: z.string().min(1).max(300),
+  description: z.string().max(5000).optional().nullable(),
+  amount: z.union([z.string().regex(/^\d+$/), z.number().int().nonnegative()]).optional().nullable(),
+  dueDate: z.string().min(1).max(40),
+  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
+  notes: z.string().max(5000).optional().nullable(),
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireAgent()
@@ -68,7 +77,8 @@ export const POST = apiHandler(async (req: NextRequest) => {
   if (!body) return badRequest('Invalid JSON body')
   const data = validate(createSchema, body)
 
-  // Validate candidate belongs to org & is assigned to agent
+  // Validate candidate belongs to org & is assigned to this agent — or
+  // unassigned (pool candidate, e.g. QR self-apply: any agent may work them).
   const candidate = await db.candidate.findFirst({
     where: {
       id: data.candidateId,
@@ -76,7 +86,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
     },
   })
   if (!candidate) return notFound('Candidate not found')
-  if (candidate.assignedAgentId !== agentProfile.id) {
+  if (candidate.assignedAgentId && candidate.assignedAgentId !== agentProfile.id) {
     return forbidden('You do not have access to this candidate')
   }
 

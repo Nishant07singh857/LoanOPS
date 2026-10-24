@@ -60,8 +60,8 @@ export function PortalLayout({ role, groups, brand, children, notifications, nav
   const notificationsHref = role === 'CANDIDATE'
     ? '/portal/notifications'
     : role === 'AGENT'
-      ? '/agent/tasks'
-      : '/admin/applications'
+      ? '/agent/notifications'
+      : '/admin/notifications'
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -88,10 +88,10 @@ export function PortalLayout({ role, groups, brand, children, notifications, nav
                     <Menu className="h-5 w-5" />
                   </Button>
                 </SheetTrigger>
-                <SheetContent side="left" className="w-72 p-0 flex flex-col glass">
+                <SheetContent side="left" className="w-[min(88vw,20rem)] p-0 flex flex-col glass">
                   <SheetTitle className="sr-only">Navigation</SheetTitle>
                   <SidebarContent
-                    className="pt-10 sm:pt-4"
+                    brandHeader
                     groups={groups}
                     pathname={pathname}
                     onNavigate={() => setMobileOpen(false)}
@@ -101,7 +101,12 @@ export function PortalLayout({ role, groups, brand, children, notifications, nav
                   />
                 </SheetContent>
               </Sheet>
-              <div className="flex items-center gap-2.5 group cursor-pointer" onClick={() => router.push('/')}>
+              <button
+                type="button"
+                className="flex items-center gap-2.5 group cursor-pointer text-left rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => router.push('/')}
+                aria-label={`${brand.name} — go to home`}
+              >
                 <div className={cn('h-9 w-9 rounded-xl flex items-center justify-center shadow-glow border border-amber-300/20 transition-transform duration-300 group-hover:scale-105 group-active:scale-95', brand.accentClass)}>
                   <Wallet className="h-5 w-5 text-primary-foreground drop-shadow-md" />
                 </div>
@@ -109,7 +114,7 @@ export function PortalLayout({ role, groups, brand, children, notifications, nav
                   <p className="font-bold tracking-tight leading-none text-xs sm:text-sm max-w-[140px] sm:max-w-none truncate group-hover:text-primary transition-colors">{brand.name}</p>
                   <p className="text-[9px] sm:text-[10px] text-amber-600 dark:text-amber-400 font-medium uppercase tracking-wider mt-0.5 max-w-[140px] sm:max-w-none truncate">{brand.subtitle}</p>
                 </div>
-              </div>
+              </button>
             </div>
 
             {/* Desktop Navigation for non-sidebar */}
@@ -249,7 +254,7 @@ export function PortalLayout({ role, groups, brand, children, notifications, nav
 
 
 function SidebarContent({
-  groups, pathname, onNavigate, brand, user, onLogout, className
+  groups, pathname, onNavigate, brand, user, onLogout, className, brandHeader = false
 }: {
   groups: PortalNavGroup[]
   pathname: string
@@ -258,10 +263,22 @@ function SidebarContent({
   user: any
   onLogout: () => void
   className?: string
+  brandHeader?: boolean
 }) {
   return (
     <div className={cn("flex flex-col h-full min-h-0", className)}>
-      <nav aria-label="Sidebar navigation" className="flex-1 min-h-0 overflow-y-auto no-scrollbar py-2 px-2 space-y-2">
+      {brandHeader && (
+        <div className="flex items-center gap-2.5 px-4 pt-4 pb-3 border-b border-sidebar-border/60 shrink-0">
+          <div className={cn('h-9 w-9 rounded-xl flex items-center justify-center shadow-glow border border-amber-300/20 shrink-0', brand.accentClass)}>
+            <Wallet className="h-5 w-5 text-primary-foreground drop-shadow-md" />
+          </div>
+          <div className="flex flex-col min-w-0">
+            <p className="font-bold tracking-tight leading-none text-sm truncate">{brand.name}</p>
+            <p className="text-[10px] text-amber-600 dark:text-amber-400 font-medium uppercase tracking-wider mt-0.5 truncate">{brand.subtitle}</p>
+          </div>
+        </div>
+      )}
+      <nav aria-label="Sidebar navigation" className="flex-1 min-h-0 overflow-y-auto sidebar-scroll py-2 px-2 space-y-2 pb-4">
         {groups.map((group) => (
           <div key={group.label}>
             <p className="px-3 mb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{group.label}</p>
@@ -397,9 +414,14 @@ function UserMenu({ user, initials, onLogout }: { user: any; initials: string; o
               <Badge variant="secondary" className="mt-2 text-[10px]">{user?.role}</Badge>
             </div>
             <div className="p-1">
-              <button role="menuitem" onClick={onSettings} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-muted transition-colors">
-                <Settings className="h-4 w-4" /> Settings
-              </button>
+              {/* Settings exists only where a real settings/profile page
+                  exists (candidate profile). Owner/agent previously routed
+                  to unrelated pages, so the item is hidden for them. */}
+              {user?.role === 'CANDIDATE' && (
+                <button role="menuitem" onClick={onSettings} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-muted transition-colors">
+                  <Settings className="h-4 w-4" /> Settings
+                </button>
+              )}
               <button
                 role="menuitem"
                 onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}

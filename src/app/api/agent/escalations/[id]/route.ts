@@ -5,7 +5,10 @@ import { db } from '@/lib/db'
 import { requireAgent, audit } from '@/lib/server/auth'
 import { apiHandler, success, notFound, badRequest, validate } from '@/lib/server/api'
 
-const schema = z.object({}).strict()
+const schema = z.object({
+  status: z.enum(['OPEN', 'IN_REVIEW', 'RESOLVED', 'CLOSED']),
+  resolutionNotes: z.string().max(5000).optional().nullable(),
+}).strict()
 
 export const PATCH = apiHandler(async (
   req: NextRequest,

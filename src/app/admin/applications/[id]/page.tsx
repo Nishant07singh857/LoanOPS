@@ -122,6 +122,28 @@ export default function ApplicationDetailPage() {
     enabled: !!params.id,
   })
 
+  const [agreementOpen, setAgreementOpen] = React.useState(false)
+  const [agreementDoc, setAgreementDoc] = React.useState<{ name: string; version: string; body: string } | null>(null)
+  const [agreementLoading, setAgreementLoading] = React.useState(false)
+
+  const viewAgreement = async () => {
+    setAgreementLoading(true)
+    try {
+      const res = await api.get<{ items: { id: string; name: string; version: string; body: string; isActive: boolean }[] }>('/api/owner/agreements')
+      const found = res.items.find((a) => a.isActive) ?? res.items[0]
+      if (!found) {
+        toast.error('No agreement template exists yet', { description: 'Create one under Owner → Agreements first.' })
+        return
+      }
+      setAgreementDoc(found)
+      setAgreementOpen(true)
+    } catch {
+      toast.error('Could not load the agreement', { description: 'Please try again.' })
+    } finally {
+      setAgreementLoading(false)
+    }
+  }
+
   const [action, setAction] = React.useState<ActionKind | null>(null)
   const [reason, setReason] = React.useState('')
   const [showPii, setShowPii] = React.useState(false)
@@ -448,7 +470,7 @@ export default function ApplicationDetailPage() {
                 <div className="flex items-center justify-between gap-2 rounded-xl border border-border p-4 hover:border-primary/40 transition-all">
                   <div>
                     <p className="text-sm font-medium">Aadhaar Card</p>
-                    <p className="text-xs font-mono text-muted-foreground mt-0.5">{maskAadhaar(rawAadhaar)}</p>
+                    <p className="text-xs font-mono text-muted-foreground mt-0.5">{showPii ? (revealedPii?.aadhaar ?? maskAadhaar(rawAadhaar)) : maskAadhaar(rawAadhaar)}</p>
                   </div>
                   <StatusBadge variant={app.kycStatus ?? 'PENDING'}>{formatStatus(app.kycStatus ?? 'PENDING')}</StatusBadge>
                 </div>
@@ -477,7 +499,7 @@ export default function ApplicationDetailPage() {
                 <StatusBadge variant={app.agreementAcceptedAt ? 'VERIFIED' : 'PENDING'}>
                   {app.agreementAcceptedAt ? `Accepted ${fmtDate(app.agreementAcceptedAt)}` : 'Pending acceptance'}
                 </StatusBadge>
-                <Button variant="outline" size="sm" onClick={() => toast.info('Generating PDF preview...')}>View Full Agreement</Button>
+                <Button variant="outline" size="sm" onClick={viewAgreement} disabled={agreementLoading}>{agreementLoading ? 'Loading…' : 'View Full Agreement'}</Button>
               </div>
             </CardContent>
           </Card>
@@ -624,6 +646,21 @@ export default function ApplicationDetailPage() {
             >
               {actionMutation.isPending ? 'Processing…' : action === 'APPROVE' ? 'Confirm Approval' : action === 'REJECT' ? 'Confirm Rejection' : 'Send Request'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={agreementOpen} onOpenChange={setAgreementOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{agreementDoc?.name ?? 'Agreement'}</DialogTitle>
+            <DialogDescription>{agreementDoc ? `Version ${agreementDoc.version}` : ''}</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto rounded-xl bg-muted/40 p-4">
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">{agreementDoc?.body}</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAgreementOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

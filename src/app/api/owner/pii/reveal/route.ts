@@ -8,7 +8,22 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requireOwner, audit, getClientIp } from '@/lib/server/auth'
 import { apiHandler, success, badRequest, notFound, validateBody } from '@/lib/server/api'
-import { decryptPII } from '@/lib/server/crypto'
+import { decryptPIIForMask } from '@/lib/server/crypto'
+import { maskAadhaar } from '@/lib/utils'
+
+// Stored PII fields legitimately hold mixed formats: enc:v1 ciphertext,
+// already-masked strings (XXXX-XXXX-8765), and legacy plaintext. Strict
+// decryptPII throws on non-enc values in production, which made this
+// audited reveal 500 for exactly the records owners need to inspect.
+// Resolve tolerantly instead. Aadhaar is ALWAYS returned masked (UIDAI:
+// a full Aadhaar number is never stored anywhere in this system); PAN and
+// bank account return the full value when one exists, else the stored
+// masked value.
+const resolveMaskedAadhaar = (v?: string | null): string => {
+  const r = decryptPIIForMask(v)
+  return r ? maskAadhaar(r) : ''
+}
+const resolveRevealValue = (v?: string | null): string => decryptPIIForMask(v)
 import { enforceRateLimit } from '@/lib/server/rate-limit'
 
 export const dynamic = 'force-dynamic'
@@ -47,16 +62,16 @@ export const POST = apiHandler(async (req: NextRequest) => {
     if (!c) return notFound('Candidate not found')
 
     aadhaar =
-      decryptPII(c.kycDocs[0]?.aadhaarNumber) ||
-      decryptPII(c.applications[0]?.kycAadhaar) ||
-      decryptPII(c.aadhaarMasked) ||
+      resolveMaskedAadhaar(c.kycDocs[0]?.aadhaarNumber) ||
+      resolveMaskedAadhaar(c.applications[0]?.kycAadhaar) ||
+      resolveMaskedAadhaar(c.aadhaarMasked) ||
       (c.aadhaarLast4 ? `XXXX-XXXX-${c.aadhaarLast4}` : null)
     pan =
-      decryptPII(c.kycDocs[0]?.panNumber) ||
-      decryptPII(c.applications[0]?.kycPan) ||
-      decryptPII(c.panMasked) ||
+      resolveRevealValue(c.kycDocs[0]?.panNumber) ||
+      resolveRevealValue(c.applications[0]?.kycPan) ||
+      resolveRevealValue(c.panMasked) ||
       null
-    bankAccount = decryptPII(c.bankAccount) || null
+    bankAccount = resolveRevealValue(c.bankAccount) || null
   } else if (data.entityType === 'APPLICATION') {
     const app = await db.application.findFirst({
       where: { id: data.entityId, organizationId: ctx.user.organizationId },
@@ -71,16 +86,16 @@ export const POST = apiHandler(async (req: NextRequest) => {
     if (!app) return notFound('Application not found')
 
     aadhaar =
-      decryptPII(app.kycAadhaar) ||
-      decryptPII(app.candidate?.kycDocs[0]?.aadhaarNumber) ||
-      decryptPII(app.candidate?.aadhaarMasked) ||
+      resolveMaskedAadhaar(app.kycAadhaar) ||
+      resolveMaskedAadhaar(app.candidate?.kycDocs[0]?.aadhaarNumber) ||
+      resolveMaskedAadhaar(app.candidate?.aadhaarMasked) ||
       null
     pan =
-      decryptPII(app.kycPan) ||
-      decryptPII(app.candidate?.kycDocs[0]?.panNumber) ||
-      decryptPII(app.candidate?.panMasked) ||
+      resolveRevealValue(app.kycPan) ||
+      resolveRevealValue(app.candidate?.kycDocs[0]?.panNumber) ||
+      resolveRevealValue(app.candidate?.panMasked) ||
       null
-    bankAccount = decryptPII(app.candidate?.bankAccount) || null
+    bankAccount = resolveRevealValue(app.candidate?.bankAccount) || null
   } else if (data.entityType === 'LOAN') {
     const loan = await db.loan.findFirst({
       where: { id: data.entityId, organizationId: ctx.user.organizationId },
@@ -96,16 +111,16 @@ export const POST = apiHandler(async (req: NextRequest) => {
     if (!loan) return notFound('Loan not found')
 
     aadhaar =
-      decryptPII(loan.application?.kycAadhaar) ||
-      decryptPII(loan.candidate?.kycDocs[0]?.aadhaarNumber) ||
-      decryptPII(loan.candidate?.aadhaarMasked) ||
+      resolveMaskedAadhaar(loan.application?.kycAadhaar) ||
+      resolveMaskedAadhaar(loan.candidate?.kycDocs[0]?.aadhaarNumber) ||
+      resolveMaskedAadhaar(loan.candidate?.aadhaarMasked) ||
       null
     pan =
-      decryptPII(loan.application?.kycPan) ||
-      decryptPII(loan.candidate?.kycDocs[0]?.panNumber) ||
-      decryptPII(loan.candidate?.panMasked) ||
+      resolveRevealValue(loan.application?.kycPan) ||
+      resolveRevealValue(loan.candidate?.kycDocs[0]?.panNumber) ||
+      resolveRevealValue(loan.candidate?.panMasked) ||
       null
-    bankAccount = decryptPII(loan.candidate?.bankAccount) || null
+    bankAccount = resolveRevealValue(loan.candidate?.bankAccount) || null
   }
 
   const ip = getClientIp(req)

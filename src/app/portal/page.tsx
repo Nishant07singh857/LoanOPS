@@ -33,9 +33,6 @@ import {
   BANK_ACCOUNT_REGEX,
 } from '@/lib/utils'
 
-const AGENT_PHONE = '+91 98201 44556'
-const OWNER_PHONE = '+91 98200 11223'
-
 const TRUST = [
   { icon: <ShieldCheck className="h-4 w-4" />, label: 'Bank-grade security' },
   { icon: <Landmark className="h-4 w-4" />, label: 'RBI compliant' },
@@ -67,6 +64,7 @@ interface CandidateLoan {
   draftApplication?: any
   hasKyc?: boolean
   agreement?: any
+  assignedAgent?: { name?: string; phone?: string | null } | null
 }
 
 interface NotificationRow {
@@ -111,20 +109,17 @@ export default function CandidateHomePage() {
   const nextInstallment = loan?.nextDue
 
   const onWhatsAppAgent = () => {
+    const agentPhone = loan?.assignedAgent?.phone
+    if (!agentPhone) {
+      toast.error('No agent assigned yet', { description: 'Please raise a support request and the lender will assign an agent.' })
+      return
+    }
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.CANDIDATE_TO_AGENT, {
       candidateName,
       loanNumber: loan?.loanNumber ?? '',
     })
-    openWhatsApp(AGENT_PHONE, msg)
+    openWhatsApp(agentPhone, msg)
     toast.success('WhatsApp draft opened', { description: 'Your agent will respond shortly.' })
-  }
-  const onWhatsAppOwner = () => {
-    const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.CANDIDATE_TO_OWNER, {
-      candidateName,
-      loanNumber: loan?.loanNumber ?? '',
-    })
-    openWhatsApp(OWNER_PHONE, msg)
-    toast.success('WhatsApp draft opened', { description: 'Owner notified.' })
   }
 
   // Countdown to next due date
@@ -437,20 +432,30 @@ export default function CandidateHomePage() {
               <CardDescription className="text-xs">Reach out — we're here for you</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="rounded-xl border border-info/20 bg-info/5 p-3">
-                <p className="text-xs text-muted-foreground mb-1">Your Agent</p>
-                <p className="text-sm font-semibold">Arjun Nair</p>
-                <p className="text-[11px] text-muted-foreground font-mono">{AGENT_PHONE}</p>
-                <Button size="sm" variant="outline" className="w-full mt-3 text-info border-info/40 hover:bg-info/10" onClick={onWhatsAppAgent}>
-                  <MessageCircle className="h-3.5 w-3.5" /> WhatsApp Agent
-                </Button>
-              </div>
+              {loan?.assignedAgent?.phone ? (
+                <div className="rounded-xl border border-info/20 bg-info/5 p-3">
+                  <p className="text-xs text-muted-foreground mb-1">Your Agent</p>
+                  <p className="text-sm font-semibold">{loan.assignedAgent.name ?? 'Assigned Agent'}</p>
+                  <p className="text-[11px] text-muted-foreground font-mono">{loan.assignedAgent.phone}</p>
+                  <Button size="sm" variant="outline" className="w-full mt-3 text-info border-info/40 hover:bg-info/10" onClick={onWhatsAppAgent}>
+                    <MessageCircle className="h-3.5 w-3.5" /> WhatsApp Agent
+                  </Button>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-info/20 bg-info/5 p-3">
+                  <p className="text-xs text-muted-foreground mb-1">Your Agent</p>
+                  <p className="text-sm font-semibold">No agent assigned yet</p>
+                  <p className="text-[11px] text-muted-foreground">Raise a support request and the lender will assign an agent to your loan.</p>
+                </div>
+              )}
               <div className="rounded-xl border border-success/20 bg-success/5 p-3">
-                <p className="text-xs text-muted-foreground mb-1">Loan Owner</p>
-                <p className="text-sm font-semibold">Ravi Mehta · Sterling Lending</p>
-                <p className="text-[11px] text-muted-foreground font-mono">{OWNER_PHONE}</p>
-                <Button size="sm" variant="outline" className="w-full mt-3 text-success border-success/40 hover:bg-success/10" onClick={onWhatsAppOwner}>
-                  <MessageCircle className="h-3.5 w-3.5" /> WhatsApp Owner
+                <p className="text-xs text-muted-foreground mb-1">Lender Support</p>
+                <p className="text-sm font-semibold">Support Team</p>
+                <p className="text-[11px] text-muted-foreground">For escalations, raise a ticket — the lender team responds in Support.</p>
+                <Button asChild size="sm" variant="outline" className="w-full mt-3 text-success border-success/40 hover:bg-success/10">
+                  <Link href="/portal/support">
+                    <LifeBuoy className="h-3.5 w-3.5" /> Open Support
+                  </Link>
                 </Button>
               </div>
               <Button asChild size="sm" variant="ghost" className="w-full">

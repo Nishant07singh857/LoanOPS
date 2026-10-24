@@ -25,6 +25,8 @@ export default function SignupPage() {
   const [consentCommunication, setConsentCommunication] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [claimCode, setClaimCode] = React.useState('')
+  const [needsClaimCode, setNeedsClaimCode] = React.useState(false)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -33,8 +35,13 @@ export default function SignupPage() {
     const cleanName = fullName.trim()
     const cleanMobile = mobile.replace(/\D/g, '').replace(/^91(\d{10})$/, '$1')
 
-    if (cleanName.length < 2 || cleanMobile.length < 10 || cleanMobile.length > 15 || password.length < 6) {
-      setError('Please fill in all fields correctly (10-digit mobile and 6+ character password)')
+    if (cleanName.length < 2 || cleanMobile.length < 10 || cleanMobile.length > 15 || password.length < 10) {
+      setError('Please fill in all fields correctly (10-digit mobile and a password of at least 10 characters, with uppercase, lowercase and a digit)')
+      return
+    }
+
+    if (needsClaimCode && !claimCode.trim()) {
+      setError('Enter the claim code shared by your lender/agent to link this account to your existing borrower record')
       return
     }
 
@@ -44,29 +51,33 @@ export default function SignupPage() {
     }
 
     const consents = [
-      { consentType: 'DATA_PROCESSING', granted: consentDataProcessing },
-      { consentType: 'TERMS_PRIVACY', granted: consentTerms },
-      { consentType: 'COMMUNICATION', granted: consentCommunication },
+      { consentType: 'DATA_PROCESSING', granted: consentDataProcessing, policyVersion: COMPLIANCE_CONFIG.policyVersion },
+      { consentType: 'TERMS_PRIVACY', granted: consentTerms, policyVersion: COMPLIANCE_CONFIG.policyVersion },
+      { consentType: 'COMMUNICATION', granted: consentCommunication, policyVersion: COMPLIANCE_CONFIG.policyVersion },
     ]
 
     setBusy(true)
     try {
+      // Signup records the consents itself — no separate consent call.
       await api.post('/api/auth/signup', {
         fullName: cleanName,
         mobile: cleanMobile,
         password,
         consents,
+        ...(needsClaimCode && claimCode.trim() ? { claimCode: claimCode.trim() } : {}),
       })
-      await api
-        .post('/api/consents', {
-          consents,
-          policyVersion: COMPLIANCE_CONFIG.policyVersion,
-        })
-        .catch(() => {})
       toast.success('Account created successfully', { description: 'Please log in to continue' })
       router.push('/login?role=CANDIDATE')
     } catch (err: any) {
-      setError(err.message || 'Failed to create account')
+      const message = err?.message || 'Failed to create account'
+      // An existing borrower record for this mobile must be claimed with a code
+      // issued by the lender — reveal the claim-code field and let them retry.
+      if (typeof message === 'string' && message.includes('Unable to complete registration')) {
+        setNeedsClaimCode(true)
+        setError('A borrower record already exists for this mobile number. If it is yours, enter the claim code given by your lender/agent below and submit again. If you do not have a code, contact your lender.')
+      } else {
+        setError(message)
+      }
     } finally {
       setBusy(false)
     }
@@ -170,7 +181,7 @@ export default function SignupPage() {
                       placeholder="••••••••"
                       autoComplete="new-password"
                       required
-                      minLength={6}
+                      minLength={10}
                       aria-invalid={error ? 'true' : undefined}
                       aria-describedby={error ? 'signup-error' : undefined}
                       className="pl-9 pr-11 h-11 min-h-[44px] rounded-xl text-base"
@@ -185,6 +196,21 @@ export default function SignupPage() {
                     </button>
                   </div>
                 </div>
+
+                {needsClaimCode && (
+                  <div className="space-y-1.5 rounded-xl border border-warning/40 bg-warning/10 p-3.5">
+                    <Label htmlFor="claimCode">Claim Code (from your lender/agent)</Label>
+                    <Input
+                      id="claimCode"
+                      value={claimCode}
+                      onChange={(e) => setClaimCode(e.target.value)}
+                      placeholder="Enter claim code"
+                      autoComplete="one-time-code"
+                      className="h-11 min-h-[44px] rounded-xl text-base bg-background"
+                    />
+                    <p className="text-xs text-muted-foreground">Required because a borrower record already exists for this mobile number. The code proves the record is yours.</p>
+                  </div>
+                )}
 
                 {/* Unbundled DPDP Act 2023 Consents */}
                 <div className="rounded-xl border border-border/70 bg-muted/30 p-3.5 space-y-2.5 text-xs">

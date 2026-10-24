@@ -6,7 +6,7 @@ import { z } from 'zod'
 
 const isProduction = process.env.NODE_ENV === 'production'
 
-const envSchema = z.object({
+const baseEnvSchema = z.object({
   // --- Database ---
   DATABASE_URL: z
     .string()
@@ -33,6 +33,36 @@ const envSchema = z.object({
         .url('NEXT_PUBLIC_APP_URL must be a valid URL')
         .refine((v) => v.startsWith('https://'), 'NEXT_PUBLIC_APP_URL must use https:// in production')
     : z.string().optional(),
+
+  // --- Payments / cookies (conditionally required in production, see below) ---
+  ENABLE_ONLINE_PAYMENTS: z.string().optional(),
+  PAYMENT_WEBHOOK_SECRET: z.string().optional(),
+  COOKIE_SECURE: z.string().optional(),
+})
+
+const envSchema = baseEnvSchema.superRefine((env, ctx) => {
+  if (!isProduction) return
+
+  // Secure cookies are mandatory behind production HTTPS; without this a
+  // deployment can silently serve session cookies over plain HTTP.
+  if (env.COOKIE_SECURE !== 'true') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['COOKIE_SECURE'],
+      message: 'COOKIE_SECURE must be "true" in production',
+    })
+  }
+
+  // Online payments cannot be enabled without a webhook secret to verify
+  // provider callbacks against — otherwise payment events are unauthenticated.
+  if (env.ENABLE_ONLINE_PAYMENTS === 'true' && !env.PAYMENT_WEBHOOK_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['PAYMENT_WEBHOOK_SECRET'],
+      message:
+        'PAYMENT_WEBHOOK_SECRET is required in production when ENABLE_ONLINE_PAYMENTS is "true"',
+    })
+  }
 })
 
 export type ValidatedEnv = z.infer<typeof envSchema>

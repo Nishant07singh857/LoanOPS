@@ -4,7 +4,9 @@ import { z } from 'zod'
 import { requireOwner, audit } from '@/lib/server/auth'
 import { apiHandler, success, badRequest, notFound, validate } from '@/lib/server/api'
 
-const schema = z.object({}).strict()
+const schema = z.object({
+  rejectionReason: z.string().trim().min(1).max(1000),
+}).strict()
 
 export const POST = apiHandler(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const ctx = await requireOwner()

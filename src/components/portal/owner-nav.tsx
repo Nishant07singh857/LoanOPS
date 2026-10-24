@@ -18,9 +18,11 @@ export const OWNER_NAV: PortalNavGroup[] = [
     items: [
       { href: '/admin', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
       { href: '/admin/create-loan', label: 'Create Loan', icon: <UserPlus className="h-4 w-4" /> },
-      { href: '/admin/loans', label: 'Loans', icon: <Landmark className="h-4 w-4" />, badge: 612 },
-      { href: '/admin/applications', label: 'Applications', icon: <FileText className="h-4 w-4" />, badge: 27 },
-      { href: '/admin/collections', label: 'Collections', icon: <Wallet className="h-4 w-4" />, badge: 9 },
+      { href: '/admin/loans', label: 'Loans', icon: <Landmark className="h-4 w-4" /> },
+      { href: '/admin/applications', label: 'Applications', icon: <FileText className="h-4 w-4" /> },
+      { href: '/admin/collections', label: 'Collections', icon: <Wallet className="h-4 w-4" /> },
+      { href: '/admin/disbursements', label: 'Disbursements', icon: <Banknote className="h-4 w-4" /> },
+      { href: '/admin/qr-links', label: 'QR Links', icon: <QrCode className="h-4 w-4" /> },
       { href: '/admin/candidates', label: 'Candidates', icon: <Users className="h-4 w-4" /> },
     ],
   },
@@ -44,7 +46,7 @@ export const OWNER_NAV: PortalNavGroup[] = [
     label: 'Settings',
     items: [
       { href: '/admin/agreements', label: 'Agreements', icon: <FileSignature className="h-4 w-4" /> },
-      { href: '/admin/support', label: 'Support', icon: <LifeBuoy className="h-4 w-4" />, badge: 4 },
+      { href: '/admin/support', label: 'Support', icon: <LifeBuoy className="h-4 w-4" /> },
     ],
   },
 ]

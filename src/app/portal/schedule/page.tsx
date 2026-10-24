@@ -22,9 +22,6 @@ import { openWhatsApp } from '@/lib/whatsapp'
 import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
-const DEFAULT_AGENT_PHONE = '+91 98201 44556'
-const DEFAULT_AGENT_NAME = 'Arjun Nair'
-
 interface InstallmentRow {
   id: string
   installmentNumber: number
@@ -78,10 +75,14 @@ export default function SchedulePage() {
     installments.find((i) => i.status === 'OVERDUE' || i.status === 'DUE' || i.status === 'PARTIALLY_PAID') ??
     installments.find((i) => i.status === 'UPCOMING')
 
-  const agentName = data?.assignedAgent?.name || DEFAULT_AGENT_NAME
-  const agentPhone = data?.assignedAgent?.phone || DEFAULT_AGENT_PHONE
+  const agentName = data?.assignedAgent?.name ?? null
+  const agentPhone = data?.assignedAgent?.phone ?? null
 
   const onWhatsAppPickup = (instNumber: number, amountPaise: number, dueDate?: string) => {
+    if (!agentPhone || !agentName) {
+      toast.error('No agent assigned yet', { description: 'Please raise a support request and the lender will assign an agent.' })
+      return
+    }
     const amountFormatted = (amountPaise / 100).toLocaleString('en-IN')
     const msg = `Hello ${agentName}, I would like to coordinate cash collection of ₹${amountFormatted} for Installment #${instNumber}${dueDate ? ` (due ${fmtDate(dueDate)})` : ''} on Loan ${data?.loanNumber ?? ''}. - ${candidateName}`
     openWhatsApp(agentPhone, msg)
@@ -170,6 +171,7 @@ export default function SchedulePage() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
+                {agentPhone ? (
                 <Button
                   size="lg"
                   variant="outline"
@@ -184,6 +186,13 @@ export default function SchedulePage() {
                 >
                   <MessageCircle className="h-4 w-4" /> WhatsApp Agent
                 </Button>
+                ) : (
+                <Button asChild size="lg" variant="outline" className="min-h-[44px] text-info border-info/40 hover:bg-info/10">
+                  <Link href="/portal/support">
+                    <MessageCircle className="h-4 w-4" /> No agent assigned yet — Contact Support
+                  </Link>
+                </Button>
+                )}
                 <Button asChild size="lg" variant="gold" className="min-h-[44px]">
                   <Link href="/portal/payments"><Banknote className="h-4 w-4" /> Request Cash Pickup</Link>
                 </Button>

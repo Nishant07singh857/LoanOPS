@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireOwner } from '@/lib/server/auth'
 import { apiHandler, success, notFound } from '@/lib/server/api'
-import { decryptPII } from '@/lib/server/crypto'
+import { decryptPIIForMask } from '@/lib/server/crypto'
 import { maskAadhaar, maskPan, maskBankAccount } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -32,24 +32,24 @@ export const GET = apiHandler(async (req: NextRequest, { params }: { params: Pro
     ? {
         ...loan.candidate,
         aadhaarMasked: loan.candidate.aadhaarMasked
-          ? maskAadhaar(decryptPII(loan.candidate.aadhaarMasked))
+          ? maskAadhaar(decryptPIIForMask(loan.candidate.aadhaarMasked))
           : loan.application?.kycAadhaar
-            ? maskAadhaar(decryptPII(loan.application.kycAadhaar))
+            ? maskAadhaar(decryptPIIForMask(loan.application.kycAadhaar))
             : null,
         panMasked: loan.candidate.panMasked
-          ? maskPan(decryptPII(loan.candidate.panMasked))
+          ? maskPan(decryptPIIForMask(loan.candidate.panMasked))
           : loan.application?.kycPan
-            ? maskPan(decryptPII(loan.application.kycPan))
+            ? maskPan(decryptPIIForMask(loan.application.kycPan))
             : null,
-        bankAccount: loan.candidate.bankAccount ? maskBankAccount(decryptPII(loan.candidate.bankAccount)) : null,
+        bankAccount: loan.candidate.bankAccount ? maskBankAccount(decryptPIIForMask(loan.candidate.bankAccount)) : null,
       }
     : loan.candidate
 
   const maskedApplication = loan.application
     ? {
         ...loan.application,
-        kycAadhaar: loan.application.kycAadhaar ? maskAadhaar(decryptPII(loan.application.kycAadhaar)) : null,
-        kycPan: loan.application.kycPan ? maskPan(decryptPII(loan.application.kycPan)) : null,
+        kycAadhaar: loan.application.kycAadhaar ? maskAadhaar(decryptPIIForMask(loan.application.kycAadhaar)) : null,
+        kycPan: loan.application.kycPan ? maskPan(decryptPIIForMask(loan.application.kycPan)) : null,
       }
     : null
 

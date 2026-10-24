@@ -60,7 +60,7 @@ export default function AgentWhatsAppPage() {
         icon={<MessageCircle className="h-5 w-5" />}
         action={
           <Button onClick={() => setBroadcastOpen(true)} size="sm">
-            <Radio className="h-4 w-4" /> Broadcast
+            <Radio className="h-4 w-4" /> Send to Many
           </Button>
         }
       />
@@ -107,10 +107,10 @@ export default function AgentWhatsAppPage() {
       <Dialog open={broadcastOpen} onOpenChange={setBroadcastOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Broadcast WhatsApp</DialogTitle>
-            <DialogDescription>Send the same template to multiple candidates at once.</DialogDescription>
+            <DialogTitle>Send to Multiple Borrowers</DialogTitle>
+            <DialogDescription>WhatsApp does not allow automated bulk sending here. Pick borrowers and a template, then send one by one — each tap opens WhatsApp with the message ready, and you press send there.</DialogDescription>
           </DialogHeader>
-          <BroadcastForm onSubmit={() => { setBroadcastOpen(false); toast.success('Broadcast queued', { description: 'WhatsApp broadcast added to queue.' }) }} />
+          <BroadcastForm />
         </DialogContent>
       </Dialog>
     </div>
@@ -201,9 +201,16 @@ function UseTemplateDialog({ template, onClose }: { template: TemplateKey | null
   )
 }
 
-function BroadcastForm({ onSubmit }: { onSubmit: () => void }) {
+function BroadcastForm() {
+  const { user } = useSession()
   const [template, setTemplate] = React.useState<TemplateKey>('PAYMENT_REMINDER')
   const [selected, setSelected] = React.useState<string[]>([])
+  // Step-through sending state: the queue is worked through manually, one
+  // wa.me open at a time. Nothing is queued or sent on any server.
+  const [queue, setQueue] = React.useState<CandidateRow[] | null>(null)
+  const [currentIdx, setCurrentIdx] = React.useState(0)
+  const [openedIds, setOpenedIds] = React.useState<string[]>([])
+  const [skippedIds, setSkippedIds] = React.useState<string[]>([])
 
   const { data } = useQuery({
     queryKey: ['agent-candidates-for-broadcast'],
@@ -215,12 +222,106 @@ function BroadcastForm({ onSubmit }: { onSubmit: () => void }) {
     setSelected((s) => s.includes(id) ? s.filter((n) => n !== id) : [...s, id])
   }
 
-  const handleBroadcast = () => {
-    if (selected.length === 0) {
+  const startSending = () => {
+    const picked = candidates.filter((c) => selected.includes(c.id))
+    if (picked.length === 0) {
       toast.error('Pick at least one candidate')
       return
     }
-    onSubmit()
+    setQueue(picked)
+    setCurrentIdx(0)
+    setOpenedIds([])
+    setSkippedIds([])
+  }
+
+  const current = queue?.[currentIdx] ?? null
+  const finished = queue !== null && currentIdx >= queue.length
+
+  const sendToCurrent = () => {
+    if (!current) return
+    const ctx: WhatsAppContext = {
+      candidateName: current.fullName,
+      loanNumber: current.activeLoanNumbers[0] ?? '',
+      amount: (Number(current.outstanding) / 100).toLocaleString('en-IN'),
+      dueDate: 'soon',
+      agentName: user?.name ?? 'Agent',
+    }
+    const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES[template], ctx)
+    openWhatsApp(current.mobile, msg)
+    setOpenedIds((ids) => [...ids, current.id])
+    setCurrentIdx((i) => i + 1)
+  }
+
+  const skipCurrent = () => {
+    if (!current) return
+    setSkippedIds((ids) => [...ids, current.id])
+    setCurrentIdx((i) => i + 1)
+  }
+
+  const reset = () => {
+    setQueue(null)
+    setCurrentIdx(0)
+    setOpenedIds([])
+    setSkippedIds([])
+    setSelected([])
+  }
+
+  if (queue !== null) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-xl border border-border bg-muted/30 p-3.5">
+          <p className="text-sm font-medium">
+            {finished
+              ? `Done — you opened WhatsApp for ${openedIds.length} of ${queue.length} selected borrower(s)${skippedIds.length ? `, skipped ${skippedIds.length}` : ''}.`
+              : `Sending ${template.replace(/_/g, ' ')} — ${openedIds.length + skippedIds.length} of ${queue.length} done`}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Each message opens in WhatsApp with the text pre-filled; you still press Send inside WhatsApp. Nothing is sent automatically.
+          </p>
+        </div>
+        {!finished && current && (
+          <div className="rounded-xl border border-primary/40 bg-primary/5 p-4 space-y-3">
+            <div className="flex items-center gap-3">
+              <Avatar className="h-10 w-10">
+                <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials(current.fullName)}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold truncate">Next: {current.fullName}</p>
+                <p className="text-[11px] text-muted-foreground">{current.activeLoanNumbers[0] ?? '—'} · {current.mobile}</p>
+              </div>
+              <span className="text-xs font-medium text-muted-foreground">{currentIdx + 1} / {queue.length}</span>
+            </div>
+            <div className="flex gap-2">
+              <Button className="flex-1" onClick={sendToCurrent}>
+                <Send className="h-4 w-4" /> Send to {current.fullName.split(' ')[0]}
+              </Button>
+              <Button variant="outline" onClick={skipCurrent}>Skip</Button>
+            </div>
+          </div>
+        )}
+        {queue.length > 0 && (
+          <div className="space-y-1.5">
+            {queue.map((c, i) => (
+              <div key={c.id} className="flex items-center gap-2 text-xs">
+                {openedIds.includes(c.id) ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
+                ) : skippedIds.includes(c.id) ? (
+                  <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                ) : (
+                  <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-border inline-block" />
+                )}
+                <span className={cn(i === currentIdx && !finished && 'font-semibold')}>
+                  {c.fullName} — {openedIds.includes(c.id) ? 'opened in WhatsApp' : skippedIds.includes(c.id) ? 'skipped' : i === currentIdx && !finished ? 'up next' : 'waiting'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={reset}>{finished ? 'Start a new list' : 'Cancel and start over'}</Button>
+        </DialogFooter>
+      </div>
+    )
   }
 
   return (
@@ -266,7 +367,7 @@ function BroadcastForm({ onSubmit }: { onSubmit: () => void }) {
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={() => setSelected([])}>Clear</Button>
-        <Button onClick={handleBroadcast}><Radio className="h-4 w-4" /> Queue Broadcast</Button>
+        <Button onClick={startSending}><Send className="h-4 w-4" /> Start Sending One-by-One</Button>
       </DialogFooter>
     </div>
   )

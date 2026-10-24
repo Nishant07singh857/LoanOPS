@@ -453,7 +453,7 @@ export default function AgentCandidateDetailPage() {
                                 {formatStatus(cc.verificationStatus ?? cc.status)}
                               </StatusBadge>
                               <Button asChild size="sm" variant="outline" className="h-8">
-                                <Link href={`/portal/receipts/${cc.id}`}>
+                                <Link href={`/agent/receipts/${cc.id}`}>
                                   <Receipt className="h-3.5 w-3.5" /> Receipt
                                 </Link>
                               </Button>
@@ -808,7 +808,9 @@ function PTPSection({ candidateId, loanId, ptps }: {
       return api.post('/api/agent/ptp', {
         candidateId,
         loanId,
-        promisedAmount: amount,
+        // The form collects RUPEES; the API stores PAISE. Convert here —
+        // sending the raw rupee value stored promises 100x too small.
+        promisedAmount: String(Math.round(Number(amount) * 100)),
         promiseDate,
         notes,
       })

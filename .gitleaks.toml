@@ -16,9 +16,8 @@ regex = '''(SESSION_SECRET|PII_ENCRYPTION_KEY)\s*=\s*["'][0-9a-fA-F]{64}["']'''
 tags = ["key", "secret"]
 
 [allowlist]
-description = "Allow example/test placeholders"
+description = "Allow example placeholders only. NOTE: tests/ is deliberately NOT exempt — test files must not carry real credentials either."
 paths = [
   '''\.env\.example$''',
-  '''tests/.*''',
   '''DEPLOYMENT\.md$''',
 ]

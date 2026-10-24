@@ -19,6 +19,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { useSession } from '@/lib/session'
@@ -474,7 +477,7 @@ export default function ProfilePage() {
 
       <LegalFooter compact className="mt-4" />
 
-      <EditProfileDialog open={editOpen} onOpenChange={setEditOpen} />
+      <EditProfileDialog open={editOpen} onOpenChange={setEditOpen} profile={profile ?? null} />
 
       <Dialog open={erasureOpen} onOpenChange={setErasureOpen}>
         <DialogContent>
@@ -533,29 +536,132 @@ function DetailRow({ label, value, icon, mono, full }: { label: string; value: s
   )
 }
 
-function EditProfileDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+function EditProfileDialog({ open, onOpenChange, profile }: { open: boolean; onOpenChange: (v: boolean) => void; profile: Profile | null }) {
+  const queryClient = useQueryClient()
+  const [fullName, setFullName] = React.useState('')
+  const [email, setEmail] = React.useState('')
+  const [address, setAddress] = React.useState('')
+  const [occupation, setOccupation] = React.useState('')
+  const [employer, setEmployer] = React.useState('')
+  const [monthlyIncome, setMonthlyIncome] = React.useState('')
+  const [bankName, setBankName] = React.useState('')
+  const [bankIfsc, setBankIfsc] = React.useState('')
+  const [upiId, setUpiId] = React.useState('')
+
+  // Prefill from the loaded profile each time the dialog opens.
+  const [prevOpen, setPrevOpen] = React.useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
+    if (open && profile) {
+      setFullName(profile.fullName ?? '')
+      setEmail(profile.email ?? '')
+      setAddress(profile.address ?? '')
+      setOccupation(profile.occupation ?? '')
+      setEmployer(profile.employer ?? '')
+      setMonthlyIncome(profile.monthlyIncome != null ? String(profile.monthlyIncome) : '')
+      setBankName(profile.bankName ?? '')
+      setBankIfsc(profile.bankIfsc ?? '')
+      setUpiId(profile.upiId ?? '')
+    }
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const payload: Record<string, unknown> = {
+        fullName: fullName.trim(),
+        email: email.trim() || null,
+        address: address.trim() || null,
+        occupation: occupation.trim() || null,
+        employer: employer.trim() || null,
+        bankName: bankName.trim() || null,
+        bankIfsc: bankIfsc.trim() || null,
+        upiId: upiId.trim() || null,
+      }
+      if (monthlyIncome.trim()) payload.monthlyIncome = Number(monthlyIncome)
+      return api.patch('/api/candidate/profile', payload)
+    },
+    onSuccess: () => {
+      toast.success('Profile updated')
+      queryClient.invalidateQueries({ queryKey: ['candidate-profile'] })
+      onOpenChange(false)
+    },
+    onError: (err: any) => {
+      toast.error('Could not update profile', { description: err?.message || 'Please try again.' })
+    },
+  })
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (fullName.trim().length < 2) {
+      toast.error('Enter your full name')
+      return
+    }
+    if (monthlyIncome.trim() && Number.isNaN(Number(monthlyIncome))) {
+      toast.error('Monthly income must be a number')
+      return
+    }
+    saveMutation.mutate()
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Edit Profile</DialogTitle>
-          <DialogDescription>For security, KYC and bank details cannot be edited directly. Raise a support request or contact your agent.</DialogDescription>
+          <DialogDescription>Update your contact and employment details. Mobile number and KYC identity documents cannot be changed here — for those, raise a support request.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
+        <form onSubmit={submit} className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+          <div className="space-y-1.5">
+            <Label htmlFor="ep-name">Full Name</Label>
+            <Input id="ep-name" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ep-email">Email</Label>
+            <Input id="ep-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ep-address">Address</Label>
+            <Textarea id="ep-address" value={address} onChange={(e) => setAddress(e.target.value)} rows={2} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="ep-occupation">Occupation</Label>
+              <Input id="ep-occupation" value={occupation} onChange={(e) => setOccupation(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ep-employer">Employer</Label>
+              <Input id="ep-employer" value={employer} onChange={(e) => setEmployer(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ep-income">Monthly Income (₹)</Label>
+              <Input id="ep-income" type="number" min={0} value={monthlyIncome} onChange={(e) => setMonthlyIncome(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ep-upi">UPI ID</Label>
+              <Input id="ep-upi" value={upiId} onChange={(e) => setUpiId(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ep-bank">Bank Name</Label>
+              <Input id="ep-bank" value={bankName} onChange={(e) => setBankName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ep-ifsc">Bank IFSC</Label>
+              <Input id="ep-ifsc" value={bankIfsc} onChange={(e) => setBankIfsc(e.target.value)} />
+            </div>
+          </div>
           <div className="rounded-xl bg-info/5 border border-info/15 p-3 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 text-info flex-shrink-0 mt-0.5" />
-            <p className="text-[11px] text-muted-foreground">To update Aadhaar, PAN, or bank details, raise a support request with the KYC category.</p>
+            <p className="text-[11px] text-muted-foreground">To update Aadhaar, PAN, or bank account number, raise a support request with the KYC category so the team can verify your documents.</p>
           </div>
-          <p className="text-sm text-muted-foreground">Our team will verify your updated documents and update your profile within 24 hours.</p>
-        </div>
-        <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button asChild onClick={() => onOpenChange(false)}>
-            <Link href="/portal/support">Raise Support Request</Link>
-          </Button>
-        </DialogFooter>
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saveMutation.isPending}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saveMutation.isPending}>
+              {saveMutation.isPending ? 'Saving…' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   )

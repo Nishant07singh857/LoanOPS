@@ -254,19 +254,19 @@ export default function CollectionsPage() {
       {/* KPI strip */}
       <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
         <StaggerItem>
-          <KPICard label="Today's Collections" value={formatPaiseToINR(todaysCollections)} icon={<Banknote className="h-5 w-5" />} variant="success" spark={[100, 120, 140, 130, 160, 180, 200]} />
+          <KPICard label="Today's Collections" value={formatPaiseToINR(todaysCollections)} icon={<Banknote className="h-5 w-5" />} variant="success" />
         </StaggerItem>
         <StaggerItem>
-          <KPICard label="Pending Cash Verify" value={String(kpis?.pendingCashVerification ?? pendingCash.length)} icon={<Clock className="h-5 w-5" />} variant="warning" spark={[5, 6, 7, 8, 9, 9, 9]} />
+          <KPICard label="Pending Cash Verify" value={String(kpis?.pendingCashVerification ?? pendingCash.length)} icon={<Clock className="h-5 w-5" />} variant="warning" />
         </StaggerItem>
         <StaggerItem>
-          <KPICard label="Broken PTP" value={String(kpis?.brokenPtp ?? 0)} icon={<XCircle className="h-5 w-5" />} variant="destructive" spark={[2, 3, 4, 5, 6, 6, 6]} />
+          <KPICard label="Broken PTP" value={String(kpis?.brokenPtp ?? 0)} icon={<XCircle className="h-5 w-5" />} variant="destructive" />
         </StaggerItem>
         <StaggerItem>
-          <KPICard label="PTP Due Today" value={String(kpis?.ptpDueToday ?? 0)} icon={<Clock className="h-5 w-5" />} variant="info" spark={[10, 12, 13, 14, 14, 14, 14]} />
+          <KPICard label="PTP Due Today" value={String(kpis?.ptpDueToday ?? 0)} icon={<Clock className="h-5 w-5" />} variant="info" />
         </StaggerItem>
         <StaggerItem>
-          <KPICard label="Overdue Loans" value={String(kpis?.overdueLoans ?? 0)} icon={<AlertTriangle className="h-5 w-5" />} variant="destructive" spark={[28, 32, 35, 38, 38, 38, 38]} />
+          <KPICard label="Overdue Loans" value={String(kpis?.overdueLoans ?? 0)} icon={<AlertTriangle className="h-5 w-5" />} variant="destructive" />
         </StaggerItem>
       </StaggerContainer>
 
@@ -414,7 +414,7 @@ export default function CollectionsPage() {
                                     size="sm"
                                     className="h-8 px-2.5 text-xs"
                                   >
-                                    <Link href={`/portal/receipts/${c.id}`}>
+                                    <Link href={`/admin/receipts/${c.id}`}>
                                       <Receipt className="h-3.5 w-3.5" /> View Receipt
                                     </Link>
                                   </Button>
@@ -490,7 +490,7 @@ export default function CollectionsPage() {
                                 variant="outline"
                                 className="flex-1 h-10"
                               >
-                                <Link href={`/portal/receipts/${c.id}`}>
+                                <Link href={`/admin/receipts/${c.id}`}>
                                   <Receipt className="h-4 w-4" /> View Receipt
                                 </Link>
                               </Button>
@@ -723,7 +723,7 @@ export default function CollectionsPage() {
             <Button variant="outline" className="h-11" onClick={() => setViewCollection(null)}>Close</Button>
             {viewCollection && isRowVerifiedOrAllocated(viewCollection) && (
               <Button asChild className="h-11">
-                <Link href={`/portal/receipts/${viewCollection.id}`}>
+                <Link href={`/admin/receipts/${viewCollection.id}`}>
                   <Receipt className="h-4 w-4" /> View Receipt
                 </Link>
               </Button>

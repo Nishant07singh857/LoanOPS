@@ -239,7 +239,16 @@ export function stripImageMetadata(buf: Buffer, mime: AllowedUploadMime): Buffer
 const PRIVATE_STORAGE_ROOT = path.join(process.cwd(), '.storage', 'uploads')
 
 function getFileSigningSecret(): string {
-  return process.env.SESSION_SECRET || 'dev-file-signing-secret'
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET
+  if (process.env.NODE_ENV === 'production') {
+    // Never sign private-file URLs with a publicly-known secret in
+    // production: anyone could forge signed URLs for any file. Fail closed.
+    throw new Error(
+      'SESSION_SECRET must be set in production — refusing to use the development file-signing secret'
+    )
+  }
+  // Development/test only.
+  return 'dev-file-signing-secret'
 }
 
 export function signPrivateFileUrl(fileKey: string, ttlSeconds = 900): string {

@@ -110,7 +110,16 @@ export default function ReceiptsPage() {
     }
     toast.success('Receipt downloaded', { description: `${r.receiptNumber} saved to your device.` })
   }
-  const onEmail = (r: ReceiptRow) => toast.success('Emailing receipt…', { description: `${r.receiptNumber} sent to your registered email.` })
+  // No mail-sending backend exists, so this opens the borrower's own mail
+  // app with the receipt details pre-filled — a real share action, no
+  // fake "sent" claim.
+  const onEmail = (r: ReceiptRow) => {
+    const subject = encodeURIComponent(`Payment Receipt ${r.receiptNumber}`)
+    const body = encodeURIComponent(
+      `Receipt Number: ${r.receiptNumber}\nAmount: ${formatPaiseToINR(Number(r.amount))}\nStatus: ${r.status ?? r.verificationStatus ?? 'Recorded'}\n\nPlease find my payment receipt details above.`
+    )
+    window.location.href = `mailto:?subject=${subject}&body=${body}`
+  }
 
   return (
     <div className="space-y-6">

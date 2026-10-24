@@ -1,8 +1,15 @@
 import { test, expect } from '@playwright/test';
 
-// Use the credentials from the seed script
+// Credentials come from the environment (the same SEED_* variables used to
+// seed the test database). There are NO hardcoded default passwords — set
+// SEED_OWNER_PASSWORD before running E2E tests.
+function requiredEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`${name} must be set to run E2E tests (see README > Testing)`);
+  return v;
+}
 const OWNER_EMAIL = 'owner@loanops.in';
-const OWNER_PASSWORD = 'Owner@123';
+const OWNER_PASSWORD = requiredEnv('SEED_OWNER_PASSWORD');
 
 test.describe('Create Loan Application', () => {
   test.beforeEach(async ({ page }) => {

@@ -13,8 +13,16 @@ import {
 } from '@/lib/server/auth'
 import { enforceRateLimit, verifyCaptchaToken } from '@/lib/server/rate-limit'
 import { sanitizeText } from '@/lib/server/security'
+import { hashPII } from '@/lib/server/crypto'
+import { timingSafeEqual } from 'crypto'
 
-const consentItemSchema = z.object({}).strict()
+const consentItemSchema = z
+  .object({
+    consentType: z.string().trim().min(1).max(64),
+    granted: z.boolean(),
+    policyVersion: z.string().trim().max(32).optional(),
+  })
+  .strict()
 
 const signupSchema = z
   .object({
@@ -22,9 +30,21 @@ const signupSchema = z
     mobile: z.string().trim().min(10).max(20),
     password: z.string().min(10, 'Password must be at least 10 characters').max(128),
     consents: z.array(consentItemSchema).optional(),
+    // Required only when the mobile already belongs to a candidate that has a
+    // sensitive footprint (applications / loans / KYC / payments). The owner
+    // issues it via POST /api/owner/candidates/[id]/claim-code.
+    claimCode: z.string().trim().min(4).max(32).optional(),
     captchaToken: z.string().optional().nullable(),
   })
   .strict()
+
+function claimCodeMatches(provided: string, storedHash: string): boolean {
+  const providedHash = hashPII(provided.trim().toUpperCase())
+  const a = Buffer.from(providedHash, 'utf8')
+  const b = Buffer.from(storedHash, 'utf8')
+  if (a.length !== b.length) return false
+  return timingSafeEqual(a, b)
+}
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ip = getClientIp(req)
@@ -42,7 +62,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
   const safeName = sanitizeText(input.fullName)
 
   const cleanMobile = input.mobile.replace(/\D/g, '').replace(/^91(\d{10})$/, '$1')
-  if (!/^[6-9]\d{9}$/.test(cleanMobile) && (cleanMobile.length < 10 || cleanMobile.length > 15)) {
+  if (!/^[6-9]\d{9}$/.test(cleanMobile)) {
     recordLoginFailure(ip)
     return badRequest('Please enter a valid 10-digit mobile number')
   }
@@ -80,6 +100,42 @@ export const POST = apiHandler(async (req: NextRequest) => {
     return badRequest('Unable to complete registration with the provided details')
   }
 
+  // Account-takeover guard: a pre-created candidate with NO sensitive
+  // footprint (no applications, loans, KYC documents or payments) may be
+  // claimed by whoever registers with that mobile. A candidate WITH a
+  // footprint may only be claimed with a valid, unexpired claim code issued
+  // by the owner — otherwise anyone who knows the borrower's mobile could
+  // take over their loans/KYC by simply signing up.
+  let claimCodeUsed = false
+  if (existingCandidate) {
+    const [applicationsCount, loansCount, kycDocsCount, paymentsCount] = await Promise.all([
+      db.application.count({ where: { candidateId: existingCandidate.id } }),
+      db.loan.count({ where: { candidateId: existingCandidate.id } }),
+      db.kycDocument.count({ where: { candidateId: existingCandidate.id } }),
+      db.payment.count({ where: { candidateId: existingCandidate.id } }),
+    ])
+    const hasSensitiveFootprint =
+      applicationsCount + loansCount + kycDocsCount + paymentsCount > 0
+
+    if (hasSensitiveFootprint) {
+      const claimValid =
+        !!input.claimCode &&
+        !!existingCandidate.claimCodeHash &&
+        !!existingCandidate.claimCodeExpiresAt &&
+        existingCandidate.claimCodeExpiresAt > new Date() &&
+        claimCodeMatches(input.claimCode, existingCandidate.claimCodeHash)
+
+      if (!claimValid) {
+        await constantTimeDummyVerify(input.password)
+        recordLoginFailure(ip)
+        // Generic message — never reveal whether the mobile, the code, or
+        // the candidate record was the problem.
+        return badRequest('Unable to complete registration with the provided details')
+      }
+      claimCodeUsed = true
+    }
+  }
+
   const hashedPassword = await hashPassword(input.password)
   const now = new Date()
 
@@ -103,6 +159,10 @@ export const POST = apiHandler(async (req: NextRequest) => {
             data: {
               userId: user.id,
               fullName: safeName,
+              // Claim codes are single-use — clear them once consumed.
+              ...(claimCodeUsed
+                ? { claimCodeHash: null, claimCodeExpiresAt: null }
+                : {}),
             },
           })
         : await tx.candidate.create({

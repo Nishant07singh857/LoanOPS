@@ -123,16 +123,16 @@ export default function DisbursementsPage() {
 
       <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StaggerItem>
-          <KPICard label="Pending Disbursements" value={String(pending.length)} icon={<Clock className="h-5 w-5" />} variant="warning" spark={[5, 6, 7, 8, 8, 8, 8]} />
+          <KPICard label="Pending Disbursements" value={String(pending.length)} icon={<Clock className="h-5 w-5" />} variant="warning" />
         </StaggerItem>
         <StaggerItem>
-          <KPICard label="Total Disbursed" value={formatPaiseToINRShort(recent.reduce((s, r) => s + Number(r.amount), 0))} icon={<Banknote className="h-5 w-5" />} variant="success" spark={[400, 420, 460, 500, 540, 560, 562]} />
+          <KPICard label="Total Disbursed" value={formatPaiseToINRShort(recent.reduce((s, r) => s + Number(r.amount), 0))} icon={<Banknote className="h-5 w-5" />} variant="success" />
         </StaggerItem>
         <StaggerItem>
-          <KPICard label="Online Transfers" value={`${recent.filter((r) => r.method === 'ONLINE').length}`} icon={<Building2 className="h-5 w-5" />} variant="info" spark={[60, 62, 64, 65, 66, 67, 68]} />
+          <KPICard label="Online Transfers" value={`${recent.filter((r) => r.method === 'ONLINE').length}`} icon={<Building2 className="h-5 w-5" />} variant="info" />
         </StaggerItem>
         <StaggerItem>
-          <KPICard label="Offline Cash" value={`${recent.filter((r) => r.method === 'OFFLINE').length}`} icon={<Banknote className="h-5 w-5" />} variant="default" spark={[40, 38, 36, 35, 34, 33, 32]} />
+          <KPICard label="Offline Cash" value={`${recent.filter((r) => r.method === 'OFFLINE').length}`} icon={<Banknote className="h-5 w-5" />} variant="default" />
         </StaggerItem>
       </StaggerContainer>
 

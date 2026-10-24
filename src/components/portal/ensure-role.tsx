@@ -17,11 +17,12 @@ export function EnsureRole({ role, children }: { role: Role; children: React.Rea
   React.useEffect(() => {
     if (loading) return
     if (!user) {
-      // Redirect to login with return path. Use replace() so the protected URL
-      // is replaced by /login in history — back button won't bounce back to /admin
-      // and trigger another redirect loop.
-      const path = role === 'OWNER' ? '/admin' : role === 'AGENT' ? '/agent' : '/portal'
-      router.replace(`/login?redirect=${encodeURIComponent(path)}&role=${role}`)
+      // Redirect to login preserving the exact deep link, so after sign-in the
+      // user lands back on the page they were sent to — not the section home.
+      // Use replace() so the protected URL is replaced by /login in history —
+      // back button won't bounce back and trigger another redirect loop.
+      const path = typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/'
+      router.replace(`/login?next=${encodeURIComponent(path)}&redirect=${encodeURIComponent(path)}&role=${role}`)
     }
   }, [user, loading, role, router])
 

@@ -24,9 +24,6 @@ import { openWhatsApp } from '@/lib/whatsapp'
 import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
-const DEFAULT_AGENT_PHONE = '+91 98201 44556'
-const DEFAULT_AGENT_NAME = 'Arjun Nair'
-
 const METHOD_BADGE_VARIANT: Record<string, string> = {
   ONLINE_UPI: 'info',
   ONLINE_NETBANKING: 'info',
@@ -105,10 +102,14 @@ export default function PaymentsPage() {
   const nextInstallmentAmount = loan?.nextDue?.totalDue ?? loan?.installmentAmount ?? '0'
   const nextDue = loan?.nextDue
 
-  const agentName = loan?.assignedAgent?.name || DEFAULT_AGENT_NAME
-  const agentPhone = loan?.assignedAgent?.phone || DEFAULT_AGENT_PHONE
+  const agentName = loan?.assignedAgent?.name ?? null
+  const agentPhone = loan?.assignedAgent?.phone ?? null
 
   const handleWhatsAppPickup = () => {
+    if (!agentPhone || !agentName) {
+      toast.error('No agent assigned yet', { description: 'Please raise a support request and the lender will assign an agent.' })
+      return
+    }
     const amountFormatted = (Number(nextInstallmentAmount) / 100).toLocaleString('en-IN')
     const msg = `Hello ${agentName}, I would like to schedule a cash pickup of ₹${amountFormatted} for my loan ${loan?.loanNumber ?? ''} (Installment #${nextDue?.installmentNumber ?? '—'}). - ${candidateName}`
     openWhatsApp(agentPhone, msg)
@@ -141,14 +142,22 @@ export default function PaymentsPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    onClick={handleWhatsAppPickup}
-                    className="min-h-[44px] text-info border-info/40 hover:bg-info/10"
-                  >
-                    <MessageCircle className="h-4 w-4" /> WhatsApp Agent
-                  </Button>
+                  {agentPhone ? (
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      onClick={handleWhatsAppPickup}
+                      className="min-h-[44px] text-info border-info/40 hover:bg-info/10"
+                    >
+                      <MessageCircle className="h-4 w-4" /> WhatsApp Agent
+                    </Button>
+                  ) : (
+                    <Button asChild size="lg" variant="outline" className="min-h-[44px] text-info border-info/40 hover:bg-info/10">
+                      <Link href="/portal/support">
+                        <MessageCircle className="h-4 w-4" /> No agent assigned yet — Contact Support
+                      </Link>
+                    </Button>
+                  )}
                   <Button
                     size="lg"
                     variant="gold"
@@ -337,8 +346,8 @@ function OfflineCashCollectionDialog({
   loanNumber?: string
   dueDate?: string
   installmentNumber?: number
-  agentName: string
-  agentPhone: string
+  agentName: string | null
+  agentPhone: string | null
   onWhatsAppPickup: () => void
 }) {
   return (
@@ -371,6 +380,7 @@ function OfflineCashCollectionDialog({
             </p>
           </div>
 
+          {agentName && agentPhone ? (
           <div className="rounded-xl border border-border bg-card p-3.5 space-y-2.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
@@ -398,6 +408,15 @@ function OfflineCashCollectionDialog({
               <MessageCircle className="h-4 w-4" /> WhatsApp Assigned Agent for Pickup
             </Button>
           </div>
+          ) : (
+          <div className="rounded-xl border border-border bg-card p-3.5 space-y-2.5">
+            <p className="text-sm font-semibold">No agent assigned yet</p>
+            <p className="text-xs text-muted-foreground">An agent has not been assigned to your loan yet. Please raise a support request and the lender will assign one.</p>
+            <Button asChild variant="outline" className="w-full h-11">
+              <Link href="/portal/support">Go to Support</Link>
+            </Button>
+          </div>
+          )}
         </div>
 
         <DialogFooter>

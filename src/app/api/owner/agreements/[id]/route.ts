@@ -5,7 +5,13 @@ import { db } from '@/lib/db'
 import { requireOwner, audit } from '@/lib/server/auth'
 import { apiHandler, success, badRequest, notFound, validate } from '@/lib/server/api'
 
-const patchSchema = z.object({}).strict()
+const patchSchema = z.object({
+  isActive: z.boolean().optional(),
+  name: z.string().trim().min(2).max(200).optional(),
+  body: z.string().trim().min(1).max(100000).optional(),
+}).strict().refine((d) => d.isActive !== undefined || d.name !== undefined || d.body !== undefined, {
+  message: 'Provide at least one of isActive, name, body',
+})
 
 export const PATCH = apiHandler(async (
   req: NextRequest,

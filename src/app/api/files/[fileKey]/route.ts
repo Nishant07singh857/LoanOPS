@@ -26,20 +26,15 @@ export async function GET(
   const rlResponse = enforceRateLimit(req, 'file_access')
   if (rlResponse) return rlResponse
 
-  const safePath = resolvePrivateStoragePath(fileKey)
-  if (!safePath) {
-    return NextResponse.json(
-      { error: { code: 'BAD_REQUEST', message: 'Invalid file identifier' } },
-      { status: 400 }
-    )
-  }
-
   const url = new URL(req.url)
   const exp = url.searchParams.get('exp')
   const sig = url.searchParams.get('sig')
   const hasValidSignature = exp && sig ? verifyPrivateFileSignature(fileKey, exp, sig) : false
 
-  // Always require an authenticated session, and verify ownership unless Owner
+  // Authenticate BEFORE validating the file identifier: an anonymous
+  // caller must always get 401 (never a 400 that leaks which identifiers
+  // are well-formed), and identifier validation applies to callers who
+  // presented either a session or a valid file signature.
   let ctx
   try {
     ctx = await requireAuth()
@@ -51,6 +46,14 @@ export async function GET(
       )
     }
     ctx = null
+  }
+
+  const safePath = resolvePrivateStoragePath(fileKey)
+  if (!safePath) {
+    return NextResponse.json(
+      { error: { code: 'BAD_REQUEST', message: 'Invalid file identifier' } },
+      { status: 400 }
+    )
   }
 
   const fileUrlRef = `/api/files/${fileKey}`

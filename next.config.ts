@@ -14,7 +14,7 @@ const CSP_HEADER = [
 
 const nextConfig: NextConfig = {
   output: 'standalone',
-  reactStrictMode: false,
+  reactStrictMode: true,
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
   async headers() {
