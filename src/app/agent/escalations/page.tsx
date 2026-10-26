@@ -167,10 +167,10 @@ export default function AgentEscalationsPage() {
       />
 
       <StaggerContainer className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-        <StaggerItem><KPICard label="Open" value={String(openCount)} icon={<AlertTriangle className="h-5 w-5" />} variant="destructive" spark={[1, 2, 2, 2, 3, 3, 3]} /></StaggerItem>
-        <StaggerItem><KPICard label="In Review" value={String(inReviewCount)} icon={<Eye className="h-5 w-5" />} variant="warning" spark={[1, 1, 1, 1, 1, 1, 1]} /></StaggerItem>
-        <StaggerItem><KPICard label="Resolved" value={String(resolvedCount)} icon={<CheckCircle2 className="h-5 w-5" />} variant="success" spark={[0, 1, 1, 1, 1, 1, 1]} /></StaggerItem>
-        <StaggerItem><KPICard label="Closed" value={String(closedCount)} icon={<ShieldAlert className="h-5 w-5" />} variant="default" spark={[0, 0, 0, 0, 0, 1, 1]} /></StaggerItem>
+        <StaggerItem><KPICard label="Open" value={String(openCount)} icon={<AlertTriangle className="h-5 w-5" />} variant="destructive" /></StaggerItem>
+        <StaggerItem><KPICard label="In Review" value={String(inReviewCount)} icon={<Eye className="h-5 w-5" />} variant="warning" /></StaggerItem>
+        <StaggerItem><KPICard label="Resolved" value={String(resolvedCount)} icon={<CheckCircle2 className="h-5 w-5" />} variant="success" /></StaggerItem>
+        <StaggerItem><KPICard label="Closed" value={String(closedCount)} icon={<ShieldAlert className="h-5 w-5" />} variant="default" /></StaggerItem>
       </StaggerContainer>
 
       <FadeIn>

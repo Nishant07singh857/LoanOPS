@@ -3,6 +3,24 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireCandidate } from '@/lib/server/auth'
 import { apiHandler, success, badRequest, notFound } from '@/lib/server/api'
+import { decryptPIIForMask } from '@/lib/server/crypto'
+import { maskAadhaar, maskPan } from '@/lib/utils'
+
+/**
+ * Application rows carry kycPan as AES ciphertext (enc:v1:) and kycAadhaar
+ * as a snapshot that must only ever be shown masked — never return either
+ * raw to the client. Mirrors src/app/api/owner/candidates/[id]/route.ts.
+ */
+function maskApplicationKyc<T extends { kycAadhaar?: string | null; kycPan?: string | null }>(
+  app: T | null
+): T | null {
+  if (!app) return app
+  return {
+    ...app,
+    kycAadhaar: app.kycAadhaar ? maskAadhaar(decryptPIIForMask(app.kycAadhaar)) : null,
+    kycPan: app.kycPan ? maskPan(decryptPIIForMask(app.kycPan)) : null,
+  }
+}
 
 export const GET = apiHandler(async (req: NextRequest) => {
   const ctx = await requireCandidate()
@@ -35,7 +53,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
 
   if (!loan) {
     if (draftApplication) {
-      return success({ draftApplication, hasKyc })
+      return success({ draftApplication: maskApplicationKyc(draftApplication), hasKyc })
     }
     const anyLoan = await db.loan.findFirst({
       where: { candidateId: ctx.user.candidateId },
@@ -77,8 +95,8 @@ export const GET = apiHandler(async (req: NextRequest) => {
     disbursedAt: loan.disbursedAt,
     closedAt: loan.closedAt,
     createdAt: loan.createdAt,
-    application: loan.application,
-    draftApplication: draftApplication || null,
+    application: maskApplicationKyc(loan.application),
+    draftApplication: maskApplicationKyc(draftApplication),
     agreement: agreementTemplate ? {
       id: agreementTemplate.id,
       name: agreementTemplate.name,

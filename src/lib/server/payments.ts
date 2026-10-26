@@ -11,9 +11,11 @@
 //   gets a ledger entry into the Unallocated Payments suspense account.
 // - Ledger debit account follows the payment method: CASH -> Cash in Hand,
 //   everything else -> Bank Account.
-// - Cash collections allocate NOTHING when recorded. Money moves only when the
-//   owner verifies (verifyCashPayment) or is reversed when rejected
-//   (reverseCashPayment).
+// - Cash collections allocate IMMEDIATELY when recorded (collectCashPayment):
+//   allocation happens inside the creation transaction and the payment sits
+//   in PENDING_VERIFICATION with outstanding already reduced. Owner verify
+//   (verifyCashPayment) is a confirmation only — no money moves. Owner reject
+//   (reverseCashPayment) fully reverses the allocation.
 
 import { db } from '@/lib/db'
 import { auditRaw } from '@/lib/server/auth'
@@ -272,9 +274,9 @@ export async function recomputeInstallmentsFromPayments(
     orderBy: [{ createdAt: 'asc' }],
   })
 
-  // Only payments that actually allocated funds count. A cash payment that is
-  // still PENDING_VERIFICATION has allocated nothing yet (post-hardening), so
-  // it correctly contributes 0.
+  // Only payments that actually allocated funds count. A cash payment in
+  // PENDING_VERIFICATION allocated at collection time, so it counts via its
+  // allocated* fields / allocatedAt; a payment with no allocation contributes 0.
   const allocatedRemaining = remainingPayments.filter(
     (p: any) =>
       p.allocatedAt !== null ||
@@ -756,10 +758,11 @@ export interface VerifyCashInput {
 }
 
 /**
- * Owner verification of a cash collection — THIS is where cash money moves.
- * Single transaction, payment + loan row-locked, allocates via the same
- * waterfall as capturePayment, resolves open collection tasks, posts ledger
- * entries against the Cash account, and marks the payment VERIFIED.
+ * Owner verification of a cash collection — confirmation only. No money
+ * moves here: allocation to installments already happened at collection
+ * time inside collectCashPayment's transaction. This flips the payment
+ * PENDING_VERIFICATION → VERIFIED, stamps the verifier, and resolves open
+ * collection tasks.
  */
 export async function verifyCashPayment(input: VerifyCashInput) {
   const preCheck = await db.payment.findUnique({
@@ -850,14 +853,12 @@ export interface ReverseCashInput {
 }
 
 /**
- * Rejects a cash collection.
- * - Never allocated (the normal post-hardening case: still
- *   PENDING_VERIFICATION with zero allocation): just mark REJECTED inside a
- *   status-guarded update — no ledger or schedule work, because none exists.
- * - Verified/allocated (legacy rows recorded under the old record-and-allocate
- *   flow, or a VERIFIED payment being reversed): full reversal — ledger
- *   reversals, installment recompute from remaining payments, loan balances
- *   restored, CLOSED loan reopened.
+ * Rejects a cash collection (or reverses a VERIFIED one).
+ * Cash collections allocate at collection time, so a PENDING_VERIFICATION
+ * payment already holds an allocation — rejecting it runs the full
+ * reversal: ledger REVERSAL entries, installment recompute from remaining
+ * payments, loan balances restored, CLOSED loan reopened. A VERIFIED
+ * payment being reversed goes through the same path.
  * The status guard runs INSIDE the transaction (updateMany on the expected
  * status set, abort when 0 rows) so two concurrent rejects cannot both pass
  * a stale read and double-reverse.

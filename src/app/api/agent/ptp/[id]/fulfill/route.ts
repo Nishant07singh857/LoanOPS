@@ -7,8 +7,11 @@ import { apiHandler, success, notFound, forbidden } from '@/lib/server/api'
 export const POST = apiHandler(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const ctx = await requireAgent()
   const { id } = await params
-  const ptp = await db.ptp.findUnique({
-    where: { id },
+  // Ptp has no organizationId column — scope via the loan relation
+  // (Loan.organizationId) as defense-in-depth alongside the agentId
+  // ownership check below.
+  const ptp = await db.ptp.findFirst({
+    where: { id, loan: { organizationId: ctx.user.organizationId } },
     include: { candidate: true, loan: true },
   })
   if (!ptp) return notFound('PTP not found')

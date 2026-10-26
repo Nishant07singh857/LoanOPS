@@ -35,9 +35,7 @@ import {
 
 const TRUST = [
   { icon: <ShieldCheck className="h-4 w-4" />, label: 'Bank-grade security' },
-  { icon: <Landmark className="h-4 w-4" />, label: 'RBI compliant' },
-  { icon: <Lock className="h-4 w-4" />, label: '256-bit encrypted' },
-  { icon: <CheckCircle2 className="h-4 w-4" />, label: 'ISO 27001' },
+  { icon: <Lock className="h-4 w-4" />, label: 'Personal data encrypted' },
 ]
 
 interface CandidateLoan {
@@ -498,6 +496,8 @@ function DraftApplicationFlow({
   agreement?: any
   candidateName: string
 }) {
+  const { user } = useSession()
+  const orgName = user?.organizationName || 'Your Lender'
   const queryClient = useQueryClient()
   const [step, setStep] = React.useState<1 | 2 | 3>(1)
 
@@ -982,7 +982,7 @@ function DraftApplicationFlow({
                 </div>
                 <div className="max-h-48 overflow-y-auto rounded-lg border border-border/60 bg-muted/20 p-3 text-xs font-mono whitespace-pre-wrap leading-relaxed">
                   {agreement?.body ??
-                    `LOAN AGREEMENT — STERLING LENDING\n\nBorrower: ${candidateName}\nApplication No: ${draftApplication.applicationNumber}\nPrincipal Amount: ${formatPaiseToINR(principalPaise)}\nInstallment Amount (EMI): ${formatPaiseToINR(installmentPaise)} (${installmentsCount} ${String(draftApplication.frequency || 'MONTHLY').toLowerCase()} installments)\nTotal Repayable: ${formatPaiseToINR(totalRepayablePaise)}\n\n1. REPAYMENT OBLIGATION: The Borrower agrees to repay the Principal Amount along with applicable interest and fees according to the repayment schedule.\n2. KYC & PRIVACY: All Aadhaar, PAN, and Bank details are encrypted and masked in accordance with RBI Digital Lending Guidelines.\n3. PREPAYMENT: The Borrower may prepay the loan in part or in full at any time.`}
+                    `LOAN AGREEMENT — ${orgName.toUpperCase()}\n\nBorrower: ${candidateName}\nApplication No: ${draftApplication.applicationNumber}\nPrincipal Amount: ${formatPaiseToINR(principalPaise)}\nInstallment Amount (EMI): ${formatPaiseToINR(installmentPaise)} (${installmentsCount} ${String(draftApplication.frequency || 'MONTHLY').toLowerCase()} installments)\nTotal Repayable: ${formatPaiseToINR(totalRepayablePaise)}\n\n1. REPAYMENT OBLIGATION: The Borrower agrees to repay the Principal Amount along with applicable interest and fees according to the repayment schedule.\n2. KYC & PRIVACY: All Aadhaar, PAN, and Bank details are encrypted and masked in accordance with RBI Digital Lending Guidelines.\n3. PREPAYMENT: The Borrower may prepay the loan in part or in full at any time.`}
                 </div>
               </div>
 

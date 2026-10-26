@@ -420,14 +420,3 @@ function Stat({ label, value, tint }: { label: string; value: string; tint?: str
   )
 }
 
-function Sparkline({ data, className }: { data: number[]; className?: string }) {
-  const w = 60, h = 20
-  const max = Math.max(...data), min = Math.min(...data)
-  const range = max - min || 1
-  const points = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * h}`).join(' ')
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className={cn('w-16 h-5 fill-none', className)} preserveAspectRatio="none" aria-hidden="true">
-      <polyline points={points} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}

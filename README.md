@@ -75,7 +75,7 @@ Startup validates the environment (`src/lib/server/env.ts`): in production the p
 | `npm start` | Run the standalone server (`.next/standalone/server.js`) |
 | `npm run lint` | ESLint |
 | `npm run test:unit` | Financial-engine & security unit tests (tsx) |
-| `npm run test:e2e` | Playwright E2E suite (needs a running server + `DATABASE_URL_TEST`) |
+| `npm run test:e2e` | Playwright E2E suite (needs `DATABASE_URL_TEST`; Playwright boots its own server via its `webServer` config) |
 | `npm run db:migrate` / `db:migrate:deploy` | Prisma migrations (dev / deploy) |
 | `npm run db:generate` | Regenerate the Prisma client |
 | `npm run db:seed` | Seed development data (never in production unless `ALLOW_PROD_SEED=true` — do not) |
@@ -107,7 +107,7 @@ Set `DOMAIN` to the public hostname and run Caddy with the committed `Caddyfile`
 
 - **Borrower account linking (claim codes):** candidates are often pre-created by staff before the borrower ever logs in. Signup must **never** silently attach an account to a pre-existing candidate by mobile number alone. Linking requires a one-time claim code issued to that candidate (stored only as a hash in `Candidate.claimCodeHash`, with `claimCodeExpiresAt` expiry). Treat claim codes like passwords: single-use, short-lived, never logged.
 - **PII:** Aadhaar/PAN/bank details are encrypted at rest (AES-256-GCM, `src/lib/server/crypto.ts`), masked in API responses, and full values are only exposed through the owner-only, rate-limited, audited PII-reveal endpoint. In production, the crypto and file-signing helpers **fail closed** — there are no fallback development secrets in production code paths.
-- **Cash verification flow:** an agent recording cash does **not** settle a loan. Cash payments enter `PENDING_VERIFICATION`; borrower liability, installment allocation and any loan closure happen only when an owner verifies the cash was actually received. A rejected verification reverses the pending entry.
+- **Cash verification flow:** when an agent records a cash collection, allocation to installments happens immediately inside the creation transaction and the payment sits in `PENDING_VERIFICATION` with outstanding already reduced. Owner verify is a confirmation only — no money moves. Owner reject runs a full reversal: installments are recomputed, the loan balance is restored, ledger `REVERSAL` entries are written, and a `CLOSED` loan reopens if it had closed.
 - **Payments & webhooks:** webhook signatures are verified with `PAYMENT_WEBHOOK_SECRET`, and provider events are idempotent at the database level (`WebhookEvent` has a unique `(provider, eventId)` constraint). Payment capture is transactional.
 - **Consents:** DPDP consent records are legal evidence. They may only be written for an authenticated, identified subject — never from unauthenticated client-supplied candidate/application IDs.
 - **Rate limiting:** limits in `src/lib/server/rate-limit.ts` are in-memory and per-instance (documented in that file). Behind multiple instances, treat them as a first line of defence, not a distributed control.

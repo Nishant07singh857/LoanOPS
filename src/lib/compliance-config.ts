@@ -53,12 +53,12 @@ export const REQUIRED_CONSENTS: ConsentDefinition[] = [
 
 const defaultAddress =
   process.env.NEXT_PUBLIC_COMPANY_ADDRESS ||
-  'Level 8, Maker Maxity, Bandra Kurla Complex, Mumbai, Maharashtra 400051, India'
+  '[COMPANY ADDRESS — SET NEXT_PUBLIC_COMPANY_ADDRESS]'
 
 export const COMPLIANCE_CONFIG = {
   companyName:
     process.env.NEXT_PUBLIC_COMPANY_NAME ||
-    'Sterling Lending Operations (Technology Platform)',
+    '[COMPANY NAME — SET NEXT_PUBLIC_COMPANY_NAME]',
   cinNumber:
     process.env.NEXT_PUBLIC_COMPANY_CIN ||
     '[CIN PLACEHOLDER — SET NEXT_PUBLIC_COMPANY_CIN]',
@@ -67,7 +67,7 @@ export const COMPLIANCE_CONFIG = {
     '[REGULATED ENTITY / NBFC LICENCE PLACEHOLDER — SET NEXT_PUBLIC_RBI_REG_NUMBER]',
   registeredAddress: defaultAddress,
   supportEmail: process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@loanops.in',
-  supportPhone: process.env.NEXT_PUBLIC_SUPPORT_PHONE || '+91-22-4000-0000',
+  supportPhone: process.env.NEXT_PUBLIC_SUPPORT_PHONE || '[SUPPORT PHONE — SET NEXT_PUBLIC_SUPPORT_PHONE]',
   grievanceOfficer: {
     name:
       process.env.NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME ||

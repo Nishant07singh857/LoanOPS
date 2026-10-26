@@ -587,9 +587,28 @@ export function clearLoginFailures(key: string): void {
 }
 
 export function getClientIp(req: NextRequest | Request): string {
-  const xff = req.headers.get('x-forwarded-for')
-  if (xff) return xff.split(',')[0].trim()
-  return req.headers.get('x-real-ip') || '127.0.0.1'
+  // Forwarded headers are honored ONLY under the same trust config as
+  // src/lib/server/rate-limit.ts (extractClientIp): TRUST_PROXY="true" or
+  // a header named via TRUSTED_PROXY_HEADER. Without a trusted proxy these
+  // headers are client-controlled — trusting them would let callers spoof
+  // the IP recorded in audit logs, consent records and login lockouts.
+  // (extractClientIp itself is not reused here: it returns a rate-limit
+  // bucket key, `direct:<ua-hash>`, not an IP address.)
+  const trustedProxyHeader = process.env.TRUSTED_PROXY_HEADER?.trim()
+  const trustProxy = process.env.TRUST_PROXY === 'true' || Boolean(trustedProxyHeader)
+
+  if (trustProxy) {
+    const headerName = (trustedProxyHeader || 'x-forwarded-for').toLowerCase()
+    const forwarded = req.headers.get(headerName)
+    if (forwarded) {
+      const first = forwarded.split(',')[0]?.trim()
+      if (first) return first
+    }
+    const realIp = req.headers.get('x-real-ip')
+    if (realIp) return realIp
+  }
+
+  return '127.0.0.1'
 }
 
 // ============================================================

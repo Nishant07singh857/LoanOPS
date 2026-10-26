@@ -16,7 +16,7 @@ Never run `prisma db push --accept-data-loss` in staging or production. Always u
 
 ```bash
 # 1. Install dependencies & generate Prisma Client
-npm install --legacy-peer-deps
+npm ci
 npx prisma generate
 
 # 2. Apply pending migrations to production database
@@ -31,13 +31,13 @@ NODE_ENV=production node .next/standalone/server.js
 
 ### Docker Deployment (Non-Root User `nextjs`)
 ```bash
-docker build -t loanops:latest .
+docker build -t loanops:<git-sha> .
 docker run -d \
   --name loanops \
   --restart unless-stopped \
   -p 3000:3000 \
   --env-file .env.production \
-  loanops:latest
+  loanops:<git-sha>
 ```
 
 ---

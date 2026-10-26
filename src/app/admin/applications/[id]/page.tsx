@@ -492,7 +492,7 @@ export default function ApplicationDetailPage() {
             <CardContent className="space-y-4">
               <div className="rounded-xl bg-muted/40 p-4 text-sm leading-relaxed">
                 <p className="font-semibold mb-2"># Loan Agreement</p>
-                <p className="text-muted-foreground">This agreement is entered into between <strong>Sterling Lending</strong> ("Lender") and <strong>{c.fullName}</strong> ("Borrower"). The principal amount of <strong>{formatPaiseToINR(Number(app.principalAmount))}</strong> shall be repaid in <strong>{app.installments} {app.frequency.toLowerCase()}</strong> installments, commencing on disbursement.</p>
+                <p className="text-muted-foreground">This agreement is entered into between the Lender and <strong>{c.fullName}</strong> ("Borrower"). The principal amount of <strong>{formatPaiseToINR(Number(app.principalAmount))}</strong> shall be repaid in <strong>{app.installments} {app.frequency.toLowerCase()}</strong> installments, commencing on disbursement.</p>
                 <p className="text-muted-foreground mt-2">This agreement is governed by applicable RBI guidelines and NBFC regulations.</p>
               </div>
               <div className="flex items-center justify-between pt-3 border-t border-border">

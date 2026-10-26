@@ -34,7 +34,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
   const safeKyc = rawKyc
     ? {
         id: rawKyc.id,
-        aadhaarNumber: rawKyc.aadhaarNumber,
+        aadhaarNumber: rawKyc.aadhaarNumber ? maskAadhaar(decryptPIIForMask(rawKyc.aadhaarNumber)) : null,
         panNumber: rawKyc.panNumber ? maskPan(decryptPIIForMask(rawKyc.panNumber)) : null,
         status: rawKyc.status,
         verifiedAt: rawKyc.verifiedAt,
@@ -55,7 +55,11 @@ export const GET = apiHandler(async (req: NextRequest) => {
     bankAccount: c.bankAccount ? maskBankAccount(decryptPIIForMask(c.bankAccount)) : null,
     bankIfsc: c.bankIfsc,
     upiId: c.upiId,
-    aadhaarMasked: c.aadhaarMasked || rawKyc?.aadhaarNumber || null,
+    aadhaarMasked: c.aadhaarMasked
+      ? maskAadhaar(decryptPIIForMask(c.aadhaarMasked))
+      : rawKyc?.aadhaarNumber
+        ? maskAadhaar(decryptPIIForMask(rawKyc.aadhaarNumber))
+        : null,
     panMasked: c.panMasked
       ? maskPan(decryptPIIForMask(c.panMasked))
       : rawKyc?.panNumber

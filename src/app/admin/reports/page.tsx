@@ -117,7 +117,7 @@ export default function ReportsPage() {
     <div className="space-y-6">
       <SectionHeading
         title="Reports"
-        description="Generate, schedule, and export operational and financial reports."
+        description="Generate and export operational and financial reports."
         icon={<BarChart3 className="h-5 w-5" />}
       />
 

@@ -142,7 +142,7 @@ export default function CreateLoanPage() {
     },
     onSuccess: (res: any) => {
       if (candidateMode === 'EXISTING') {
-        toast.success('Application Offer Created & Sent to Borrower!')
+        toast.success('Application offer created — the borrower can view it in their portal.')
         router.push('/admin/applications')
       } else {
         setGeneratedLink(res)
