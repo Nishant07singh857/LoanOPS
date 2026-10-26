@@ -210,7 +210,6 @@ export default function AgentCashPage() {
             value={formatPaiseToINR(unverifiedCashInHandPaise)}
             icon={<Wallet className="h-5 w-5" />}
             variant="warning"
-            spark={[100, 140, 180, 200, 220, 240, 260]}
           />
         </StaggerItem>
         <StaggerItem>
@@ -219,7 +218,6 @@ export default function AgentCashPage() {
             value={formatPaiseToINRShort(todaysCash)}
             icon={<Banknote className="h-5 w-5" />}
             variant="success"
-            spark={[120, 180, 220, 280, 320, 380, 420]}
           />
         </StaggerItem>
         <StaggerItem>
@@ -228,7 +226,6 @@ export default function AgentCashPage() {
             value={String(pendingCount)}
             icon={<Clock className="h-5 w-5" />}
             variant="warning"
-            spark={[1, 2, 2, 2, 2, 2, 2]}
           />
         </StaggerItem>
         <StaggerItem>
@@ -237,7 +234,6 @@ export default function AgentCashPage() {
             value={String(verifiedCount)}
             icon={<CheckCircle2 className="h-5 w-5" />}
             variant="info"
-            spark={[1, 2, 3, 3, 4, 4, 5]}
           />
         </StaggerItem>
         <StaggerItem>
@@ -246,7 +242,6 @@ export default function AgentCashPage() {
             value={String(rejectedCount)}
             icon={<XCircle className="h-5 w-5" />}
             variant="destructive"
-            spark={[0, 1, 1, 1, 1, 1, 2]}
           />
         </StaggerItem>
       </StaggerContainer>

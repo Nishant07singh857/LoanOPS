@@ -34,19 +34,19 @@ const CATEGORIES = ['Repayment', 'Receipt', 'KYC', 'Agreement', 'Disbursement', 
 const FAQS = [
   {
     q: 'How do I pay my next installment?',
-    a: 'Head to the Payments page, tap "Pay Now", choose your preferred method (UPI, Netbanking, or Card) and complete the transaction. You\'ll get a confirmation in seconds and a receipt within minutes.',
+    a: 'Your assigned agent collects your installment in cash and issues you a receipt at the time of collection. To arrange a pickup, message your agent on WhatsApp or raise a support request below and your agent will visit you.',
   },
   {
     q: 'Can I extend my due date?',
-    a: 'Yes — you can request an extension by raising a support ticket with the "Repayment" category. Your agent will review and respond within 4 hours. Extensions are granted case-by-case.',
+    a: 'Yes — you can request an extension by raising a support ticket with the "Repayment" category. Your agent will review it and respond as soon as possible on working days. Extensions are granted case-by-case.',
   },
   {
     q: 'How do I download a payment receipt?',
-    a: 'Visit the Receipts page, find the payment you want, and tap the Download icon. You can also email the receipt to your registered email address.',
+    a: 'Visit the Receipts page, find the payment you want, and view, download, or share it from there.',
   },
   {
     q: 'Is my data safe?',
-    a: 'Absolutely. Sterling Lending is RBI-compliant, ISO 27001 certified, and uses 256-bit bank-grade encryption. Your KYC documents and bank details are never shared with third parties.',
+    a: 'Your personal data is stored encrypted and is never shared with third parties without your consent.',
   },
   {
     q: 'How is interest calculated?',
@@ -208,7 +208,7 @@ export default function SupportPage() {
                 {Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
               </div>
             ) : tickets.length === 0 ? (
-              <EmptyState icon={<LifeBuoy className="h-6 w-6" />} title="No support requests" description="Raise a ticket and our team will respond within 4 hours." />
+              <EmptyState icon={<LifeBuoy className="h-6 w-6" />} title="No support requests" description="Raise a ticket and our team will respond as soon as possible on working days." />
             ) : (
               <StaggerContainer className="space-y-3">
                 {tickets.map((t) => (
@@ -276,7 +276,7 @@ export default function SupportPage() {
           <ShieldCheck className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-medium text-success">Our promise</p>
-            <p className="text-xs text-muted-foreground mt-1">Every support ticket gets a response within 4 hours. Every WhatsApp message gets a reply within 15 minutes during business hours (9 AM - 8 PM IST).</p>
+            <p className="text-xs text-muted-foreground mt-1">Our team responds to every support ticket and WhatsApp message as soon as possible during business hours (9 AM - 8 PM IST).</p>
           </div>
         </div>
       </FadeIn>
@@ -323,7 +323,7 @@ function NewTicketDialog({ open, onOpenChange, onCreated }: {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create Support Request</DialogTitle>
-          <DialogDescription>Tell us what you need — we'll get back within 4 hours.</DialogDescription>
+          <DialogDescription>Tell us what you need — we'll get back to you as soon as possible.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">

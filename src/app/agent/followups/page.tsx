@@ -120,10 +120,10 @@ export default function AgentFollowupsPage() {
       />
 
       <StaggerContainer className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-        <StaggerItem><KPICard label="Today" value={String(todaysCount)} icon={<PhoneCall className="h-5 w-5" />} variant="info" spark={[3, 4, 5, 4, 5, 5, 5]} /></StaggerItem>
-        <StaggerItem><KPICard label="Upcoming" value={String(upcomingCount)} icon={<CalendarClock className="h-5 w-5" />} variant="default" spark={[2, 3, 3, 4, 3, 4, 4]} /></StaggerItem>
-        <StaggerItem><KPICard label="Overdue" value={String(overdueCount)} icon={<Clock className="h-5 w-5" />} variant="destructive" spark={[0, 1, 1, 1, 1, 1, 1]} /></StaggerItem>
-        <StaggerItem><KPICard label="Completed" value={String(completedCount)} icon={<CheckCircle2 className="h-5 w-5" />} variant="success" spark={[2, 3, 4, 5, 6, 7, 8]} /></StaggerItem>
+        <StaggerItem><KPICard label="Today" value={String(todaysCount)} icon={<PhoneCall className="h-5 w-5" />} variant="info" /></StaggerItem>
+        <StaggerItem><KPICard label="Upcoming" value={String(upcomingCount)} icon={<CalendarClock className="h-5 w-5" />} variant="default" /></StaggerItem>
+        <StaggerItem><KPICard label="Overdue" value={String(overdueCount)} icon={<Clock className="h-5 w-5" />} variant="destructive" /></StaggerItem>
+        <StaggerItem><KPICard label="Completed" value={String(completedCount)} icon={<CheckCircle2 className="h-5 w-5" />} variant="success" /></StaggerItem>
       </StaggerContainer>
 
       <FadeIn>

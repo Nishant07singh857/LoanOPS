@@ -4,9 +4,15 @@
 // carried no signature. GET returns 405. POST requires an explicit
 // idempotencyKey so retries collapse onto the same payment attempt.
 import { NextRequest } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db'
 import { capturePayment } from '@/lib/server/payments'
 import { apiHandler, success, badRequest, forbidden, fail } from '@/lib/server/api'
+
+const mockWebhookSchema = z.object({
+  paymentId: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+}).strict()
 
 function isOnlineMockEnabled(): boolean {
   return process.env.NODE_ENV === 'development' && process.env.ENABLE_ONLINE_PAYMENTS === 'true'
@@ -22,13 +28,13 @@ export const POST = apiHandler(async (req: NextRequest) => {
   }
 
   const body = await req.json().catch(() => null)
-  if (!body || !body.paymentId) return badRequest('Missing paymentId')
-  if (!body.idempotencyKey || typeof body.idempotencyKey !== 'string' || !body.idempotencyKey.trim()) {
-    return badRequest('Missing idempotencyKey')
-  }
-  const idempotencyKey = body.idempotencyKey.trim()
+  if (!body) return badRequest('Invalid JSON')
+  const parsed = mockWebhookSchema.safeParse(body)
+  if (!parsed.success) return badRequest('Missing or invalid paymentId / idempotencyKey')
+  const idempotencyKey = parsed.data.idempotencyKey.trim()
+  if (!idempotencyKey) return badRequest('Missing idempotencyKey')
 
-  const payment = await db.payment.findUnique({ where: { id: body.paymentId } })
+  const payment = await db.payment.findUnique({ where: { id: parsed.data.paymentId } })
   if (!payment) return badRequest('Payment not found')
 
   // The key must belong to this payment attempt.

@@ -90,7 +90,8 @@ export default function AgentWhatsAppPage() {
                     <p className="text-[11px] text-muted-foreground mt-0.5">{t.description}</p>
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-3 line-clamp-3 bg-muted/30 rounded-lg p-2.5">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mt-3">Example preview</p>
+                <p className="text-xs text-muted-foreground mt-1.5 line-clamp-3 bg-muted/30 rounded-lg p-2.5">
                   {WHATSAPP_TEMPLATES[t.key].replace(/\{candidateName\}/g, 'Rahul').replace(/\{loanNumber\}/g, 'LON-2024-0892').replace(/\{amount\}/g, '7,425').replace(/\{dueDate\}/g, '20 Sep 2024').replace(/\{orgName\}/g, 'Sterling Lending').replace(/\{agentName\}/g, user?.name ?? 'Agent')}
                 </p>
                 <Button variant="outline" size="sm" className="w-full mt-3" onClick={() => setUseTemplate(t.key)}>

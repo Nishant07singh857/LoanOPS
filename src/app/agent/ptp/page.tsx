@@ -119,7 +119,7 @@ export default function AgentPtpPage() {
       dueDate: fmtDate(p.promiseDate),
     })
     openWhatsApp(p.candidate.mobile, msg)
-    toast.success('WhatsApp reminder sent', { description: `Reminder sent to ${p.candidate.fullName}` })
+    toast.success('WhatsApp draft opened', { description: `Press Send in WhatsApp to deliver the reminder to ${p.candidate.fullName}.` })
   }
 
   return (
@@ -136,10 +136,10 @@ export default function AgentPtpPage() {
       />
 
       <StaggerContainer className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-        <StaggerItem><KPICard label="Active PTP" value={String(activeCount)} icon={<Handshake className="h-5 w-5" />} variant="info" spark={[2, 3, 3, 3, 3, 3, 3]} /></StaggerItem>
-        <StaggerItem><KPICard label="Fulfilled" value={String(fulfilledCount)} icon={<CheckCircle2 className="h-5 w-5" />} variant="success" spark={[0, 0, 0, 0, 0, 0, 0]} /></StaggerItem>
-        <StaggerItem><KPICard label="Broken" value={String(brokenCount)} icon={<XCircle className="h-5 w-5" />} variant="destructive" spark={[1, 2, 2, 2, 2, 2, 2]} /></StaggerItem>
-        <StaggerItem><KPICard label="Due Today" value={String(dueTodayCount)} icon={<Clock className="h-5 w-5" />} variant="warning" spark={[0, 1, 1, 1, 1, 1, 1]} /></StaggerItem>
+        <StaggerItem><KPICard label="Active PTP" value={String(activeCount)} icon={<Handshake className="h-5 w-5" />} variant="info" /></StaggerItem>
+        <StaggerItem><KPICard label="Fulfilled" value={String(fulfilledCount)} icon={<CheckCircle2 className="h-5 w-5" />} variant="success" /></StaggerItem>
+        <StaggerItem><KPICard label="Broken" value={String(brokenCount)} icon={<XCircle className="h-5 w-5" />} variant="destructive" /></StaggerItem>
+        <StaggerItem><KPICard label="Due Today" value={String(dueTodayCount)} icon={<Clock className="h-5 w-5" />} variant="warning" /></StaggerItem>
       </StaggerContainer>
 
       <FadeIn>

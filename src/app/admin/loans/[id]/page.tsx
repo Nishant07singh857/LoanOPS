@@ -320,7 +320,7 @@ export default function LoanDetailPage() {
       dueDate: nextDue ? fmtDate(nextDue.dueDate) : 'soon',
     })
     openWhatsApp(loan.candidate.mobile, msg)
-    toast.success('WhatsApp draft opened', { description: `Reminder sent to ${loan.candidate.fullName}` })
+    toast.success('WhatsApp draft opened', { description: `Press Send in WhatsApp to deliver the reminder to ${loan.candidate.fullName}.` })
   }
 
   const hasSensitivePii = Boolean(loan.candidate.bankAccount || loan.candidate.aadhaarMasked || loan.candidate.panMasked)

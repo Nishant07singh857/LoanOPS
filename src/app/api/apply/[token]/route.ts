@@ -3,10 +3,10 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { apiHandler, success, badRequest, notFound, validate, genNumber } from '@/lib/server/api'
+import { apiHandler, success, badRequest, notFound, validate, genNumber, HttpError } from '@/lib/server/api'
 import { generateSchedule } from '@/lib/server/financial'
 import { encryptPII, hashPII } from '@/lib/server/crypto'
-import { getClientIp } from '@/lib/server/auth'
+import { getClientIp, validatePasswordPolicy } from '@/lib/server/auth'
 import { maskAadhaar, maskPan, PAN_REGEX } from '@/lib/utils'
 import { COMPLIANCE_CONFIG } from '@/lib/compliance-config'
 
@@ -160,6 +160,20 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
   if (!body) return badRequest('Invalid JSON')
   const input = validate(submitSchema, body)
 
+  // Portal-account passwords must meet the same policy as every other
+  // account-creation path (see /api/auth/signup) — the schema's min(8)
+  // alone is weaker than the shared policy (min 10 + complexity checks).
+  if (input.password) {
+    const policy = validatePasswordPolicy(input.password, {
+      email: input.email,
+      name: input.fullName,
+      mobile: input.mobile,
+    })
+    if (!policy.ok) {
+      return badRequest(policy.error || 'Password does not meet security policy')
+    }
+  }
+
   const ipAddress = getClientIp(req)
   const userAgent = req.headers.get('user-agent') || undefined
 
@@ -245,6 +259,11 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
     const fillOnly = <T,>(current: T | null | undefined, next: T | null | undefined): T | null | undefined =>
       isProtected ? (current ?? next) : (next || current)
 
+    // Bank accounts are stored AES-encrypted at rest (enc:v1:) on every
+    // other write path — encrypt BEFORE the fillOnly/fallback logic so a
+    // raw submitted value can never land in Candidate.bankAccount.
+    const encryptedBankAccount = input.bankAccount ? encryptPII(input.bankAccount) : undefined
+
     let candidate = existing
       ? await tx.candidate.update({
           where: { id: existing.id },
@@ -259,8 +278,8 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
             existingObligations: input.existingObligations ? Number(input.existingObligations) : existing.existingObligations,
             bankName: fillOnly(existing.bankName, input.bankName),
             bankAccount: isProtected
-              ? fillOnly(existing.bankAccount, input.bankAccount)
-              : input.bankAccount || existing.bankAccount,
+              ? fillOnly(existing.bankAccount, encryptedBankAccount)
+              : encryptedBankAccount || existing.bankAccount,
             bankIfsc: isProtected
               ? fillOnly(existing.bankIfsc, input.bankIfsc)
               : input.bankIfsc || existing.bankIfsc,
@@ -292,7 +311,7 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
             monthlyIncome: input.monthlyIncome ? Number(input.monthlyIncome) : null,
             existingObligations: input.existingObligations ? Number(input.existingObligations) : null,
             bankName: input.bankName,
-            bankAccount: input.bankAccount,
+            bankAccount: encryptedBankAccount ?? null,
             bankIfsc: input.bankIfsc,
             upiId: input.upiId,
             aadhaarMasked: aadhaar.masked,
@@ -421,15 +440,23 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
       })
     }
 
-    // Mark link as used + link application
-    await tx.qrLink.update({
-      where: { id: link.id },
+    // Consume the link atomically: the conditional update only succeeds
+    // while the link is still unused, so two concurrent submissions of
+    // the same link cannot both succeed (the earlier isUsed read is only
+    // a fast-path check). The application is already linked via its
+    // qrLinkId set at creation above.
+    const consumed = await tx.qrLink.updateMany({
+      where: { id: link.id, isUsed: false },
       data: {
         isUsed: true,
         submittedAt: new Date(),
-        application: { connect: { id: application.id } },
       },
     })
+    if (consumed.count === 0) {
+      // Same response shape as the 'link already used' badRequest above;
+      // thrown so the transaction rolls back the candidate/application.
+      throw new HttpError('BAD_REQUEST', 'This link has already been used', 400)
+    }
 
     // Audit
     await tx.auditLog.create({

@@ -63,6 +63,7 @@ export default function ReceiptsPage() {
   const { user } = useSession()
   const candidateName = user?.name || 'Candidate'
   const candidateMobile = user?.phone || '—'
+  const orgName = user?.organizationName || 'Your Lender'
 
   const { data, isLoading } = useQuery({
     queryKey: ['candidate-receipts'],
@@ -80,7 +81,7 @@ export default function ReceiptsPage() {
   const onDownload = (r: ReceiptRow) => {
     try {
       const content = [
-        'STERLING LENDING — OFFICIAL PAYMENT RECEIPT',
+        `${orgName.toUpperCase()} — OFFICIAL PAYMENT RECEIPT`,
         '===========================================',
         `Receipt Number : ${r.receiptNumber}`,
         `Payment Number : ${r.paymentNumber}`,
@@ -219,6 +220,7 @@ export default function ReceiptsPage() {
         receipt={active}
         candidateName={candidateName}
         candidateMobile={candidateMobile}
+        orgName={orgName}
         onDownload={onDownload}
         onEmail={onEmail}
       />
@@ -227,13 +229,14 @@ export default function ReceiptsPage() {
 }
 
 function ReceiptDialog({
-  open, onOpenChange, receipt, candidateName, candidateMobile, onDownload, onEmail,
+  open, onOpenChange, receipt, candidateName, candidateMobile, orgName, onDownload, onEmail,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   receipt: ReceiptRow | null
   candidateName: string
   candidateMobile: string
+  orgName: string
   onDownload: (r: ReceiptRow) => void
   onEmail: (r: ReceiptRow) => void
 }) {
@@ -259,7 +262,7 @@ function ReceiptDialog({
                   <Wallet className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="font-bold text-sm">Sterling Lending</p>
+                  <p className="font-bold text-sm">{orgName}</p>
                   <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Official Payment Receipt</p>
                 </div>
               </div>

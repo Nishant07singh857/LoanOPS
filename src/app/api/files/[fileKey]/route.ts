@@ -58,8 +58,13 @@ export async function GET(
 
   const fileUrlRef = `/api/files/${fileKey}`
 
-  if (ctx && ctx.user.role !== 'OWNER') {
-    // Check ownership in Payment, Document, or SupportTicket
+  if (ctx) {
+    // Check ownership in Payment, Document, or SupportTicket. All three
+    // lookups are organization-scoped, so they also serve as the OWNER
+    // check: an owner may only access files linked to a record in their
+    // own organization (previously OWNER bypassed this entirely).
+    // Unauthenticated callers (ctx === null) still rely on the signed
+    // URL above acting as the capability, unchanged.
     const [payment, doc, ticket] = await Promise.all([
       db.payment.findFirst({
         where: { proofUrl: fileUrlRef, organizationId: ctx.user.organizationId },
@@ -74,7 +79,14 @@ export async function GET(
       }),
     ])
 
-    if (ctx.user.role === 'CANDIDATE') {
+    if (ctx.user.role === 'OWNER') {
+      if (!payment && !doc && !ticket) {
+        return NextResponse.json(
+          { error: { code: 'FORBIDDEN', message: 'You do not have permission to view this file' } },
+          { status: 403 }
+        )
+      }
+    } else if (ctx.user.role === 'CANDIDATE') {
       const candId = ctx.user.candidateId
       const ownsFile =
         (payment && payment.candidateId === candId) ||

@@ -10,6 +10,7 @@
 // agent2@loanops.in (AGENT), and Priya Sharma (CANDIDATE, mobile login).
 
 import { PrismaClient, UserRole, InterestType, RepaymentFrequency, ApplicationStatus, LoanStatus, InstallmentStatus, PaymentMethod, PaymentStatus, PtpStatus, EscalationReason, EscalationStatus, TaskStatus, TaskPriority, AuditAction, NotificationType, DocumentType } from '@prisma/client'
+import { randomBytes } from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import { encryptPII } from '../src/lib/server/crypto'
 import { generateSchedule } from '../src/lib/server/financial'
@@ -643,12 +644,17 @@ By accepting this Agreement, the Borrower confirms that all information provided
   })
 
   // --- Sample QR link ---
+  // Token is generated fresh at seed time — never a fixed, source-visible
+  // string (a committed token would be a working public apply link for
+  // anyone who can read this repo). It is printed once at the end of the
+  // seed output below so the developer can use it.
+  const demoQrToken = randomBytes(16).toString('hex')
   await db.qrLink.upsert({
-    where: { token: 'a3f8d2e91b7c4f0a8e2d1b6c9f4a3e8d' },
+    where: { token: demoQrToken },
     update: {},
     create: {
       organizationId: org.id,
-      token: 'a3f8d2e91b7c4f0a8e2d1b6c9f4a3e8d',
+      token: demoQrToken,
       createdById: owner.id,
       prePrincipal: 10000000,
       preInterestType: InterestType.PERCENTAGE,
@@ -711,7 +717,7 @@ By accepting this Agreement, the Borrower confirms that all information provided
   console.log(`   Agent:   agent@loanops.in`)
   console.log(`   Agent2:  agent2@loanops.in`)
   console.log(`   Candidate (mobile login): 9820277789`)
-  console.log(`   Secure application link: /apply/a3f8d2e91b7c4f0a8e2d1b6c9f4a3e8d`)
+  console.log(`   Secure application link (generated this run): /apply/${demoQrToken}`)
 }
 
 function agent1User_id_or(_profile: any, _user: any) {

@@ -80,6 +80,7 @@ function fmtDate(d?: string | null) {
 export default function LoanDetailPage() {
   const { user } = useSession()
   const candidateName = user?.name || 'Candidate'
+  const orgName = user?.organizationName || 'your lender'
 
   const { data: loan, isLoading, isError, refetch } = useQuery({
     queryKey: ['candidate-loan'],
@@ -168,7 +169,7 @@ export default function LoanDetailPage() {
       <div className="space-y-6">
         <SectionHeading
           title="My Loan"
-          description="Full details of your active loan with Sterling Lending."
+          description={`Full details of your active loan with ${orgName}.`}
           icon={<Wallet className="h-5 w-5" />}
           action={
             <Button variant="outline" size="sm" onClick={onWhatsAppAgent} className="text-info border-info/40 hover:bg-info/10">
@@ -210,7 +211,7 @@ export default function LoanDetailPage() {
     <div className="space-y-6">
       <SectionHeading
         title="My Loan"
-        description="Full details of your active loan with Sterling Lending."
+        description={`Full details of your active loan with ${orgName}.`}
         icon={<Wallet className="h-5 w-5" />}
         action={
           <Button variant="outline" size="sm" onClick={onWhatsAppAgent} className="text-info border-info/40 hover:bg-info/10">

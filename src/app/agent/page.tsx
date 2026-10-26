@@ -185,7 +185,6 @@ export default function AgentDashboardPage() {
             value={formatPaiseToINRShort(recentCash.reduce((s, c) => s + Number(c.amount), 0))}
             icon={<Banknote className="h-5 w-5" />}
             variant="success"
-            spark={recentCash.length > 0 ? [80, 110, 130, 140, 165, 180, 195] : undefined}
           />
         </StaggerItem>
         <StaggerItem>
@@ -194,7 +193,6 @@ export default function AgentDashboardPage() {
             value={String(data?.todayTasksCount ?? 0)}
             icon={<ListTodo className="h-5 w-5" />}
             variant="info"
-            spark={(data?.todayTasksCount ?? 0) > 0 ? [2, 3, 4, 5, 5, 4, 5] : undefined}
           />
         </StaggerItem>
         <StaggerItem>
@@ -203,7 +201,6 @@ export default function AgentDashboardPage() {
             value={String(data?.ptpDueCount ?? 0)}
             icon={<Handshake className="h-5 w-5" />}
             variant="warning"
-            spark={(data?.ptpDueCount ?? 0) > 0 ? [1, 1, 2, 3, 2, 3, 3] : undefined}
           />
         </StaggerItem>
         <StaggerItem>
@@ -212,7 +209,6 @@ export default function AgentDashboardPage() {
             value={String(data?.overdueCandidatesCount ?? 0)}
             icon={<AlertTriangle className="h-5 w-5" />}
             variant="destructive"
-            spark={(data?.overdueCandidatesCount ?? 0) > 0 ? [3, 3, 4, 5, 4, 5, 5] : undefined}
           />
         </StaggerItem>
       </StaggerContainer>
