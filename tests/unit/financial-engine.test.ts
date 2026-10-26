@@ -14,6 +14,7 @@ import {
 import {
   encryptPII,
   decryptPII,
+  decryptPIIForMask,
   rotateEncryptedPII,
   hashPII,
 } from '../../src/lib/server/crypto'
@@ -338,6 +339,53 @@ test('validateSafeRedirect blocks external URLs and detectMagicBytesMime + strip
 
   const fakeExe = Buffer.from('MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00\xff\xff')
   assert.equal(detectMagicBytesMime(fakeExe), null)
+})
+
+// 12b. decryptPIIForMask must never throw on undecryptable ciphertext (masking read-paths)
+// Regression: strict decryptPII() fails closed in production, and decryptPIIForMask used
+// to call it unguarded — one corrupt/rotated-key row 500'd the entire owner candidates list.
+test('decryptPIIForMask falls back without throwing on undecryptable enc:v1: values in production mode', () => {
+  // NODE_ENV is typed read-only in process.env; mutate it via a widened view.
+  const mutableEnv = process.env as Record<string, string | undefined>
+  const prevNodeEnv = process.env.NODE_ENV
+  const prevKey = process.env.PII_ENCRYPTION_KEY
+  const prevPrevious = process.env.PII_ENCRYPTION_KEY_PREVIOUS
+  try {
+    mutableEnv.NODE_ENV = 'production'
+    delete process.env.PII_ENCRYPTION_KEY_PREVIOUS
+
+    // Valid ciphertext still decrypts correctly through the masking helper.
+    process.env.PII_ENCRYPTION_KEY = 'mask-fallback-test-key-A-0123456789abcdef'
+    const cipher = encryptPII('50100234567890')
+    assert.equal(decryptPIIForMask(cipher), '50100234567890')
+
+    // Key rotated away (no previous key configured): strict path throws,
+    // masking path must return the raw stored string instead of throwing.
+    process.env.PII_ENCRYPTION_KEY = 'mask-fallback-test-key-B-0123456789abcdef'
+    assert.throws(() => decryptPII(cipher))
+    const fallback = decryptPIIForMask(cipher)
+    assert.equal(fallback, cipher)
+    // ...and masking that fallback exposes at most the last 4 chars of the stored string.
+    const masked = maskBankAccount(fallback)
+    assert.ok(!masked.includes('50100234567890'))
+    assert.ok(masked.endsWith(cipher.slice(-4)))
+
+    // Malformed enc:v1: garbage must not throw either.
+    assert.equal(decryptPIIForMask('enc:v1:nothex'), 'enc:v1:nothex')
+    assert.equal(decryptPIIForMask('enc:v1:zz:yy:xx'), 'enc:v1:zz:yy:xx')
+
+    // Non-ciphertext passthrough is unchanged (legacy plaintext / already-masked).
+    assert.equal(decryptPIIForMask('XXXX-XXXX-8765'), 'XXXX-XXXX-8765')
+    assert.equal(decryptPIIForMask(''), '')
+    assert.equal(decryptPIIForMask(null), '')
+  } finally {
+    if (prevNodeEnv === undefined) delete mutableEnv.NODE_ENV
+    else mutableEnv.NODE_ENV = prevNodeEnv
+    if (prevKey === undefined) delete process.env.PII_ENCRYPTION_KEY
+    else process.env.PII_ENCRYPTION_KEY = prevKey
+    if (prevPrevious === undefined) delete process.env.PII_ENCRYPTION_KEY_PREVIOUS
+    else process.env.PII_ENCRYPTION_KEY_PREVIOUS = prevPrevious
+  }
 })
 
 let passed = 0

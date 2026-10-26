@@ -88,7 +88,20 @@ function tryDecryptWithKey(key: Buffer, iv: Buffer, tag: Buffer, encrypted: Buff
 export function decryptPIIForMask(value?: string | null): string {
   if (!value) return ''
   const str = String(value)
-  if (str.startsWith(PREFIX)) return decryptPII(str)
+  if (str.startsWith(PREFIX)) {
+    try {
+      return decryptPII(str)
+    } catch {
+      // Ciphertext that the configured keys cannot decrypt (retired
+      // encryption key or a corrupt legacy row): strict decryptPII()
+      // fails closed, which is right for full-value
+      // reads — but a masking read-path must not 500 an entire list over
+      // one bad row. Fall back to the raw stored string, exactly like the
+      // non-ciphertext passthrough below; the masker still exposes at
+      // most the last 4 characters of it.
+      return str
+    }
+  }
   return str
 }
 
