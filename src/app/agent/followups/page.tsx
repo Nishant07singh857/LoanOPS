@@ -24,6 +24,7 @@ import {
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
+import { PaginationControls } from '@/components/ui/pagination-controls'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
@@ -85,10 +86,16 @@ export default function AgentFollowupsPage() {
   const queryClient = useQueryClient()
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [newOpen, setNewOpen] = React.useState(false)
+  const [page, setPage] = React.useState(1)
+
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(1)
+  }, [chip])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['agent-follow-ups'],
-    queryFn: () => api.get<{ items: FollowUp[]; total: number }>('/api/agent/follow-ups?pageSize=100'),
+    queryKey: ['agent-follow-ups', page],
+    queryFn: () => api.get<{ items: FollowUp[]; total: number }>(`/api/agent/follow-ups?pageSize=100&page=${page}`),
   })
 
   const all = data?.items ?? []
@@ -163,6 +170,7 @@ export default function AgentFollowupsPage() {
       ) : filtered.length === 0 ? (
         <EmptyState icon={<PhoneCall className="h-6 w-6" />} title="No follow-ups in this view" description="Schedule a follow-up to see it here." />
       ) : (
+        <>
         <StaggerContainer className="space-y-3">
           {filtered.map((f) => {
             const nextDate = f.nextFollowUp ? new Date(f.nextFollowUp) : null
@@ -226,6 +234,8 @@ export default function AgentFollowupsPage() {
             )
           })}
         </StaggerContainer>
+        <PaginationControls page={page} pageSize={100} total={data?.total ?? 0} onPageChange={setPage} />
+        </>
       )}
 
       <NewFollowupDialog open={newOpen} onOpenChange={setNewOpen} />

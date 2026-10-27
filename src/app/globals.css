@@ -303,6 +303,28 @@
   .sidebar-scroll::-webkit-scrollbar-track {
     background: transparent;
   }
+
+  /* Data tables: thin VISIBLE scrollbar, mirroring .sidebar-scroll.
+     The shared Table wrapper scrolls horizontally on wide tables; the
+     previous .no-scrollbar hid the bar entirely, so a wide table gave
+     no visual hint it scrolls sideways. A visible thin bar signals
+     scrollability. The webkit rule sets height (horizontal axis) as
+     well as width. */
+  .table-scroll {
+    scrollbar-width: thin;        /* Firefox */
+    scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent) transparent;
+  }
+  .table-scroll::-webkit-scrollbar {
+    height: 6px;
+    width: 6px;
+  }
+  .table-scroll::-webkit-scrollbar-thumb {
+    background: color-mix(in oklch, var(--muted-foreground) 35%, transparent);
+    border-radius: 999px;
+  }
+  .table-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }
 
 /* Disable animations for users who prefer reduced motion */

@@ -16,6 +16,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { PaginationControls } from '@/components/ui/pagination-controls'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR } from '@/lib/money'
 import { cn } from '@/lib/utils'
@@ -54,11 +55,17 @@ function fmtDate(date?: string | null) {
 export default function ApplicationsPage() {
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [search, setSearch] = React.useState('')
+  const [page, setPage] = React.useState(1)
+
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(1)
+  }, [search, chip])
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['owner-applications', search, chip],
+    queryKey: ['owner-applications', search, chip, page],
     queryFn: () => {
-      const params = new URLSearchParams({ pageSize: '100' })
+      const params = new URLSearchParams({ pageSize: '100', page: String(page) })
       if (search) params.set('search', search)
       if (chip !== 'ALL') params.set('status', chip)
       return api.get<{ items: AppRow[]; total: number }>(`/api/owner/applications?${params.toString()}`)
@@ -308,6 +315,7 @@ export default function ApplicationsPage() {
               </StaggerItem>
             ))}
           </StaggerContainer>
+          <PaginationControls page={page} pageSize={100} total={data?.total ?? 0} onPageChange={setPage} />
         </>
       )}
     </div>

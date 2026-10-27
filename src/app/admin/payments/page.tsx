@@ -24,6 +24,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
+import { PaginationControls } from '@/components/ui/pagination-controls'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
 
@@ -64,11 +65,17 @@ export default function PaymentsPage() {
   const [status, setStatus] = React.useState<string>('all')
   const [search, setSearch] = React.useState('')
   const [selectedReceipt, setSelectedReceipt] = React.useState<PaymentRow | null>(null)
+  const [page, setPage] = React.useState(1)
+
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(1)
+  }, [method, status, search])
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['owner-payments', method, status, search],
+    queryKey: ['owner-payments', method, status, search, page],
     queryFn: () => {
-      const params = new URLSearchParams({ pageSize: '100' })
+      const params = new URLSearchParams({ pageSize: '100', page: String(page) })
       if (method !== 'all') params.set('method', method)
       if (status !== 'all') params.set('status', status)
       if (search) params.set('search', search)
@@ -265,6 +272,7 @@ export default function PaymentsPage() {
                     </StaggerItem>
                   ))}
                 </StaggerContainer>
+                <PaginationControls page={page} pageSize={100} total={data?.total ?? 0} onPageChange={setPage} />
               </>
             )}
           </CardContent>

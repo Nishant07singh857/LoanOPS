@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
+import { PaginationControls } from '@/components/ui/pagination-controls'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR } from '@/lib/money'
 import { cn } from '@/lib/utils'
@@ -66,6 +67,7 @@ export default function LoansPage() {
   const [status, setStatus] = React.useState<string>('all')
   const [frequency, setFrequency] = React.useState<string>('all')
   const [search, setSearch] = React.useState('')
+  const [page, setPage] = React.useState(1)
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return
@@ -83,10 +85,15 @@ export default function LoansPage() {
     }
   }, [])
 
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(1)
+  }, [search, status, frequency, chip])
+
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['owner-loans', search, status, frequency],
+    queryKey: ['owner-loans', search, status, frequency, page],
     queryFn: () => {
-      const params = new URLSearchParams({ pageSize: '100' })
+      const params = new URLSearchParams({ pageSize: '100', page: String(page) })
       if (search) params.set('search', search)
       if (status !== 'all') params.set('status', status)
       if (frequency !== 'all') params.set('frequency', frequency)
@@ -341,6 +348,7 @@ export default function LoansPage() {
               )
             })}
           </StaggerContainer>
+          <PaginationControls page={page} pageSize={100} total={data?.total ?? 0} onPageChange={setPage} />
         </>
       )}
     </div>

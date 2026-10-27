@@ -23,6 +23,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
+import { PaginationControls } from '@/components/ui/pagination-controls'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
@@ -66,6 +67,8 @@ export default function DisbursementsPage() {
   const queryClient = useQueryClient()
   const [open, setOpen] = React.useState(false)
   const [selectedLoan, setSelectedLoan] = React.useState<LoanRow | null>(null)
+  const [pendingPage, setPendingPage] = React.useState(1)
+  const [disbursedPage, setDisbursedPage] = React.useState(1)
 
   const {
     data: pendingData,
@@ -73,8 +76,8 @@ export default function DisbursementsPage() {
     isError: pendingError,
     refetch: refetchPending,
   } = useQuery({
-    queryKey: ['owner-loans-pending-disbursement'],
-    queryFn: () => api.get<{ items: LoanRow[]; total: number }>('/api/owner/loans?status=PENDING_DISBURSEMENT&pageSize=100'),
+    queryKey: ['owner-loans-pending-disbursement', pendingPage],
+    queryFn: () => api.get<{ items: LoanRow[]; total: number }>(`/api/owner/loans?status=PENDING_DISBURSEMENT&pageSize=100&page=${pendingPage}`),
   })
 
   const {
@@ -83,8 +86,8 @@ export default function DisbursementsPage() {
     isError: disbursedError,
     refetch: refetchDisbursed,
   } = useQuery({
-    queryKey: ['owner-disbursements'],
-    queryFn: () => api.get<{ items: DisbursementRow[]; total: number }>('/api/owner/disbursements?pageSize=50'),
+    queryKey: ['owner-disbursements', disbursedPage],
+    queryFn: () => api.get<{ items: DisbursementRow[]; total: number }>(`/api/owner/disbursements?pageSize=50&page=${disbursedPage}`),
   })
 
   const pending = pendingData?.items ?? []
@@ -230,6 +233,7 @@ export default function DisbursementsPage() {
                     </StaggerItem>
                   ))}
                 </StaggerContainer>
+                <PaginationControls page={pendingPage} pageSize={100} total={pendingData?.total ?? 0} onPageChange={setPendingPage} />
               </>
             )}
           </CardContent>
@@ -311,6 +315,7 @@ export default function DisbursementsPage() {
                     </StaggerItem>
                   ))}
                 </StaggerContainer>
+                <PaginationControls page={disbursedPage} pageSize={50} total={disbursedData?.total ?? 0} onPageChange={setDisbursedPage} />
               </>
             )}
           </CardContent>

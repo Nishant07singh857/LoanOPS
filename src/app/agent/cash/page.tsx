@@ -26,6 +26,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
+import { PaginationControls } from '@/components/ui/pagination-controls'
 import { toast } from 'sonner'
 import { api, ApiRequestError } from '@/lib/api-client'
 import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
@@ -137,11 +138,17 @@ function fmtTime(t?: string | null) {
 export default function AgentCashPage() {
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [newOpen, setNewOpen] = React.useState(false)
+  const [page, setPage] = React.useState(1)
+
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(1)
+  }, [chip])
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['agent-cash', chip],
+    queryKey: ['agent-cash', chip, page],
     queryFn: () => api.get<CashListResponse>(
-      `/api/agent/cash-collections?pageSize=100${chip !== 'ALL' ? `&status=${chip}` : ''}`
+      `/api/agent/cash-collections?pageSize=100&page=${page}${chip !== 'ALL' ? `&status=${chip}` : ''}`
     ),
   })
 
@@ -358,6 +365,7 @@ export default function AgentCashPage() {
                   )
                 })}
               </StaggerContainer>
+              <PaginationControls page={page} pageSize={100} total={data?.total ?? 0} onPageChange={setPage} />
             </CardContent>
           </Card>
         </FadeIn>

@@ -23,6 +23,7 @@ import {
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
+import { PaginationControls } from '@/components/ui/pagination-controls'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
@@ -94,11 +95,17 @@ export default function AgentEscalationsPage() {
   const [newOpen, setNewOpen] = React.useState(false)
   const [resolveTarget, setResolveTarget] = React.useState<EscalationRow | null>(null)
   const [resolution, setResolution] = React.useState('')
+  const [page, setPage] = React.useState(1)
+
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(1)
+  }, [chip])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['agent-escalations', chip],
+    queryKey: ['agent-escalations', chip, page],
     queryFn: () => api.get<{ items: EscalationRow[]; total: number }>(
-      `/api/agent/escalations?pageSize=100${chip !== 'ALL' ? `&status=${chip}` : ''}`
+      `/api/agent/escalations?pageSize=100&page=${page}${chip !== 'ALL' ? `&status=${chip}` : ''}`
     ),
   })
 
@@ -210,6 +217,7 @@ export default function AgentEscalationsPage() {
       ) : allEsc.length === 0 ? (
         <EmptyState icon={<AlertTriangle className="h-6 w-6" />} title="No escalations in this view" description="Escalate a candidate to see them here." />
       ) : (
+        <>
         <StaggerContainer className="space-y-3">
           {allEsc.map((e) => (
             <StaggerItem key={e.id}>
@@ -260,6 +268,8 @@ export default function AgentEscalationsPage() {
             </StaggerItem>
           ))}
         </StaggerContainer>
+        <PaginationControls page={page} pageSize={100} total={data?.total ?? 0} onPageChange={setPage} />
+        </>
       )}
 
       <NewEscalationDialog open={newOpen} onOpenChange={setNewOpen} />

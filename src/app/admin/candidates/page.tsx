@@ -12,6 +12,7 @@ import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
 import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { PaginationControls } from '@/components/ui/pagination-controls'
 import { api } from '@/lib/api-client'
 
 interface CandidateRow {
@@ -57,11 +58,17 @@ function maskBankAccount(val?: string | null) {
 function CandidatesPageInner() {
   const searchParams = useSearchParams()
   const [search, setSearch] = React.useState(() => searchParams.get('q') ?? '')
+  const [page, setPage] = React.useState(1)
+
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(1)
+  }, [search])
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['owner-candidates', search],
+    queryKey: ['owner-candidates', search, page],
     queryFn: () => {
-      const params = new URLSearchParams({ pageSize: '100' })
+      const params = new URLSearchParams({ pageSize: '100', page: String(page) })
       if (search) params.set('search', search)
       return api.get<{ items: CandidateRow[]; total: number }>(`/api/owner/candidates?${params.toString()}`)
     },
@@ -121,6 +128,7 @@ function CandidatesPageInner() {
       ) : candidates.length === 0 ? (
         <EmptyState icon={<Users className="h-6 w-6" />} title="No candidates found" description="Try adjusting your search." />
       ) : (
+        <>
         <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {candidates.map((c) => (
             <StaggerItem key={c.id}>
@@ -183,6 +191,8 @@ function CandidatesPageInner() {
             </StaggerItem>
           ))}
         </StaggerContainer>
+        <PaginationControls page={page} pageSize={100} total={data?.total ?? 0} onPageChange={setPage} />
+        </>
       )}
     </div>
   )
