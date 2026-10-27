@@ -15,6 +15,7 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { FadeIn, StaggerContainer, StaggerItem, EmptyState } from '@/components/ui/motion'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { PaginationControls } from '@/components/ui/pagination-controls'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINRShort } from '@/lib/money'
@@ -57,11 +58,17 @@ function AgentCandidatesPageInner() {
   const searchParams = useSearchParams()
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [search, setSearch] = React.useState(() => searchParams.get('q') ?? '')
+  const [page, setPage] = React.useState(1)
+
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(1)
+  }, [search, chip])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['agent-candidates', search],
+    queryKey: ['agent-candidates', search, page],
     queryFn: () => {
-      const params = new URLSearchParams({ pageSize: '100' })
+      const params = new URLSearchParams({ pageSize: '100', page: String(page) })
       if (search) params.set('search', search)
       return api.get<{ items: CandidateRow[]; total: number }>(`/api/agent/candidates?${params.toString()}`)
     },
@@ -142,6 +149,7 @@ function AgentCandidatesPageInner() {
       ) : filtered.length === 0 ? (
         <EmptyState icon={<Users className="h-6 w-6" />} title="No candidates match these filters" description="Try adjusting your search or filter." />
       ) : (
+        <>
         <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {filtered.map((c) => (
             <StaggerItem key={c.id}>
@@ -237,6 +245,8 @@ function AgentCandidatesPageInner() {
             </StaggerItem>
           ))}
         </StaggerContainer>
+        <PaginationControls page={page} pageSize={100} total={data?.total ?? 0} onPageChange={setPage} />
+        </>
       )}
     </div>
   )

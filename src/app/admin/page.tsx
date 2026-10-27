@@ -2,10 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer,
-  Tooltip, XAxis, YAxis, Legend, Cell,
-} from 'recharts'
+import dynamic from 'next/dynamic'
 import { motion } from 'framer-motion'
 import {
   Banknote, TrendingUp, Wallet, AlertTriangle, Landmark, Activity,
@@ -22,8 +19,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
-import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
+import { formatPaiseToINRShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
+
+const PortfolioTrendChart = dynamic(() => import('@/components/charts/portfolio-trend-chart'), { ssr: false, loading: () => (<div className="h-full w-full animate-pulse rounded-xl bg-muted/40" aria-hidden="true" />) })
+const OverdueAgingChart = dynamic(() => import('@/components/charts/overdue-aging-chart'), { ssr: false, loading: () => (<div className="h-full w-full animate-pulse rounded-xl bg-muted/40" aria-hidden="true" />) })
 
 interface DashboardKPIs {
   totalDisbursed: string
@@ -423,41 +423,7 @@ export default function AdminDashboardPage() {
                 ) : portfolioTrend.length === 0 ? (
                   <div className="h-full flex items-center justify-center text-sm text-muted-foreground">No trend data available yet</div>
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={portfolioTrend} margin={{ top: 10, right: 8, left: -10, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="dG" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.35} />
-                          <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0} />
-                        </linearGradient>
-                        <linearGradient id="cG" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="var(--chart-2)" stopOpacity={0.35} />
-                          <stop offset="100%" stopColor="var(--chart-2)" stopOpacity={0} />
-                        </linearGradient>
-                        <linearGradient id="oG" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="var(--chart-3)" stopOpacity={0.35} />
-                          <stop offset="100%" stopColor="var(--chart-3)" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-                      <YAxis
-                        tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                        axisLine={false} tickLine={false} width={50}
-                        tickFormatter={(v: number) => formatPaiseToINRShort(v as number)}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          background: 'var(--popover)', border: '1px solid var(--border)', borderRadius: 12,
-                          color: 'var(--popover-foreground)', fontSize: 12, padding: '8px 12px',
-                        }}
-                        formatter={(v: number, n: string) => [formatPaiseToINR(v as number), n]}
-                      />
-                      <Area type="monotone" dataKey="disbursed" stroke="var(--chart-1)" strokeWidth={2} fill="url(#dG)" />
-                      <Area type="monotone" dataKey="collected" stroke="var(--chart-2)" strokeWidth={2} fill="url(#cG)" />
-                      <Area type="monotone" dataKey="outstanding" stroke="var(--chart-3)" strokeWidth={2} fill="url(#oG)" />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                  <PortfolioTrendChart data={portfolioTrend} />
                 )}
               </div>
             </CardContent>
@@ -472,25 +438,7 @@ export default function AdminDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="h-[260px] sm:h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={overdueAging} margin={{ top: 10, right: 8, left: -10, bottom: 0 }}>
-                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="bucket" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={32} />
-                    <Tooltip
-                      contentStyle={{
-                        background: 'var(--popover)', border: '1px solid var(--border)', borderRadius: 12,
-                        color: 'var(--popover-foreground)', fontSize: 12, padding: '8px 12px',
-                      }}
-                      formatter={(v: number, n: string) => [n === 'amount' ? formatPaiseToINR(v as number) : v, n === 'amount' ? 'Amount' : 'Count']}
-                    />
-                    <Bar dataKey="count" radius={[6, 6, 0, 0]}>
-                      {overdueAging.map((_, i) => (
-                        <Cell key={i} fill={`oklch(${60 - i * 8}% 0.18 ${30 + i * 4})`} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                <OverdueAgingChart data={overdueAging} />
               </div>
             </CardContent>
           </Card>

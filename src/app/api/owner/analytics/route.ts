@@ -26,9 +26,17 @@ export const GET = apiHandler(async (req: NextRequest) => {
   const outstandingTrend: { label: string; value: number }[] = []
   const overdueTrend: { label: string; value: number }[] = []
 
+  // Outstanding loans fetched once: the per-bucket queries differ only in
+  // the disbursedAt cutoff, so one fetch with the largest cutoff (the last
+  // bucket's end) is a superset of every bucket's result set.
+  const outstandingLoansAll = await db.loan.findMany({
+    where: { organizationId: orgId, disbursedAt: { lt: buckets[buckets.length - 1].end }, status: { in: ['ACTIVE', 'CLOSED'] } },
+    select: { disbursedAt: true, outstandingPrincipal: true },
+  })
+
   // Process buckets in parallel
   const bucketResults = await Promise.all(buckets.map(async (b) => {
-    const [disbursed, collected, outstandingLoans, overdueInsts] = await Promise.all([
+    const [disbursed, collected, overdueInsts] = await Promise.all([
       db.loan.aggregate({
         where: { organizationId: orgId, disbursedAt: { gte: b.start, lt: b.end } },
         _sum: { principalAmount: true },
@@ -36,10 +44,6 @@ export const GET = apiHandler(async (req: NextRequest) => {
       db.payment.aggregate({
         where: { organizationId: orgId, status: 'ALLOCATED', allocatedAt: { gte: b.start, lt: b.end } },
         _sum: { amount: true },
-      }),
-      db.loan.findMany({
-        where: { organizationId: orgId, disbursedAt: { lt: b.end }, status: { in: ['ACTIVE', 'CLOSED'] } },
-        select: { outstandingPrincipal: true },
       }),
       db.installment.aggregate({
         where: { dueDate: { lt: b.end }, status: 'OVERDUE', loan: { organizationId: orgId } },
@@ -50,7 +54,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
     return {
       disbursement: { label: b.label, value: disbursed._sum.principalAmount ?? 0 },
       collection: { label: b.label, value: collected._sum.amount ?? 0 },
-      outstanding: { label: b.label, value: outstandingLoans.reduce((s, l) => s + l.outstandingPrincipal, 0) },
+      outstanding: { label: b.label, value: outstandingLoansAll.reduce((s, l) => s + (l.disbursedAt !== null && l.disbursedAt.getTime() < b.end.getTime() ? l.outstandingPrincipal : 0), 0) },
       overdue: { label: b.label, value: Math.max(0, (overdueInsts._sum.totalDue ?? 0) - (overdueInsts._sum.paidAmount ?? 0)) }
     }
   }))
@@ -62,50 +66,53 @@ export const GET = apiHandler(async (req: NextRequest) => {
     overdueTrend.push(res.overdue)
   }
 
-  // Repayment frequency distribution
-  const freqDist = await db.loan.groupBy({
-    by: ['frequency'],
-    where: { organizationId: orgId },
-    _count: true,
-  })
+  // The five trailing queries are mutually independent, so run them in parallel.
+  const [freqDist, methodAgg, agents, ptpFulfillment, overdueInstallments] = await Promise.all([
+    // Repayment frequency distribution
+    db.loan.groupBy({
+      by: ['frequency'],
+      where: { organizationId: orgId },
+      _count: true,
+    }),
 
-  // Collection by method
-  const methodAgg = await db.payment.groupBy({
-    by: ['method'],
-    where: { organizationId: orgId, status: 'ALLOCATED' },
-    _sum: { amount: true },
-    _count: true,
-  })
+    // Collection by method
+    db.payment.groupBy({
+      by: ['method'],
+      where: { organizationId: orgId, status: 'ALLOCATED' },
+      _sum: { amount: true },
+      _count: true,
+    }),
 
-  // Agent workload
-  const agents = await db.agentProfile.findMany({
-    where: { organizationId: orgId },
-    include: {
-      user: { select: { name: true } },
-      _count: {
-        select: {
-          tasks: { where: { status: { in: ['OPEN', 'ASSIGNED'] } } } as any,
-          candidates: { where: { status: 'ACTIVE' } } as any,
+    // Agent workload
+    db.agentProfile.findMany({
+      where: { organizationId: orgId },
+      include: {
+        user: { select: { name: true } },
+        _count: {
+          select: {
+            tasks: { where: { status: { in: ['OPEN', 'ASSIGNED'] } } } as any,
+            candidates: { where: { status: 'ACTIVE' } } as any,
+          },
         },
       },
-    },
-  })
+    }),
 
-  // PTP fulfillment
-  const ptpFulfillment = await db.ptp.groupBy({
-    by: ['status'],
-    where: { agent: { organizationId: orgId } },
-    _count: true,
-  })
+    // PTP fulfillment
+    db.ptp.groupBy({
+      by: ['status'],
+      where: { agent: { organizationId: orgId } },
+      _count: true,
+    }),
 
-  // Overdue aging (real buckets): open OVERDUE installments grouped by
-  // days past due; amount is the outstanding paise (totalDue - paidAmount).
-  // The dashboard's aging chart consumes exactly this shape — it previously
-  // rendered a hardcoded all-zero array.
-  const overdueInstallments = await db.installment.findMany({
-    where: { status: 'OVERDUE', loan: { organizationId: orgId } },
-    select: { dueDate: true, totalDue: true, paidAmount: true },
-  })
+    // Overdue aging (real buckets): open OVERDUE installments grouped by
+    // days past due; amount is the outstanding paise (totalDue - paidAmount).
+    // The dashboard's aging chart consumes exactly this shape — it previously
+    // rendered a hardcoded all-zero array.
+    db.installment.findMany({
+      where: { status: 'OVERDUE', loan: { organizationId: orgId } },
+      select: { dueDate: true, totalDue: true, paidAmount: true },
+    }),
+  ])
   const overdueAging = [
     { bucket: '1-7 days', count: 0, amount: 0 },
     { bucket: '8-15 days', count: 0, amount: 0 },

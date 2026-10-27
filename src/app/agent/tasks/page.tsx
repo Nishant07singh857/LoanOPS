@@ -23,6 +23,7 @@ import {
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
+import { PaginationControls } from '@/components/ui/pagination-controls'
 import { toast } from 'sonner'
 import { api, ApiRequestError } from '@/lib/api-client'
 import { formatPaiseToINR } from '@/lib/money'
@@ -136,11 +137,17 @@ export default function AgentTasksPage() {
   const [search, setSearch] = React.useState('')
   const [newOpen, setNewOpen] = React.useState(false)
   const [collectTask, setCollectTask] = React.useState<TaskRow | null>(null)
+  const [page, setPage] = React.useState(1)
+
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(1)
+  }, [chip, status, search])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['agent-tasks', status],
+    queryKey: ['agent-tasks', status, page],
     queryFn: () => api.get<{ items: TaskRow[]; total: number }>(
-      `/api/agent/tasks?pageSize=100${status !== 'ALL' ? `&status=${status}` : ''}`
+      `/api/agent/tasks?pageSize=100&page=${page}${status !== 'ALL' ? `&status=${status}` : ''}`
     ),
   })
 
@@ -260,6 +267,7 @@ export default function AgentTasksPage() {
       ) : filtered.length === 0 ? (
         <EmptyState icon={<ListTodo className="h-6 w-6" />} title="No tasks match these filters" description="Try adjusting filters or status." />
       ) : (
+        <>
         <StaggerContainer className="space-y-3">
           {filtered.map((t) => {
             const overdue = isOverdue(new Date(t.dueDate))
@@ -352,6 +360,8 @@ export default function AgentTasksPage() {
             )
           })}
         </StaggerContainer>
+        <PaginationControls page={page} pageSize={100} total={data?.total ?? 0} onPageChange={setPage} />
+        </>
       )}
 
       <NewTaskDialog open={newOpen} onOpenChange={setNewOpen} />

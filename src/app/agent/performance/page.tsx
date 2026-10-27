@@ -1,15 +1,12 @@
 'use client'
 
 import * as React from 'react'
+import dynamic from 'next/dynamic'
 import { useQuery } from '@tanstack/react-query'
 import {
   Trophy, TrendingUp, ListTodo, Handshake, Banknote, Wallet,
   PhoneCall,
 } from 'lucide-react'
-import {
-  ResponsiveContainer,
-  Tooltip, Legend, Cell, Pie, PieChart,
-} from 'recharts'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { KPICard } from '@/components/ui/kpi-card'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -18,6 +15,8 @@ import { FadeIn, StaggerContainer, StaggerItem } from '@/components/ui/motion'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
+
+const PtpFulfillmentChart = dynamic(() => import('@/components/charts/ptp-fulfillment-chart'), { ssr: false, loading: () => (<div className="h-full w-full animate-pulse rounded-xl bg-muted/40" aria-hidden="true" />) })
 
 interface Performance {
   id: string
@@ -120,23 +119,7 @@ export default function AgentPerformancePage() {
             </CardHeader>
             <CardContent>
               <div className="h-[260px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={ptpData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value">
-                      {ptpData.map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{ background: 'var(--popover)', border: '1px solid var(--border)', borderRadius: 12, color: 'var(--popover-foreground)', fontSize: 12, padding: '8px 12px' }}
-                    />
-                    <Legend
-                      iconType="circle"
-                      iconSize={8}
-                      formatter={(v) => <span className="text-xs text-muted-foreground">{v}</span>}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+                <PtpFulfillmentChart data={ptpData} />
               </div>
             </CardContent>
           </Card>

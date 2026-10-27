@@ -24,6 +24,7 @@ import {
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
+import { PaginationControls } from '@/components/ui/pagination-controls'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR } from '@/lib/money'
@@ -76,11 +77,17 @@ export default function AgentPtpPage() {
   const queryClient = useQueryClient()
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [newOpen, setNewOpen] = React.useState(false)
+  const [page, setPage] = React.useState(1)
+
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(1)
+  }, [chip])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['agent-ptp', chip],
+    queryKey: ['agent-ptp', chip, page],
     queryFn: () => api.get<{ items: PtpRow[]; total: number }>(
-      `/api/agent/ptp?pageSize=100${chip !== 'ALL' ? `&status=${chip}` : ''}`
+      `/api/agent/ptp?pageSize=100&page=${page}${chip !== 'ALL' ? `&status=${chip}` : ''}`
     ),
   })
 
@@ -179,6 +186,7 @@ export default function AgentPtpPage() {
       ) : all.length === 0 ? (
         <EmptyState icon={<Handshake className="h-6 w-6" />} title="No PTPs in this view" description="Create a PTP to see it here." />
       ) : (
+        <>
         <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
           {all.map((p) => (
             <StaggerItem key={p.id}>
@@ -252,6 +260,8 @@ export default function AgentPtpPage() {
             </StaggerItem>
           ))}
         </StaggerContainer>
+        <PaginationControls page={page} pageSize={100} total={data?.total ?? 0} onPageChange={setPage} />
+        </>
       )}
 
       <NewPtpDialog open={newOpen} onOpenChange={setNewOpen} />

@@ -23,6 +23,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
+import { PaginationControls } from '@/components/ui/pagination-controls'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR } from '@/lib/money'
 
@@ -129,6 +130,8 @@ export default function CollectionsPage() {
   const [reason, setReason] = React.useState('')
   const [viewCollection, setViewCollection] = React.useState<CashCollectionRow | null>(null)
   const [viewEscalation, setViewEscalation] = React.useState<EscalationRow | null>(null)
+  const [cashPage, setCashPage] = React.useState(1)
+  const [escPage, setEscPage] = React.useState(1)
 
   const {
     data: cashData,
@@ -136,8 +139,8 @@ export default function CollectionsPage() {
     isError: cashError,
     refetch: refetchCash,
   } = useQuery({
-    queryKey: ['owner-cash-collections'],
-    queryFn: () => api.get<CashCollectionsResponse>('/api/owner/cash-collections?pageSize=100'),
+    queryKey: ['owner-cash-collections', cashPage],
+    queryFn: () => api.get<CashCollectionsResponse>(`/api/owner/cash-collections?pageSize=100&page=${cashPage}`),
   })
 
   const {
@@ -146,8 +149,8 @@ export default function CollectionsPage() {
     isError: escError,
     refetch: refetchEsc,
   } = useQuery({
-    queryKey: ['owner-escalations'],
-    queryFn: () => api.get<{ items: EscalationRow[]; total: number }>('/api/owner/escalations?pageSize=100'),
+    queryKey: ['owner-escalations', escPage],
+    queryFn: () => api.get<{ items: EscalationRow[]; total: number }>(`/api/owner/escalations?pageSize=100&page=${escPage}`),
   })
 
   const { data: kpis } = useQuery({
@@ -510,6 +513,7 @@ export default function CollectionsPage() {
                     )
                   })}
                 </StaggerContainer>
+                <PaginationControls page={cashPage} pageSize={100} total={cashData?.total ?? 0} onPageChange={setCashPage} />
               </>
             )}
           </CardContent>
@@ -607,6 +611,7 @@ export default function CollectionsPage() {
                     </StaggerItem>
                   ))}
                 </StaggerContainer>
+                <PaginationControls page={escPage} pageSize={100} total={escData?.total ?? 0} onPageChange={setEscPage} />
               </>
             )}
           </CardContent>
