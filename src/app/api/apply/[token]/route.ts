@@ -3,7 +3,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { apiHandler, success, badRequest, notFound, validate, genNumber, HttpError } from '@/lib/server/api'
+import { apiHandler, success, badRequest, notFound, conflict, validate, genNumber, HttpError } from '@/lib/server/api'
 import { generateSchedule } from '@/lib/server/financial'
 import { encryptPII, hashPII } from '@/lib/server/crypto'
 import { getClientIp, validatePasswordPolicy } from '@/lib/server/auth'
@@ -240,93 +240,71 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
     otherFeesPaise: BigInt(otherFees || 0),
   })
 
-  // Transaction: upsert candidate + create application + create KYC doc + agreement snapshot + audit
-  const result = await db.$transaction(async (tx) => {
-    // Upsert candidate by mobile + organizationId
-    const existing = await tx.candidate.findFirst({
-      where: { organizationId: link.organizationId, mobile: input.mobile },
-    })
+  // SECURITY: a public apply link must never attach to an existing
+  // candidate. Matching a registered mobile here previously let a link
+  // holder create a login for an unclaimed candidate (full account
+  // takeover, bypassing the claim-code signup) or file an application
+  // with self-chosen terms on a claimed candidate's profile. Existing
+  // mobiles are rejected; only brand-new mobiles proceed.
+  const cleanMobile = input.mobile.replace(/\D/g, '').replace(/^91(\d{10})$/, '$1')
+  const existingCandidate = await db.candidate.findFirst({
+    where: { organizationId: link.organizationId, mobile: { in: [input.mobile, cleanMobile] } },
+  })
+  if (existingCandidate) {
+    return conflict(
+      'This mobile number is already registered. Please log in to your account or contact your agent for a new application.'
+    )
+  }
 
-    // An existing candidate that has already been claimed (userId set) or
-    // already has a KYC document is PROTECTED: a public link holder must not
-    // be able to overwrite their bank/KYC/contact details (disbursement
-    // diversion risk). For protected records only currently-empty fields
-    // are filled; unprotected records keep the normal update behaviour.
-    const existingKyc = existing
-      ? await tx.kycDocument.findFirst({ where: { candidateId: existing.id } })
-      : null
-    const isProtected = !!existing && (!!existing.userId || !!existingKyc)
-    const fillOnly = <T,>(current: T | null | undefined, next: T | null | undefined): T | null | undefined =>
-      isProtected ? (current ?? next) : (next || current)
+  // Transaction: create candidate + create application + create KYC doc + agreement snapshot + audit
+  const result = await db.$transaction(async (tx) => {
+    // Authoritative re-check inside the transaction, before ANY write:
+    // the fast-path lookup above can race a concurrent registration of
+    // the same mobile, so reject here as well.
+    const existing = await tx.candidate.findFirst({
+      where: { organizationId: link.organizationId, mobile: { in: [input.mobile, cleanMobile] } },
+    })
+    if (existing) {
+      throw new HttpError(
+        'CONFLICT',
+        'This mobile number is already registered. Please log in to your account or contact your agent for a new application.',
+        409
+      )
+    }
 
     // Bank accounts are stored AES-encrypted at rest (enc:v1:) on every
-    // other write path — encrypt BEFORE the fillOnly/fallback logic so a
-    // raw submitted value can never land in Candidate.bankAccount.
+    // other write path — encrypt here so a raw submitted value can never
+    // land in Candidate.bankAccount.
     const encryptedBankAccount = input.bankAccount ? encryptPII(input.bankAccount) : undefined
 
-    let candidate = existing
-      ? await tx.candidate.update({
-          where: { id: existing.id },
-          data: {
-            fullName: isProtected ? existing.fullName : input.fullName,
-            email: fillOnly(existing.email, input.email),
-            dob: input.dob ? new Date(input.dob) : existing.dob,
-            address: fillOnly(existing.address, input.address),
-            occupation: fillOnly(existing.occupation, input.occupation),
-            employer: fillOnly(existing.employer, input.employer),
-            monthlyIncome: input.monthlyIncome ? Number(input.monthlyIncome) : existing.monthlyIncome,
-            existingObligations: input.existingObligations ? Number(input.existingObligations) : existing.existingObligations,
-            bankName: fillOnly(existing.bankName, input.bankName),
-            bankAccount: isProtected
-              ? fillOnly(existing.bankAccount, encryptedBankAccount)
-              : encryptedBankAccount || existing.bankAccount,
-            bankIfsc: isProtected
-              ? fillOnly(existing.bankIfsc, input.bankIfsc)
-              : input.bankIfsc || existing.bankIfsc,
-            upiId: fillOnly(existing.upiId, input.upiId),
-            aadhaarMasked: isProtected
-              ? fillOnly(existing.aadhaarMasked, aadhaar.masked)
-              : aadhaar.masked || existing.aadhaarMasked,
-            aadhaarLast4: isProtected
-              ? fillOnly(existing.aadhaarLast4, aadhaar.last4)
-              : aadhaar.last4 || existing.aadhaarLast4,
-            aadhaarHash: isProtected
-              ? fillOnly(existing.aadhaarHash, aadhaar.hash)
-              : aadhaar.hash || existing.aadhaarHash,
-            panMasked: isProtected
-              ? fillOnly(existing.panMasked, pan.masked)
-              : pan.masked || existing.panMasked,
-          },
-        })
-      : await tx.candidate.create({
-          data: {
-            organizationId: link.organizationId,
-            fullName: input.fullName,
-            mobile: input.mobile,
-            email: input.email,
-            dob: input.dob ? new Date(input.dob) : null,
-            address: input.address,
-            occupation: input.occupation,
-            employer: input.employer,
-            monthlyIncome: input.monthlyIncome ? Number(input.monthlyIncome) : null,
-            existingObligations: input.existingObligations ? Number(input.existingObligations) : null,
-            bankName: input.bankName,
-            bankAccount: encryptedBankAccount ?? null,
-            bankIfsc: input.bankIfsc,
-            upiId: input.upiId,
-            aadhaarMasked: aadhaar.masked,
-            aadhaarLast4: aadhaar.last4,
-            aadhaarHash: aadhaar.hash,
-            panMasked: pan.masked,
-          },
-        })
+    let candidate = await tx.candidate.create({
+      data: {
+        organizationId: link.organizationId,
+        fullName: input.fullName,
+        mobile: input.mobile,
+        email: input.email,
+        dob: input.dob ? new Date(input.dob) : null,
+        address: input.address,
+        occupation: input.occupation,
+        employer: input.employer,
+        monthlyIncome: input.monthlyIncome ? Number(input.monthlyIncome) : null,
+        existingObligations: input.existingObligations ? Number(input.existingObligations) : null,
+        bankName: input.bankName,
+        bankAccount: encryptedBankAccount ?? null,
+        bankIfsc: input.bankIfsc,
+        upiId: input.upiId,
+        aadhaarMasked: aadhaar.masked,
+        aadhaarLast4: aadhaar.last4,
+        aadhaarHash: aadhaar.hash,
+        panMasked: pan.masked,
+      },
+    })
 
     // Portal account: when the applicant supplied a password and this
-    // candidate has no linked login yet, create the CANDIDATE user in the
-    // same transaction (same shape as the claim-code signup: the login
-    // email IS the mobile number). An already-claimed candidate's password
-    // is NEVER overwritten from a public link, and if a user with this
-    // mobile-as-email already exists (e.g. claimed via signup in another
+    // (new) candidate has no linked login yet, create the CANDIDATE user
+    // in the same transaction (same shape as the claim-code signup: the
+    // login email IS the mobile number). If a user with this
+    // mobile-as-email already exists (e.g. created via signup in another
     // flow) linking is skipped rather than failing the application.
     if (input.password && !candidate.userId) {
       const existingUser = await tx.user.findUnique({ where: { email: input.mobile } })
@@ -350,34 +328,17 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
       }
     }
 
-    // Create KYC record (find-or-create — candidateId is not unique in KycDocument)
+    // Create KYC record for the new candidate.
     // SECURITY: aadhaarNumber is NEVER written here (full Aadhaar is not
     // stored anywhere); panNumber holds only the AES-encrypted PAN.
-    if (existingKyc) {
-      if (!isProtected) {
-        await tx.kycDocument.update({
-          where: { id: existingKyc.id },
-          data: {
-            panNumber: pan.encrypted ?? existingKyc.panNumber,
-            status: 'PENDING',
-          },
-        })
-      } else if (!existingKyc.panNumber && pan.encrypted) {
-        await tx.kycDocument.update({
-          where: { id: existingKyc.id },
-          data: { panNumber: pan.encrypted },
-        })
-      }
-    } else {
-      await tx.kycDocument.create({
-        data: {
-          candidateId: candidate.id,
-          aadhaarNumber: null,
-          panNumber: pan.encrypted ?? null,
-          status: 'PENDING',
-        },
-      })
-    }
+    await tx.kycDocument.create({
+      data: {
+        candidateId: candidate.id,
+        aadhaarNumber: null,
+        panNumber: pan.encrypted ?? null,
+        status: 'PENDING',
+      },
+    })
 
     // Create application
     const application = await tx.application.create({

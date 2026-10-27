@@ -8,6 +8,41 @@ const DEFAULT_DEV_SECRET = 'loanops-dev-key-must-be-32-bytes!'
 
 let cachedSecret: string | null = null
 let cachedKey: Buffer | null = null
+let warnedAboutFallbackKey = false
+
+/**
+ * Write-side guard for encryptPII (G4-1): persisting PII encrypted with
+ * fallback key material (SESSION_SECRET, or worse the in-source
+ * DEFAULT_DEV_SECRET) must never happen silently — anyone who can read
+ * the source code can decrypt such data.
+ *
+ * - PII_ENCRYPTION_KEY set → proceed silently (all modes).
+ * - Production → proceed; getEncryptionKey()/env validation already fail
+ *   closed there when no real secret is configured.
+ * - NODE_ENV=test → proceed, but warn ONCE per process that fallback key
+ *   material is in use (test data only, never real data).
+ * - Anything else (development, NODE_ENV unset, …) → throw.
+ */
+function guardFallbackKeyEncryption(): void {
+  if (process.env.PII_ENCRYPTION_KEY) return
+  if (process.env.NODE_ENV === 'production') return
+  if (process.env.NODE_ENV === 'test') {
+    if (!warnedAboutFallbackKey) {
+      warnedAboutFallbackKey = true
+      console.warn(
+        '⚠️  PII_ENCRYPTION_KEY is not set — encryptPII is using FALLBACK key material ' +
+          '(SESSION_SECRET or the in-source development secret). This is permitted in ' +
+          'NODE_ENV=test only and must NEVER be used for real data: anything encrypted ' +
+          'with fallback material is decryptable by anyone who can read the source code. ' +
+          'Set a real PII_ENCRYPTION_KEY (see .env.example).'
+      )
+    }
+    return
+  }
+  throw new Error(
+    'PII_ENCRYPTION_KEY is not set — refusing to encrypt PII with fallback key material outside NODE_ENV=test. Set a real PII_ENCRYPTION_KEY (see .env.example).'
+  )
+}
 
 function deriveKey(secret: string): Buffer {
   return scryptSync(secret, SALT, 32)
@@ -49,6 +84,7 @@ export function encryptPII(plaintext: string): string {
   const str = String(plaintext)
   if (str.startsWith(PREFIX)) return str
 
+  guardFallbackKeyEncryption()
   const key = getEncryptionKey()
   const iv = randomBytes(12)
   const cipher = createCipheriv('aes-256-gcm', key, iv, { authTagLength: 16 })

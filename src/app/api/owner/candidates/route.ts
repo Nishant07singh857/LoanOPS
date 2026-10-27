@@ -16,7 +16,7 @@ import {
 
 const listSchema = paginationSchema.extend({
   search: z.string().trim().optional().default(''),
-  status: z.string().optional(),
+  status: z.enum(['ACTIVE', 'INACTIVE', 'BLACKLISTED']).optional(),
   assignedAgentId: z.string().optional(),
 })
 

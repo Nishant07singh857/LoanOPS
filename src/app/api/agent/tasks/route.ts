@@ -7,7 +7,7 @@ import { requireAgent, audit } from '@/lib/server/auth'
 import { apiHandler, success, created, badRequest, notFound, forbidden, validate, paginate, paginationSchema } from '@/lib/server/api'
 
 const listSchema = paginationSchema.extend({
-  status: z.string().optional(),
+  status: z.enum(['OPEN', 'ASSIGNED', 'RESOLVED', 'CLOSED']).optional(),
 })
 
 export const GET = apiHandler(async (req: NextRequest) => {

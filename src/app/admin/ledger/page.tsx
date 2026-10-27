@@ -21,6 +21,7 @@ import {
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
+import { escapeCsvCell } from '@/lib/csv'
 import { cn } from '@/lib/utils'
 
 interface LedgerRow {
@@ -103,11 +104,11 @@ export default function LedgerPage() {
       e.debitAccount,
       e.creditAccount,
       (Number(e.amount) / 100).toFixed(2),
-      `"${(e.description ?? '').replace(/"/g, '""')}"`,
+      e.description ?? '',
       e.reference ?? '',
       fmtDate(e.createdAt),
     ])
-    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
+    const csv = [headers.map(escapeCsvCell).join(','), ...rows.map((r) => r.map(escapeCsvCell).join(','))].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')

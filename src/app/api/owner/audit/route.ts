@@ -6,7 +6,7 @@ import { requireOwner } from '@/lib/server/auth'
 import { apiHandler, success, validate, paginate, paginationSchema } from '@/lib/server/api'
 
 const schema = paginationSchema.extend({
-  action: z.string().optional(),
+  action: z.enum(['CREATE', 'UPDATE', 'DELETE', 'APPROVE', 'REJECT', 'SUBMIT', 'VERIFY', 'ALLOCATE', 'DISBURSE', 'REFUND', 'RESTRUCTURE', 'CORRECT', 'REVOKE', 'LOGIN', 'LOGOUT', 'LOGIN_FAILED', 'PASSWORD_RESET', 'REVEAL_PII', 'ROLE_CHANGE', 'SETTINGS_CHANGE', 'CONSENT_GIVEN', 'DATA_REQUEST', 'FILE_UPLOAD', 'FILE_ACCESS', 'PTP_CREATE', 'PTP_UPDATE', 'ESCALATE', 'AGREE']).optional(),
   entityType: z.string().optional(),
 })
 

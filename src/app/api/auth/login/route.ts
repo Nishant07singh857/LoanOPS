@@ -3,6 +3,8 @@
 // - Central rate limiter (429 + Retry-After) keyed by IP + email
 // - Constant-time dummy bcrypt verification when user is missing (no timing enumeration)
 // - Identical error messages for wrong email vs wrong password
+// - Locked-account response is intentionally identical to invalid credentials
+//   (returning a distinct locked message would confirm the account exists)
 // - Account lockout after 5 failures + LOGIN_FAILED append-only audit log
 // - Optional TOTP 2FA verification for Owner/Admin accounts
 // - Session rotation on login
@@ -63,10 +65,12 @@ export const POST = apiHandler(async (req: NextRequest) => {
     return unauthorized('Invalid credentials')
   }
 
-  // Check if account is locked (DB-level)
+  // Check if account is locked (DB-level). Respond exactly as for invalid
+  // credentials so a locked account cannot be distinguished from a wrong
+  // password / unknown email (no account-enumeration oracle).
   if (user.lockedUntil && user.lockedUntil > new Date()) {
     await constantTimeDummyVerify(parsed.password)
-    return tooMany('Account temporarily locked due to repeated failed attempts. Please try again later.')
+    return unauthorized('Invalid credentials')
   }
 
   // Optional CAPTCHA hook after repeated failures

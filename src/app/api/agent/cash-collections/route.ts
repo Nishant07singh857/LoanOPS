@@ -12,7 +12,7 @@ import { parsePaise } from '@/lib/server/financial'
 import { collectCashPayment } from '@/lib/server/payments'
 
 const listSchema = paginationSchema.extend({
-  status: z.string().optional(),
+  status: z.enum(['INITIATED', 'PENDING_VERIFICATION', 'VERIFIED', 'ALLOCATED', 'FAILED', 'REJECTED']).optional(),
 })
 
 export const GET = apiHandler(async (req: NextRequest) => {

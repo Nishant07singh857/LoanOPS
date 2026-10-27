@@ -3,6 +3,8 @@
 // - Central rate limiting keyed by IP + mobile
 // - Constant-time dummy bcrypt check on missing candidate (no timing enumeration)
 // - Identical error message for unknown mobile vs wrong password
+// - Locked-account response is intentionally identical to invalid credentials
+//   (returning a distinct locked message would confirm the account exists)
 // - Failed login audit log + lockout after 5 attempts
 
 import { NextRequest } from 'next/server'
@@ -105,9 +107,12 @@ export const POST = apiHandler(async (req: NextRequest) => {
     return unauthorized('Invalid credentials')
   }
 
+  // Locked account: respond exactly as for invalid credentials so a locked
+  // account cannot be distinguished from a wrong password / unknown mobile
+  // (no account-enumeration oracle).
   if (user.lockedUntil && user.lockedUntil > new Date()) {
     await constantTimeDummyVerify(parsed.password)
-    return tooMany('Account temporarily locked due to repeated failed attempts. Please try again later.')
+    return unauthorized('Invalid credentials')
   }
 
   const ok = await verifyPassword(parsed.password, user.passwordHash)

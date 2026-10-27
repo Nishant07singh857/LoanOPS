@@ -5,7 +5,7 @@ import { requireOwner, audit } from '@/lib/server/auth'
 import { apiHandler, success, validate, paginate, paginationSchema } from '@/lib/server/api'
 
 const querySchema = paginationSchema.extend({
-  status: z.string().trim().optional(),
+  status: z.enum(['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED', 'INFORMATION_REQUESTED']).optional(),
   search: z.string().trim().optional(),
 })
 
