@@ -22,6 +22,7 @@ import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
+import { escapeCsvCell } from '@/lib/csv'
 import { cn } from '@/lib/utils'
 
 // Maps UI report keys → API report type
@@ -93,13 +94,9 @@ export default function ReportsPage() {
       return
     }
     const headers = Object.keys(items[0])
-    const escapeCell = (val: unknown) => {
-      const str = val == null ? '' : String(val)
-      return `"${str.replace(/"/g, '""')}"`
-    }
     const csvRows = [
-      headers.map(escapeCell).join(','),
-      ...items.map((row) => headers.map((h) => escapeCell(row[h])).join(',')),
+      headers.map(escapeCsvCell).join(','),
+      ...items.map((row) => headers.map((h) => escapeCsvCell(row[h])).join(',')),
     ]
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)

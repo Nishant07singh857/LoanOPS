@@ -6,7 +6,7 @@ import { requireOwner } from '@/lib/server/auth'
 import { apiHandler, success, validate, paginate, paginationSchema } from '@/lib/server/api'
 
 const schema = paginationSchema.extend({
-  status: z.string().optional(),
+  status: z.enum(['OPEN', 'IN_REVIEW', 'RESOLVED', 'CLOSED']).optional(),
 })
 
 export const GET = apiHandler(async (req: NextRequest) => {

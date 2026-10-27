@@ -9,7 +9,7 @@ import { parsePaise } from '@/lib/server/financial'
 
 const schema = paginationSchema.extend({
   loanId: z.string().optional(),
-  status: z.string().optional(),
+  status: z.enum(['REQUESTED', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED']).optional(),
 })
 
 export const GET = apiHandler(async (req: NextRequest) => {

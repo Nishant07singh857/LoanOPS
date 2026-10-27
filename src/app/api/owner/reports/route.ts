@@ -2,7 +2,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireOwner } from '@/lib/server/auth'
-import { apiHandler, success, badRequest } from '@/lib/server/api'
+import { apiHandler, success, badRequest, unprocessable } from '@/lib/server/api'
 
 export const GET = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()
@@ -13,6 +13,36 @@ export const GET = apiHandler(async (req: NextRequest) => {
   const to = url.searchParams.get('to') ? new Date(url.searchParams.get('to')!) : null
   const agent = url.searchParams.get('agent') || null
   const status = url.searchParams.get('status') || null
+
+  // Per-type allowlist for the `status` filter. Each branch below feeds
+  // `status` into a different model's enum column, so an out-of-enum value
+  // must be rejected here (422) instead of reaching Prisma and 500ing.
+  // The mapping follows the branches as written:
+  // - loans / portfolio / overdue / disbursement -> Loan.status (LoanStatus).
+  //   Note: the disbursement and overdue branches apply `status` to the
+  //   related loan, not to Disbursement.status / Installment.status.
+  // - payments / collections -> Payment.status (PaymentStatus)
+  // - applications -> Application.status (ApplicationStatus)
+  // - ptps / ptp (alias) -> Ptp.status (PtpStatus)
+  // - audit -> AuditLog.action (AuditAction)
+  // Types that never read `status` (agent_performance, reconciliation) have
+  // no entry, so their behaviour is unchanged.
+  const STATUS_ALLOWLIST: Record<string, readonly string[]> = {
+    loans: ['PENDING_DISBURSEMENT', 'ACTIVE', 'CLOSED', 'DEFAULTED', 'WRITTEN_OFF'],
+    portfolio: ['PENDING_DISBURSEMENT', 'ACTIVE', 'CLOSED', 'DEFAULTED', 'WRITTEN_OFF'],
+    overdue: ['PENDING_DISBURSEMENT', 'ACTIVE', 'CLOSED', 'DEFAULTED', 'WRITTEN_OFF'],
+    disbursement: ['PENDING_DISBURSEMENT', 'ACTIVE', 'CLOSED', 'DEFAULTED', 'WRITTEN_OFF'],
+    payments: ['INITIATED', 'PENDING_VERIFICATION', 'VERIFIED', 'ALLOCATED', 'FAILED', 'REJECTED'],
+    collections: ['INITIATED', 'PENDING_VERIFICATION', 'VERIFIED', 'ALLOCATED', 'FAILED', 'REJECTED'],
+    applications: ['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED', 'INFORMATION_REQUESTED'],
+    ptps: ['ACTIVE', 'FULFILLED', 'BROKEN', 'CANCELLED'],
+    ptp: ['ACTIVE', 'FULFILLED', 'BROKEN', 'CANCELLED'],
+    audit: ['CREATE', 'UPDATE', 'DELETE', 'APPROVE', 'REJECT', 'SUBMIT', 'VERIFY', 'ALLOCATE', 'DISBURSE', 'REFUND', 'RESTRUCTURE', 'CORRECT', 'REVOKE', 'LOGIN', 'LOGOUT', 'LOGIN_FAILED', 'PASSWORD_RESET', 'REVEAL_PII', 'ROLE_CHANGE', 'SETTINGS_CHANGE', 'CONSENT_GIVEN', 'DATA_REQUEST', 'FILE_UPLOAD', 'FILE_ACCESS', 'PTP_CREATE', 'PTP_UPDATE', 'ESCALATE', 'AGREE'],
+  }
+  const allowedStatuses = STATUS_ALLOWLIST[type]
+  if (status && allowedStatuses && !allowedStatuses.includes(status)) {
+    return unprocessable('Invalid status filter for this report type')
+  }
 
   // Compute common date filter
   const dateFilter = (field: string) => {

@@ -66,6 +66,21 @@ async function main() {
     process.exit(1)
   }
 
+  if (!process.env.PII_ENCRYPTION_KEY) {
+    console.warn(
+      [
+        '',
+        '⚠️⚠️⚠️  WARNING: PII_ENCRYPTION_KEY IS NOT SET  ⚠️⚠️⚠️',
+        '⚠️  This seed will encrypt PII (bank accounts, PAN) with FALLBACK key',
+        '⚠️  material (SESSION_SECRET or the in-source development secret).',
+        '⚠️  Anything encrypted this way is DECRYPTABLE BY ANYONE WITH THE',
+        '⚠️  SOURCE CODE. Set a real PII_ENCRYPTION_KEY (see .env.example)',
+        '⚠️  for anything beyond throwaway local data.',
+        '',
+      ].join('\n')
+    )
+  }
+
   console.log('🌱 Seeding database...')
 
   // --- Organization ---

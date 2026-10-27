@@ -8,7 +8,7 @@ import { apiHandler, success, created, badRequest, notFound, forbidden, validate
 import { parsePaise } from '@/lib/server/financial'
 
 const listSchema = paginationSchema.extend({
-  status: z.string().optional(),
+  status: z.enum(['ACTIVE', 'FULFILLED', 'BROKEN', 'CANCELLED']).optional(),
   candidateId: z.string().optional(),
 })
 

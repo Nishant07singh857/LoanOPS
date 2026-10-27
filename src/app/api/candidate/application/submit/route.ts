@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { promises as fs } from 'fs'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requireCandidate, audit, getClientIp } from '@/lib/server/auth'
@@ -13,7 +14,7 @@ import {
 } from '@/lib/utils'
 import { encryptPII, hashPII } from '@/lib/server/crypto'
 import { enforceRateLimit } from '@/lib/server/rate-limit'
-import { validateAndStoreDataUrlUpload } from '@/lib/server/security'
+import { resolvePrivateStoragePath, validateAndStoreDataUrlUpload } from '@/lib/server/security'
 
 const MAX_LOAN_PAISE = 1_000_000_000 // ₹1 Crore in paise
 
@@ -81,6 +82,56 @@ export const POST = apiHandler(async (req: NextRequest) => {
   let storedAadhaarUrl: string | undefined = undefined
 
   let storedPanUrl: string | undefined
+  let validatedPanRef: string | undefined
+  let panWasFreshUpload = false
+
+  // Best-effort cleanup for a file newly stored by this request when a
+  // later eligibility check rejects the submission (avoids orphans).
+  const discardStored = async (ref: string | undefined) => {
+    if (!ref) return
+    try {
+      const fileKey = ref.split('?')[0].replace('/api/files/', '')
+      const safePath = resolvePrivateStoragePath(fileKey)
+      if (safePath) await fs.unlink(safePath)
+    } catch {
+      // Ignore cleanup errors.
+    }
+  }
+
+  // A panBase64 value that is already a private file reference bypasses
+  // storage in validateAndStoreDataUrlUpload, so validate it here first:
+  // it must resolve to an existing file on disk and belong to this candidate.
+  if (input.panBase64) {
+    const trimmedPan = input.panBase64.trim()
+    if (trimmedPan.startsWith('/api/files/')) {
+      const ref = trimmedPan.split('?')[0]
+      const fileKey = ref.slice('/api/files/'.length)
+      let refIsValid = false
+      const safePath = resolvePrivateStoragePath(fileKey)
+      if (safePath) {
+        try {
+          await fs.access(safePath)
+          const [kycMatch, docMatch] = await Promise.all([
+            db.kycDocument.findFirst({
+              where: {
+                candidateId: ctx.user.candidateId,
+                OR: [{ panUrl: ref }, { aadhaarUrl: ref }],
+              },
+            }),
+            db.document.findFirst({
+              where: { candidateId: ctx.user.candidateId, fileUrl: ref },
+            }),
+          ])
+          refIsValid = !!(kycMatch || docMatch)
+        } catch {
+          refIsValid = false
+        }
+      }
+      if (!refIsValid) return badRequest('Invalid file reference')
+      validatedPanRef = ref
+    }
+  }
+
   if (input.panBase64) {
     const check = await validateAndStoreDataUrlUpload(input.panBase64, {
       maxBytes: 5 * 1024 * 1024,
@@ -88,6 +139,10 @@ export const POST = apiHandler(async (req: NextRequest) => {
     })
     if (!check.ok) return badRequest(check.error)
     storedPanUrl = check.storedRef ?? undefined
+    // Fresh upload iff the helper stored a new file: in the reference case
+    // storedPanUrl is exactly the pre-validated reference and must not be
+    // deleted by the orphan cleanup below.
+    panWasFreshUpload = !!storedPanUrl && storedPanUrl !== validatedPanRef
   }
 
   const draftApplication = await db.application.findFirst({
@@ -109,14 +164,17 @@ export const POST = apiHandler(async (req: NextRequest) => {
   })
 
   if (!draftApplication) {
+    if (panWasFreshUpload) await discardStored(storedPanUrl)
     return badRequest('No pending application found')
   }
 
   const principalPaise = input.principalAmount ?? draftApplication.principalAmount
   if (!Number.isFinite(principalPaise) || principalPaise <= 0 || principalPaise > MAX_LOAN_PAISE) {
+    if (panWasFreshUpload) await discardStored(storedPanUrl)
     return badRequest('Invalid loan principal amount on application')
   }
   if (!draftApplication.installments || draftApplication.installments < 1 || draftApplication.installments > 360) {
+    if (panWasFreshUpload) await discardStored(storedPanUrl)
     return badRequest('Invalid installment count on application')
   }
 

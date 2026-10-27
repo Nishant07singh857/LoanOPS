@@ -59,13 +59,16 @@ export async function GET(
   const fileUrlRef = `/api/files/${fileKey}`
 
   if (ctx) {
-    // Check ownership in Payment, Document, or SupportTicket. All three
-    // lookups are organization-scoped, so they also serve as the OWNER
-    // check: an owner may only access files linked to a record in their
-    // own organization (previously OWNER bypassed this entirely).
+    // Check ownership in Payment, Document, SupportTicket, or KycDocument.
+    // The first three lookups are organization-scoped, so they also serve
+    // as the OWNER check: an owner may only access files linked to a record
+    // in their own organization (previously OWNER bypassed this entirely).
+    // KycDocument has no organizationId of its own, so its organization
+    // scoping comes from its candidate and every role check below must
+    // additionally require that candidate's organizationId to match.
     // Unauthenticated callers (ctx === null) still rely on the signed
     // URL above acting as the capability, unchanged.
-    const [payment, doc, ticket] = await Promise.all([
+    const [payment, doc, ticket, kycDoc] = await Promise.all([
       db.payment.findFirst({
         where: { proofUrl: fileUrlRef, organizationId: ctx.user.organizationId },
         include: { candidate: { select: { assignedAgentId: true } } },
@@ -77,10 +80,19 @@ export async function GET(
       db.supportTicket.findFirst({
         where: { attachmentUrl: fileUrlRef, organizationId: ctx.user.organizationId },
       }),
+      db.kycDocument.findFirst({
+        where: { OR: [{ panUrl: fileUrlRef }, { aadhaarUrl: fileUrlRef }] },
+        include: { candidate: { select: { id: true, organizationId: true, assignedAgentId: true } } },
+      }),
     ])
 
     if (ctx.user.role === 'OWNER') {
-      if (!payment && !doc && !ticket) {
+      if (
+        !payment &&
+        !doc &&
+        !ticket &&
+        !(kycDoc && kycDoc.candidate.organizationId === ctx.user.organizationId)
+      ) {
         return NextResponse.json(
           { error: { code: 'FORBIDDEN', message: 'You do not have permission to view this file' } },
           { status: 403 }
@@ -91,7 +103,10 @@ export async function GET(
       const ownsFile =
         (payment && payment.candidateId === candId) ||
         (doc && doc.candidateId === candId) ||
-        (ticket && ticket.candidateId === candId)
+        (ticket && ticket.candidateId === candId) ||
+        (kycDoc &&
+          kycDoc.candidateId === candId &&
+          kycDoc.candidate.organizationId === ctx.user.organizationId)
       if (!ownsFile) {
         return NextResponse.json(
           { error: { code: 'FORBIDDEN', message: 'You do not have permission to view this file' } },
@@ -104,7 +119,12 @@ export async function GET(
         (payment &&
           (payment.recordedById === ctx.user.id ||
             (agentProfile && payment.candidate.assignedAgentId === agentProfile.id))) ||
-        (doc && agentProfile && doc.candidate?.assignedAgentId === agentProfile.id)
+        (doc && agentProfile && doc.candidate?.assignedAgentId === agentProfile.id) ||
+        (kycDoc &&
+          agentProfile &&
+          kycDoc.candidate.organizationId === ctx.user.organizationId &&
+          (kycDoc.candidate.assignedAgentId === agentProfile.id ||
+            kycDoc.candidate.assignedAgentId === null))
       if (!isAuthorizedAgent) {
         return NextResponse.json(
           { error: { code: 'FORBIDDEN', message: 'You are not assigned to the record associated with this file' } },

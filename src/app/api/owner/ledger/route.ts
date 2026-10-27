@@ -6,7 +6,7 @@ import { requireOwner } from '@/lib/server/auth'
 import { apiHandler, success, validate, paginate, paginationSchema } from '@/lib/server/api'
 
 const schema = paginationSchema.extend({
-  type: z.string().optional(),
+  type: z.enum(['DISBURSEMENT', 'PAYMENT_PRINCIPAL', 'PAYMENT_INTEREST', 'PAYMENT_FEES', 'REFUND', 'CORRECTION', 'REVERSAL', 'FEE']).optional(),
 })
 
 export const GET = apiHandler(async (req: NextRequest) => {

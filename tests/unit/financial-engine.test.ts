@@ -30,6 +30,7 @@ import {
   detectMagicBytesMime,
   stripImageMetadata,
 } from '../../src/lib/server/security'
+import { escapeCsvCell, neutralizeCsvFormula } from '../../src/lib/csv'
 
 interface TestCase {
   name: string
@@ -268,6 +269,11 @@ test('frontend generateSchedulePreview matches backend generateSchedule', () => 
 
 // 9. AES-256-GCM PII Encryption, Decryption, SHA-256 Hashing & Key Rotation
 test('AES-256-GCM encryptPII, decryptPII, hashPII, and dual-key rotation work accurately', () => {
+  // encryptPII refuses fallback key material outside NODE_ENV=test, so give
+  // the round-trip below a deterministic test key when the environment
+  // provides none (the rotation segment later overwrites it as before).
+  process.env.PII_ENCRYPTION_KEY =
+    process.env.PII_ENCRYPTION_KEY || 'unit-test-pii-key-0123456789abcdef'
   const rawAadhaar = '987654321098'
   const cipher = encryptPII(rawAadhaar)
   assert.ok(cipher.startsWith('enc:v1:'))
@@ -386,6 +392,21 @@ test('decryptPIIForMask falls back without throwing on undecryptable enc:v1: val
     if (prevPrevious === undefined) delete process.env.PII_ENCRYPTION_KEY_PREVIOUS
     else process.env.PII_ENCRYPTION_KEY_PREVIOUS = prevPrevious
   }
+})
+
+// 12c. CSV export cells neutralize formula injection (OWASP)
+test('CSV export cells neutralize formula injection (OWASP)', () => {
+  assert.equal(escapeCsvCell('=cmd|\'/C calc\'!A0'), `"'=cmd|'/C calc'!A0"`)
+  assert.ok(escapeCsvCell('+91').startsWith(`"'`))
+  assert.equal(escapeCsvCell('-5'), `"'-5"`)
+  assert.equal(escapeCsvCell('@SUM(A1)'), `"'@SUM(A1)"`)
+  assert.ok(escapeCsvCell('\t=x').startsWith(`"'`))
+  assert.equal(escapeCsvCell('Priya Sharma'), '"Priya Sharma"')
+  assert.equal(escapeCsvCell('a"b'), '"a""b"')
+  assert.equal(escapeCsvCell(null), '""')
+  assert.equal(escapeCsvCell(123), '"123"')
+  assert.equal(escapeCsvCell(''), '""')
+  assert.equal(neutralizeCsvFormula('normal'), 'normal')
 })
 
 let passed = 0

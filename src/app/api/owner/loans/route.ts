@@ -5,9 +5,9 @@ import { requireOwner } from '@/lib/server/auth'
 import { apiHandler, success, validate, paginate, paginationSchema } from '@/lib/server/api'
 
 const querySchema = paginationSchema.extend({
-  status: z.string().trim().optional(),
+  status: z.enum(['PENDING_DISBURSEMENT', 'ACTIVE', 'CLOSED', 'DEFAULTED', 'WRITTEN_OFF']).optional(),
   search: z.string().trim().optional(),
-  frequency: z.string().trim().optional(),
+  frequency: z.enum(['DAILY', 'WEEKLY', 'MONTHLY']).optional(),
 })
 
 export const GET = apiHandler(async (req: NextRequest) => {

@@ -6,8 +6,8 @@ import { requireOwner } from '@/lib/server/auth'
 import { apiHandler, success, validate, paginate, paginationSchema } from '@/lib/server/api'
 
 const schema = paginationSchema.extend({
-  status: z.string().optional(),
-  method: z.string().optional(),
+  status: z.enum(['INITIATED', 'PENDING_VERIFICATION', 'VERIFIED', 'ALLOCATED', 'FAILED', 'REJECTED']).optional(),
+  method: z.enum(['ONLINE_UPI', 'ONLINE_NETBANKING', 'ONLINE_CARD', 'CASH', 'BANK_TRANSFER']).optional(),
   search: z.string().trim().optional().default(''),
 })
 
