@@ -3,8 +3,9 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { requireOwner, audit } from '@/lib/server/auth'
-import { apiHandler, success, badRequest, notFound, validate, genNumber } from '@/lib/server/api'
+import { apiHandler, success, badRequest, notFound, validate, genNumber, unprocessable } from '@/lib/server/api'
 import { generateSchedule } from '@/lib/server/financial'
+import { validateLoanTerms } from '@/lib/loan-terms'
 
 const schema = z.object({
   reviewNotes: z.string().max(2000).optional().nullable(),
@@ -24,6 +25,18 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
   if (app.status !== 'SUBMITTED' && app.status !== 'UNDER_REVIEW' && app.status !== 'INFORMATION_REQUESTED') {
     return badRequest(`Application is ${app.status}, cannot approve`)
   }
+
+  // Final terms are re-validated at approval (red-team round 2, N3):
+  // an application written before the ceilings existed — or via any
+  // path that missed them — must not become a loan with a zero or
+  // negative principal, an above-cap rate, or an out-of-range tenure.
+  const termsCheck = validateLoanTerms({
+    principalPaise: app.principalAmount,
+    interestType: app.interestType,
+    interestRateBps: app.interestRate,
+    installments: app.installments,
+  })
+  if (!termsCheck.ok) return unprocessable(termsCheck.error)
 
   // Compute schedule on backend (authoritative)
   const schedule = generateSchedule({

@@ -3,11 +3,13 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { apiHandler, success, badRequest, notFound, conflict, validate, genNumber, HttpError } from '@/lib/server/api'
+import { apiHandler, success, badRequest, notFound, conflict, unprocessable, validate, genNumber, HttpError } from '@/lib/server/api'
 import { generateSchedule } from '@/lib/server/financial'
 import { encryptPII, hashPII } from '@/lib/server/crypto'
 import { getClientIp, validatePasswordPolicy } from '@/lib/server/auth'
 import { maskAadhaar, maskPan, PAN_REGEX } from '@/lib/utils'
+import { canonicalizeMobile } from '@/lib/mobile'
+import { validateLoanTerms } from '@/lib/loan-terms'
 import { COMPLIANCE_CONFIG } from '@/lib/compliance-config'
 
 export const dynamic = 'force-dynamic'
@@ -160,6 +162,17 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
   if (!body) return badRequest('Invalid JSON')
   const input = validate(submitSchema, body)
 
+  // Canonicalize the mobile ONCE, up front: every spelling of the
+  // same number (0 / 91 / 0091 prefixes, spaces, digits typed in
+  // Devanagari / Arabic-Indic / fullwidth glyphs) folds to the same
+  // 10-digit form, which is the only form ever stored or matched.
+  // Non-canonical spellings previously minted shadow candidate
+  // records for already-registered numbers (red-team round 2, R1/R3).
+  const canonicalMobile = canonicalizeMobile(input.mobile)
+  if (!canonicalMobile) {
+    return unprocessable('Please enter a valid 10-digit mobile number')
+  }
+
   // Portal-account passwords must meet the same policy as every other
   // account-creation path (see /api/auth/signup) — the schema's min(8)
   // alone is weaker than the shared policy (min 10 + complexity checks).
@@ -167,7 +180,7 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
     const policy = validatePasswordPolicy(input.password, {
       email: input.email,
       name: input.fullName,
-      mobile: input.mobile,
+      mobile: canonicalMobile,
     })
     if (!policy.ok) {
       return badRequest(policy.error || 'Password does not meet security policy')
@@ -214,6 +227,18 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
     )
   }
 
+  // Shared terms ceilings, applied to the RESOLVED terms (request
+  // values merged over the link's presets) — so a preset minted
+  // before these caps existed cannot smuggle uncapped terms past
+  // apply (red-team round 2, N3/N5). Violations are 422, never 500.
+  const termsCheck = validateLoanTerms({
+    principalPaise: principalAmount,
+    interestType,
+    interestRateBps: interestRate ?? null,
+    installments,
+  })
+  if (!termsCheck.ok) return unprocessable(termsCheck.error)
+
   // First due date: explicit > link's pre-configured > one period from today.
   const firstDueDate = input.firstDueDate
     ? new Date(input.firstDueDate)
@@ -245,10 +270,11 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
   // holder create a login for an unclaimed candidate (full account
   // takeover, bypassing the claim-code signup) or file an application
   // with self-chosen terms on a claimed candidate's profile. Existing
-  // mobiles are rejected; only brand-new mobiles proceed.
-  const cleanMobile = input.mobile.replace(/\D/g, '').replace(/^91(\d{10})$/, '$1')
+  // mobiles are rejected; only brand-new mobiles proceed. Matching is
+  // plain equality on the canonical form — every spelling of the
+  // number lands on the same check.
   const existingCandidate = await db.candidate.findFirst({
-    where: { organizationId: link.organizationId, mobile: { in: [input.mobile, cleanMobile] } },
+    where: { organizationId: link.organizationId, mobile: canonicalMobile },
   })
   if (existingCandidate) {
     return conflict(
@@ -257,12 +283,16 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
   }
 
   // Transaction: create candidate + create application + create KYC doc + agreement snapshot + audit
-  const result = await db.$transaction(async (tx) => {
+  let result
+  try {
+    result = await db.$transaction(async (tx) => {
     // Authoritative re-check inside the transaction, before ANY write:
     // the fast-path lookup above can race a concurrent registration of
-    // the same mobile, so reject here as well.
+    // the same mobile, so reject here as well. The (organizationId,
+    // mobile) unique index is the final backstop (see the P2002 catch
+    // below).
     const existing = await tx.candidate.findFirst({
-      where: { organizationId: link.organizationId, mobile: { in: [input.mobile, cleanMobile] } },
+      where: { organizationId: link.organizationId, mobile: canonicalMobile },
     })
     if (existing) {
       throw new HttpError(
@@ -281,7 +311,7 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
       data: {
         organizationId: link.organizationId,
         fullName: input.fullName,
-        mobile: input.mobile,
+        mobile: canonicalMobile,
         email: input.email,
         dob: input.dob ? new Date(input.dob) : null,
         address: input.address,
@@ -307,17 +337,17 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
     // mobile-as-email already exists (e.g. created via signup in another
     // flow) linking is skipped rather than failing the application.
     if (input.password && !candidate.userId) {
-      const existingUser = await tx.user.findUnique({ where: { email: input.mobile } })
+      const existingUser = await tx.user.findUnique({ where: { email: canonicalMobile } })
       if (!existingUser) {
         const { hashPassword } = await import('@/lib/server/auth')
         const portalUser = await tx.user.create({
           data: {
             organizationId: link.organizationId,
-            email: input.mobile,
+            email: canonicalMobile,
             passwordHash: await hashPassword(input.password),
             passwordChangedAt: new Date(),
             name: input.fullName,
-            phone: input.mobile,
+            phone: canonicalMobile,
             role: 'CANDIDATE',
           },
         })
@@ -448,7 +478,18 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
     }
 
     return { application, candidate }
-  }, { maxWait: 15000, timeout: 30000 })
+    }, { maxWait: 15000, timeout: 30000 })
+  } catch (err: any) {
+    // The (organizationId, mobile) unique index fired: a concurrent
+    // registration of this mobile won the race between the re-check
+    // above and the insert. Same friendly 409 as the re-check path.
+    if (err?.code === 'P2002') {
+      return conflict(
+        'This mobile number is already registered. Please log in to your account or contact your agent for a new application.'
+      )
+    }
+    throw err
+  }
 
   return success({
     applicationId: result.application.id,

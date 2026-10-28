@@ -14,6 +14,8 @@ import {
 import { enforceRateLimit, verifyCaptchaToken } from '@/lib/server/rate-limit'
 import { sanitizeText } from '@/lib/server/security'
 import { hashPII } from '@/lib/server/crypto'
+import { canonicalizeMobile } from '@/lib/mobile'
+import { candidateRequiresClaimCode } from '@/lib/candidate-footprint'
 import { timingSafeEqual } from 'crypto'
 
 const consentItemSchema = z
@@ -30,9 +32,11 @@ const signupSchema = z
     mobile: z.string().trim().min(10).max(20),
     password: z.string().min(10, 'Password must be at least 10 characters').max(128),
     consents: z.array(consentItemSchema).optional(),
-    // Required only when the mobile already belongs to a candidate that has a
-    // sensitive footprint (applications / loans / KYC / payments). The owner
-    // issues it via POST /api/owner/candidates/[id]/claim-code.
+    // Required when the mobile already belongs to a candidate that has a
+    // sensitive footprint (applications / loans / KYC / payments, or any
+    // staff-entered PII on the record), or when the same mobile exists in
+    // more than one organization. The owner issues it via
+    // POST /api/owner/candidates/[id]/claim-code.
     claimCode: z.string().trim().min(4).max(32).optional(),
     captchaToken: z.string().optional().nullable(),
   })
@@ -61,8 +65,10 @@ export const POST = apiHandler(async (req: NextRequest) => {
   const input = validate(signupSchema, body)
   const safeName = sanitizeText(input.fullName)
 
-  const cleanMobile = input.mobile.replace(/\D/g, '').replace(/^91(\d{10})$/, '$1')
-  if (!/^[6-9]\d{9}$/.test(cleanMobile)) {
+  // Canonical form only: Devanagari/Arabic/fullwidth digit spellings
+  // and 0 / 91 / 0091 prefixes fold to the stored 10-digit form.
+  const cleanMobile = canonicalizeMobile(input.mobile)
+  if (!cleanMobile) {
     recordLoginFailure(ip)
     return badRequest('Please enter a valid 10-digit mobile number')
   }
@@ -83,67 +89,97 @@ export const POST = apiHandler(async (req: NextRequest) => {
   const org = await db.organization.findFirst({ where: { isActive: true } })
   if (!org) return badRequest('System not initialized')
 
-  const [existingUser, existingCandidate] = await Promise.all([
-    db.user.findFirst({
-      where: {
-        OR: [{ email: cleanMobile }, { phone: cleanMobile }],
-      },
-    }),
-    db.candidate.findFirst({
-      where: { organizationId: org.id, mobile: cleanMobile },
-    }),
-  ])
-
-  if (existingUser || (existingCandidate && existingCandidate.userId)) {
+  const existingUser = await db.user.findFirst({
+    where: {
+      OR: [{ email: cleanMobile }, { phone: cleanMobile }],
+    },
+  })
+  if (existingUser) {
     await constantTimeDummyVerify(input.password)
     recordLoginFailure(ip)
     return badRequest('Unable to complete registration with the provided details')
   }
 
   // Account-takeover guard: a pre-created candidate with NO sensitive
-  // footprint (no applications, loans, KYC documents or payments) may be
-  // claimed by whoever registers with that mobile. A candidate WITH a
-  // footprint may only be claimed with a valid, unexpired claim code issued
-  // by the owner — otherwise anyone who knows the borrower's mobile could
-  // take over their loans/KYC by simply signing up.
+  // footprint may be claimed by whoever registers with that mobile. A
+  // candidate WITH a footprint may only be claimed with a valid,
+  // unexpired claim code issued by the owner — otherwise anyone who
+  // knows the borrower's mobile could take over their record by
+  // simply signing up. "Footprint" covers applications / loans / KYC
+  // documents / payments AND any staff-entered PII on the record
+  // (round 2, R4: PII-rich leads with no application were claimable
+  // with the mobile alone).
+  //
+  // Candidates are per-organization while signup is global, so
+  // resolve EVERY record carrying this canonical mobile (at most one
+  // per org — the (organizationId, mobile) unique index enforces it):
+  // - a presented claim code binds deterministically to the record
+  //   whose stored hash matches (R4), which also disambiguates the
+  //   same mobile existing in more than one org (round 2, N8);
+  // - without a code, a mobile present in MORE THAN ONE org cannot
+  //   be claimed at all — the code is what says which org's borrower
+  //   is registering.
+  const sameMobileCandidates = await db.candidate.findMany({
+    where: { mobile: cleanMobile, deletedAt: null },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  const failRegistration = async () => {
+    await constantTimeDummyVerify(input.password)
+    recordLoginFailure(ip)
+    // Generic message — never reveal whether the mobile, the code, or
+    // the candidate record was the problem.
+    return badRequest('Unable to complete registration with the provided details')
+  }
+
+  let existingCandidate: (typeof sameMobileCandidates)[number] | null = null
   let claimCodeUsed = false
-  if (existingCandidate) {
+
+  if (input.claimCode) {
+    const now = new Date()
+    const match = sameMobileCandidates.find(
+      (c) =>
+        !!c.claimCodeHash &&
+        !!c.claimCodeExpiresAt &&
+        c.claimCodeExpiresAt > now &&
+        claimCodeMatches(input.claimCode as string, c.claimCodeHash as string)
+    )
+    if (!match || match.userId) return failRegistration()
+    existingCandidate = match
+    claimCodeUsed = true
+  } else if (sameMobileCandidates.length > 1) {
+    return failRegistration()
+  } else if (sameMobileCandidates.length === 1) {
+    const candidate = sameMobileCandidates[0]
+    if (candidate.userId) return failRegistration()
     const [applicationsCount, loansCount, kycDocsCount, paymentsCount] = await Promise.all([
-      db.application.count({ where: { candidateId: existingCandidate.id } }),
-      db.loan.count({ where: { candidateId: existingCandidate.id } }),
-      db.kycDocument.count({ where: { candidateId: existingCandidate.id } }),
-      db.payment.count({ where: { candidateId: existingCandidate.id } }),
+      db.application.count({ where: { candidateId: candidate.id } }),
+      db.loan.count({ where: { candidateId: candidate.id } }),
+      db.kycDocument.count({ where: { candidateId: candidate.id } }),
+      db.payment.count({ where: { candidateId: candidate.id } }),
     ])
-    const hasSensitiveFootprint =
-      applicationsCount + loansCount + kycDocsCount + paymentsCount > 0
-
-    if (hasSensitiveFootprint) {
-      const claimValid =
-        !!input.claimCode &&
-        !!existingCandidate.claimCodeHash &&
-        !!existingCandidate.claimCodeExpiresAt &&
-        existingCandidate.claimCodeExpiresAt > new Date() &&
-        claimCodeMatches(input.claimCode, existingCandidate.claimCodeHash)
-
-      if (!claimValid) {
-        await constantTimeDummyVerify(input.password)
-        recordLoginFailure(ip)
-        // Generic message — never reveal whether the mobile, the code, or
-        // the candidate record was the problem.
-        return badRequest('Unable to complete registration with the provided details')
-      }
-      claimCodeUsed = true
-    }
+    const needsCode = candidateRequiresClaimCode(candidate, {
+      applications: applicationsCount,
+      loans: loansCount,
+      kycDocuments: kycDocsCount,
+      payments: paymentsCount,
+    })
+    if (needsCode) return failRegistration()
+    existingCandidate = candidate
   }
 
   const hashedPassword = await hashPassword(input.password)
   const now = new Date()
+  // A claimed candidate's login belongs to THAT candidate's
+  // organization (which may differ from the default org when the same
+  // mobile exists in several orgs and a claim code disambiguated).
+  const targetOrgId = existingCandidate?.organizationId ?? org.id
 
   const created = await db.$transaction(
     async (tx) => {
       const user = await tx.user.create({
         data: {
-          organizationId: org.id,
+          organizationId: targetOrgId,
           email: cleanMobile,
           passwordHash: hashedPassword,
           passwordChangedAt: now,
@@ -186,7 +222,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
       for (const c of consentEntries) {
         await tx.consentRecord.create({
           data: {
-            organizationId: org.id,
+            organizationId: targetOrgId,
             userId: user.id,
             candidateId: candidate.id,
             consentType: c.consentType,
@@ -204,7 +240,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
   )
 
   await auditRaw(
-    org.id,
+    targetOrgId,
     created.user.id,
     'CREATE',
     'Candidate',

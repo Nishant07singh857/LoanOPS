@@ -65,6 +65,7 @@ model User {
   passwordChangedAt   DateTime?
   totpSecret          String?
   totpEnabled         Boolean   @default(false)
+  totpLastStep        Int       @default(0) // last accepted TOTP time-step; codes at or before it are replays
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
@@ -193,6 +194,10 @@ model Candidate {
   consentRecords      ConsentRecord[]
   dataSubjectRequests DataSubjectRequest[]
 
+  // One candidate record per mobile per organization. Mobiles are
+  // stored only in canonical 10-digit form (see src/lib/mobile.ts),
+  // so this index also closes the duplicate-mobile apply race.
+  @@unique([organizationId, mobile])
   @@index([organizationId])
   @@index([mobile])
   @@index([assignedAgentId])

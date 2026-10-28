@@ -6,13 +6,14 @@ import { db } from '@/lib/db'
 import { requireOwner, audit } from '@/lib/server/auth'
 import {
   apiHandler, success, created, paginate, validate, validateBody,
-  paginationSchema, badRequest,
+  paginationSchema, badRequest, fail, unprocessable,
 } from '@/lib/server/api'
 import { encryptPII, decryptPIIForMask } from '@/lib/server/crypto'
 import {
   maskAadhaar, maskPan, maskBankAccount,
-  AADHAAR_REGEX, PAN_REGEX, IFSC_REGEX, BANK_ACCOUNT_REGEX, MOBILE_REGEX,
+  AADHAAR_REGEX, PAN_REGEX, IFSC_REGEX, BANK_ACCOUNT_REGEX,
 } from '@/lib/utils'
+import { canonicalizeMobile } from '@/lib/mobile'
 
 const listSchema = paginationSchema.extend({
   search: z.string().trim().optional().default(''),
@@ -101,7 +102,10 @@ export const GET = apiHandler(async (req: NextRequest) => {
 
 const createSchema = z.object({
   fullName: z.string().trim().min(2).max(100),
-  mobile: z.string().trim().regex(MOBILE_REGEX, 'Invalid mobile number'),
+  // Any spelling is accepted at the boundary and canonicalized in the
+  // handler (prefixes / separators / non-ASCII digit glyphs) — only
+  // the canonical 10-digit form is stored.
+  mobile: z.string().trim().min(10).max(20),
   email: z.string().trim().email('Invalid email').max(200).optional().nullable(),
   dob: z.string().trim().refine((v) => !Number.isNaN(Date.parse(v)), {
     message: 'Invalid dob',
@@ -132,6 +136,9 @@ export const POST = apiHandler(async (req: NextRequest) => {
   if (!body) return badRequest('Invalid JSON body')
   const data = validateBody(createSchema, body)
 
+  const mobile = canonicalizeMobile(data.mobile)
+  if (!mobile) return unprocessable('Invalid mobile number')
+
   if (data.assignedAgentId) {
     const agent = await db.agentProfile.findFirst({
       where: { id: data.assignedAgentId, organizationId: ctx.user.organizationId },
@@ -139,24 +146,29 @@ export const POST = apiHandler(async (req: NextRequest) => {
     if (!agent) return badRequest('Agent not found in your organization')
   }
 
-  // Best-effort: if mobile already exists in this org, return the existing record
-  const existing = await db.candidate.findFirst({
-    where: { mobile: data.mobile, organizationId: ctx.user.organizationId },
-  })
-  if (existing) {
-    return success({
-      id: existing.id,
-      fullName: existing.fullName,
-      mobile: existing.mobile,
-      message: 'Candidate with this mobile already exists',
-    })
-  }
+  // One record per mobile per org. A collision is a loud 409 carrying
+  // the existing record's id + name, so staff SEE the duplicate
+  // instead of silently creating a lookalike (red-team round 2, R3).
+  const duplicateResponse = (existing: { id: string; fullName: string }) =>
+    fail(
+      'CONFLICT',
+      'A candidate with this mobile number already exists in your organization',
+      409,
+      { existingCandidateId: existing.id, existingCandidateName: existing.fullName }
+    )
 
-  const candidate = await db.candidate.create({
+  const existing = await db.candidate.findFirst({
+    where: { mobile, organizationId: ctx.user.organizationId },
+  })
+  if (existing) return duplicateResponse(existing)
+
+  let candidate
+  try {
+    candidate = await db.candidate.create({
     data: {
       organizationId: ctx.user.organizationId,
       fullName: data.fullName,
-      mobile: data.mobile,
+      mobile,
       email: data.email ?? null,
       dob: data.dob ? new Date(data.dob) : null,
       address: data.address ?? null,
@@ -172,7 +184,19 @@ export const POST = apiHandler(async (req: NextRequest) => {
       assignedAgentId: data.assignedAgentId ?? null,
       status: 'ACTIVE',
     },
-  })
+    })
+  } catch (err: any) {
+    // Unique (organizationId, mobile) fired — a concurrent create won
+    // the race after the check above. Same 409 + existing-record
+    // details as the fast path.
+    if (err?.code === 'P2002') {
+      const winner = await db.candidate.findFirst({
+        where: { mobile, organizationId: ctx.user.organizationId },
+      })
+      if (winner) return duplicateResponse(winner)
+    }
+    throw err
+  }
 
   await audit(ctx, 'CREATE', 'Candidate', candidate.id, `Created candidate ${candidate.fullName} (${candidate.mobile})`)
 
