@@ -21,7 +21,8 @@ import {
   recordLoginFailure,
   clearLoginFailures,
   getClientIp,
-  verifyTotpCode,
+  matchTotpStep,
+  isTotpStepReplay,
   auditRaw,
 } from '@/lib/server/auth'
 import { apiHandler, success, badRequest, tooMany, unauthorized, validate } from '@/lib/server/api'
@@ -104,12 +105,17 @@ export const POST = apiHandler(async (req: NextRequest) => {
     return unauthorized('Invalid credentials')
   }
 
-  // Optional TOTP 2FA check if enabled on account
+  // Optional TOTP 2FA check if enabled on account. Verification is
+  // step-aware: the matched step is persisted on success, and any
+  // code at or before the last accepted step is a replay — the same
+  // code can never log in twice (red-team round 2, N1).
+  let totpStepUsed: number | null = null
   if (user.totpEnabled && user.totpSecret) {
     if (!parsed.totpCode) {
       return unauthorized('Two-factor authentication code (totpCode) is required')
     }
-    if (!verifyTotpCode(user.totpSecret, parsed.totpCode)) {
+    const step = matchTotpStep(user.totpSecret, parsed.totpCode)
+    if (step === null || isTotpStepReplay(step, user.totpLastStep)) {
       recordLoginFailure(rateKey)
       await auditRaw(
         user.organizationId,
@@ -122,12 +128,18 @@ export const POST = apiHandler(async (req: NextRequest) => {
       )
       return unauthorized('Invalid two-factor authentication code')
     }
+    totpStepUsed = step
   }
 
-  // Success — reset failed attempts
+  // Success — reset failed attempts (and consume the TOTP step)
   await db.user.update({
     where: { id: user.id },
-    data: { failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
+    data: {
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+      lastLoginAt: new Date(),
+      ...(totpStepUsed !== null ? { totpLastStep: totpStepUsed } : {}),
+    },
   })
   clearLoginFailures(rateKey)
 

@@ -2,7 +2,9 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { requireOwner, audit } from '@/lib/server/auth'
-import { apiHandler, success, validate, paginate, paginationSchema } from '@/lib/server/api'
+import { apiHandler, success, validate, paginate, paginationSchema, unprocessable, fail } from '@/lib/server/api'
+import { canonicalizeMobile } from '@/lib/mobile'
+import { validateLoanTerms, MAX_INSTALLMENTS } from '@/lib/loan-terms'
 
 const querySchema = paginationSchema.extend({
   status: z.enum(['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED', 'INFORMATION_REQUESTED']).optional(),
@@ -87,7 +89,7 @@ const createSchema = z.object({
   interestRate: z.number().int().min(0).optional(),
   fixedInterest: z.string().regex(/^\d+$/).optional(),
   frequency: z.enum(['DAILY', 'WEEKLY', 'MONTHLY']),
-  tenureCount: z.number().int().min(1),
+  tenureCount: z.number().int().min(1).max(MAX_INSTALLMENTS),
   installments: z.number().int().min(1).max(360),
   firstDueDate: z.string().datetime(),
   processingFee: z.string().regex(/^\d+$/).optional(),
@@ -104,6 +106,16 @@ export const POST = apiHandler(async (req: NextRequest) => {
     return badRequest('candidateId or newCandidate is required')
   }
 
+  // Shared terms ceilings (red-team round 2, N3): no rate above 100%,
+  // no zero / overflowing principal — violations are 422, never 500.
+  const termsCheck = validateLoanTerms({
+    principalPaise: input.principalAmount,
+    interestType: input.interestType,
+    interestRateBps: input.interestRate ?? null,
+    installments: input.installments,
+  })
+  if (!termsCheck.ok) return unprocessable(termsCheck.error)
+
   let candidate;
   if (input.candidateId) {
     // Verify candidate belongs to org
@@ -112,20 +124,43 @@ export const POST = apiHandler(async (req: NextRequest) => {
     })
     if (!candidate) return notFound('Candidate not found')
   } else if (input.newCandidate) {
-    // Best effort: find existing by mobile
+    // Canonicalize before lookup/storage — any spelling of an
+    // existing number resolves to the existing record, never a
+    // shadow duplicate.
+    const mobile = canonicalizeMobile(input.newCandidate.mobile)
+    if (!mobile) return unprocessable('Invalid mobile number')
     candidate = await ctx.db.candidate.findFirst({
-      where: { mobile: input.newCandidate.mobile, organizationId: ctx.user.organizationId },
+      where: { mobile, organizationId: ctx.user.organizationId },
     })
     if (!candidate) {
-      candidate = await ctx.db.candidate.create({
-        data: {
-          organizationId: ctx.user.organizationId,
-          fullName: input.newCandidate.fullName,
-          mobile: input.newCandidate.mobile,
-          secondaryMobile: input.newCandidate.secondaryMobile || null,
-          status: 'ACTIVE',
+      try {
+        candidate = await ctx.db.candidate.create({
+          data: {
+            organizationId: ctx.user.organizationId,
+            fullName: input.newCandidate.fullName,
+            mobile,
+            secondaryMobile: input.newCandidate.secondaryMobile || null,
+            status: 'ACTIVE',
+          }
+        })
+      } catch (err: any) {
+        // Unique (organizationId, mobile) fired on a concurrent
+        // create — report the collision with the winning record.
+        if (err?.code === 'P2002') {
+          const winner = await ctx.db.candidate.findFirst({
+            where: { mobile, organizationId: ctx.user.organizationId },
+          })
+          if (winner) {
+            return fail(
+              'CONFLICT',
+              'A candidate with this mobile number already exists in your organization',
+              409,
+              { existingCandidateId: winner.id, existingCandidateName: winner.fullName }
+            )
+          }
         }
-      })
+        throw err
+      }
       await audit(ctx, 'CREATE', 'Candidate', candidate.id, `Created candidate ${candidate.fullName} via application`)
     }
   }

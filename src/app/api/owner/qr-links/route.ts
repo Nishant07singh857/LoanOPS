@@ -3,7 +3,9 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { requireOwner, audit } from '@/lib/server/auth'
-import { apiHandler, success, validate, genToken, paginate, paginationSchema } from '@/lib/server/api'
+import { apiHandler, success, validate, genToken, paginate, paginationSchema, unprocessable } from '@/lib/server/api'
+import { canonicalizeMobile } from '@/lib/mobile'
+import { validateLoanTerms } from '@/lib/loan-terms'
 
 const querySchema = paginationSchema
 
@@ -69,7 +71,7 @@ const createSchema = z.object({
   processingFee: paiseValue.optional().nullable(),
   otherFees: paiseValue.optional().nullable(),
   preFullName: z.string().trim().min(2).max(100).optional().nullable(),
-  preMobile: z.string().trim().regex(/^\+?[0-9]{10,15}$/, 'Invalid mobile number').optional().nullable(),
+  preMobile: z.string().trim().min(10).max(20).optional().nullable(),
   preAadhaar: z.string().trim().max(20).optional().nullable(),
   prePan: z.string().trim().max(20).optional().nullable(),
   expiresInDays: z.number().int().min(1).max(365).optional().nullable(),
@@ -79,6 +81,23 @@ export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()
   const body = await req.json().catch(() => ({}))
   const input = validate(createSchema, body)
+
+  // Preset terms obey the same ceilings as every other write path
+  // (red-team round 2, N3/N5) — and are re-checked at apply time.
+  const termsCheck = validateLoanTerms({
+    principalPaise: input.prePrincipal ?? null,
+    interestType: input.preInterestType,
+    interestRateBps: input.preInterestRate ?? null,
+    installments: input.preInstallments ?? null,
+  })
+  if (!termsCheck.ok) return unprocessable(termsCheck.error)
+
+  // A preset mobile is stored only in canonical form.
+  let preMobile: string | null = null
+  if (input.preMobile) {
+    preMobile = canonicalizeMobile(input.preMobile)
+    if (!preMobile) return unprocessable('Invalid mobile number')
+  }
 
   const token = genToken(32)
   const expiresAt = input.expiresInDays
@@ -101,7 +120,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
       preProcessingFee: input.processingFee ? Number(input.processingFee) : null,
       preOtherFees: input.otherFees ? Number(input.otherFees) : null,
       preFullName: input.preFullName,
-      preMobile: input.preMobile,
+      preMobile,
       preAadhaar: input.preAadhaar,
       prePan: input.prePan,
       expiresAt,

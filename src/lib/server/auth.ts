@@ -7,7 +7,7 @@ import { cookies } from 'next/headers'
 import { db } from '@/lib/db'
 import { NextRequest } from 'next/server'
 import { logger } from '@/lib/server/logger'
-import { decryptPII, encryptPII } from '@/lib/server/crypto'
+
 
 // ============================================================
 // STARTUP ENVIRONMENT VALIDATION (Phase 2)
@@ -430,66 +430,19 @@ export async function consumePasswordResetToken(
 
 // ============================================================
 // TOTP 2FA (RFC 6238 — Owner/Admin Optional 2FA — Phase 2)
+// Implemented in ./totp (step-aware verification + replay
+// protection); re-exported here for existing import sites.
 // ============================================================
 
-const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
-
-export function generateTotpSecret(): string {
-  const bytes = randomBytes(20)
-  let secret = ''
-  for (let i = 0; i < bytes.length; i++) {
-    secret += BASE32_ALPHABET[bytes[i] % 32]
-  }
-  return secret
-}
-
-function base32ToBuffer(base32: string): Buffer {
-  const cleaned = base32.toUpperCase().replace(/[^A-Z2-7]/g, '')
-  let bits = ''
-  for (const ch of cleaned) {
-    const val = BASE32_ALPHABET.indexOf(ch)
-    if (val >= 0) bits += val.toString(2).padStart(5, '0')
-  }
-  const bytes: number[] = []
-  for (let i = 0; i + 8 <= bits.length; i += 8) {
-    bytes.push(parseInt(bits.slice(i, i + 8), 2))
-  }
-  return Buffer.from(bytes)
-}
-
-export function generateTotpCode(secretBase32: string, counterStep = Math.floor(Date.now() / 30000)): string {
-  const key = base32ToBuffer(secretBase32)
-  const buf = Buffer.alloc(8)
-  buf.writeBigUInt64BE(BigInt(counterStep))
-  const hmac = createHmac('sha1', key).update(buf).digest()
-  const offset = hmac[hmac.length - 1] & 0x0f
-  const binary =
-    ((hmac[offset] & 0x7f) << 24) |
-    ((hmac[offset + 1] & 0xff) << 16) |
-    ((hmac[offset + 2] & 0xff) << 8) |
-    (hmac[offset + 3] & 0xff)
-  return String(binary % 1_000_000).padStart(6, '0')
-}
-
-export function verifyTotpCode(secretOrEncrypted: string, code: string): boolean {
-  if (!code || !/^\d{6}$/.test(code.trim())) return false
-  const secret = decryptPII(secretOrEncrypted) || secretOrEncrypted
-  const currentStep = Math.floor(Date.now() / 30000)
-  // Allow +/- 1 time step (30s drift window)
-  for (const delta of [-1, 0, 1]) {
-    const expected = generateTotpCode(secret, currentStep + delta)
-    if (expected === code.trim()) return true
-  }
-  return false
-}
-
-export function encryptTotpSecret(secretBase32: string): string {
-  return encryptPII(secretBase32)
-}
-
-export function buildTotpOtpAuthUri(email: string, secretBase32: string, issuer = 'LoanOps'): string {
-  return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(email)}?secret=${secretBase32}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`
-}
+export {
+  generateTotpSecret,
+  generateTotpCode,
+  verifyTotpCode,
+  matchTotpStep,
+  isTotpStepReplay,
+  encryptTotpSecret,
+  buildTotpOtpAuthUri,
+} from './totp'
 
 // ============================================================
 // AUTH GUARD for API routes (Phase 3)

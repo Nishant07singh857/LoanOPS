@@ -1,8 +1,10 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { requireAgent, audit } from '@/lib/server/auth'
-import { apiHandler, success, badRequest, notFound, forbidden, validate } from '@/lib/server/api'
+import { apiHandler, success, badRequest, notFound, forbidden, validate, unprocessable, conflict } from '@/lib/server/api'
 import { genNumber } from '@/lib/server/api'
+import { canonicalizeMobile } from '@/lib/mobile'
+import { validateLoanTerms, MAX_INSTALLMENTS } from '@/lib/loan-terms'
 
 const createSchema = z.object({
   candidateId: z.string().optional(),
@@ -18,7 +20,7 @@ const createSchema = z.object({
   interestRate: z.number().int().min(0).optional(),
   fixedInterest: z.string().regex(/^\d+$/).optional(),
   frequency: z.enum(['DAILY', 'WEEKLY', 'MONTHLY']),
-  tenureCount: z.number().int().min(1),
+  tenureCount: z.number().int().min(1).max(MAX_INSTALLMENTS),
   installments: z.number().int().min(1).max(360),
   firstDueDate: z.string().datetime(),
   processingFee: z.string().regex(/^\d+$/).optional(),
@@ -34,6 +36,15 @@ export const POST = apiHandler(async (req: NextRequest) => {
   if (!input.candidateId && !input.newCandidate) {
     return badRequest('candidateId or newCandidate is required')
   }
+
+  // Shared terms ceilings (red-team round 2, N3) — 422, never 500.
+  const termsCheck = validateLoanTerms({
+    principalPaise: input.principalAmount,
+    interestType: input.interestType,
+    interestRateBps: input.interestRate ?? null,
+    installments: input.installments,
+  })
+  if (!termsCheck.ok) return unprocessable(termsCheck.error)
 
   const agentProfile = await ctx.db.agentProfile.findUnique({ where: { userId: ctx.user.id } })
   if (!agentProfile) return forbidden('Agent profile not found')
@@ -51,23 +62,35 @@ export const POST = apiHandler(async (req: NextRequest) => {
       return forbidden('You do not have access to this candidate')
     }
   } else if (input.newCandidate) {
-    // Best effort: find existing by mobile
+    // Canonicalize before lookup/storage — any spelling of an
+    // existing number resolves to the existing record, never a
+    // shadow duplicate.
+    const mobile = canonicalizeMobile(input.newCandidate.mobile)
+    if (!mobile) return unprocessable('Invalid mobile number')
     candidate = await ctx.db.candidate.findFirst({
-      where: { mobile: input.newCandidate.mobile, organizationId: ctx.user.organizationId },
+      where: { mobile, organizationId: ctx.user.organizationId },
     })
     if (candidate && candidate.assignedAgentId !== agentProfile.id) {
       return forbidden('You do not have access to this candidate')
     }
     if (!candidate) {
-      candidate = await ctx.db.candidate.create({
-        data: {
-          organizationId: ctx.user.organizationId,
-          fullName: input.newCandidate.fullName,
-          mobile: input.newCandidate.mobile,
-          secondaryMobile: input.newCandidate.secondaryMobile || null,
-          status: 'ACTIVE',
+      try {
+        candidate = await ctx.db.candidate.create({
+          data: {
+            organizationId: ctx.user.organizationId,
+            fullName: input.newCandidate.fullName,
+            mobile,
+            secondaryMobile: input.newCandidate.secondaryMobile || null,
+            status: 'ACTIVE',
+          }
+        })
+      } catch (err: any) {
+        // Unique (organizationId, mobile) fired on a concurrent create.
+        if (err?.code === 'P2002') {
+          return conflict('A candidate with this mobile number already exists in your organization')
         }
-      })
+        throw err
+      }
       await audit(ctx, 'CREATE', 'Candidate', candidate.id, `Created candidate ${candidate.fullName} via application`)
     }
   }

@@ -23,6 +23,7 @@ import {
 } from '@/lib/server/auth'
 import { apiHandler, success, badRequest, tooMany, unauthorized, validate } from '@/lib/server/api'
 import { enforceRateLimit } from '@/lib/server/rate-limit'
+import { canonicalizeMobile } from '@/lib/mobile'
 
 const schema = z
   .object({
@@ -36,7 +37,10 @@ export const POST = apiHandler(async (req: NextRequest) => {
   if (!body) return badRequest('Invalid JSON body')
 
   const parsed = validate(schema, body)
-  const cleanMobile = parsed.mobile.replace(/\D/g, '').replace(/^91(\d{10})$/, '$1')
+  // Canonicalize like every other path: any spelling of the number
+  // (prefixes, spaces, non-ASCII digit glyphs) resolves to the stored
+  // 10-digit form. An unparseable mobile simply matches nothing.
+  const cleanMobile = canonicalizeMobile(parsed.mobile) ?? ''
   const ip = getClientIp(req)
   const userAgent = req.headers.get('user-agent') || undefined
   const rateKey = `${ip}:${cleanMobile}`
