@@ -13,7 +13,7 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:reset": "prisma migrate reset",
     "db:seed": "bun run scripts/seed.ts",
-    "test:unit": "npx tsx tests/unit/financial-engine.test.ts && npx tsx tests/unit/security-hardening.test.ts",
+    "test:unit": "npx tsx tests/unit/financial-engine.test.ts && npx tsx tests/unit/security-hardening.test.ts && npx tsx tests/unit/reminders.test.ts",
     "test:e2e": "npx playwright test"
   },
   "dependencies": {

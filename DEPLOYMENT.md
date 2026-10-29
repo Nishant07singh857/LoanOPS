@@ -79,7 +79,32 @@ LoanOps encrypts sensitive KYC fields (`Aadhaar`, `PAN`, `Bank Account`, `TOTP S
 
 ---
 
-## 6. Monitoring & Alerting Recommendations
+## 6. Scheduled Jobs (cron)
+Two standalone runners must be scheduled; both are idempotent and safe to re-run:
+
+```bash
+# Flip past-due installments to OVERDUE (all organizations) — hourly or daily
+0 * * * * cd /opt/loanops && npx tsx scripts/mark-overdue.ts
+
+# Auto reminders — daily, after the overdue sweep. Sends due-soon / due-today /
+# overdue reminders at fixed stages (3d & 1d before, due day, 1/3/7/15/30 days
+# overdue) as borrower portal notifications, plus WhatsApp:
+#   - Meta Cloud API direct send when WHATSAPP_API_TOKEN and
+#     WHATSAPP_PHONE_NUMBER_ID are set (see .env.example section 5b);
+#   - otherwise a staff collection task carrying a wa.me draft link.
+# Active promise-to-pay (PTP) records suppress reminders until the promise
+# date passes. Preview any run with: npx tsx scripts/send-reminders.ts --dry-run
+15 9 * * * cd /opt/loanops && npx tsx scripts/send-reminders.ts
+```
+
+Receipt notifications on owner payment verification reuse the same engine and
+need no schedule. An organization can opt out of all reminder traffic with
+`Organization.remindersEnabled = false`; delivery history is visible to the
+owner under **Operations → Reminders** (`/admin/reminders`).
+
+---
+
+## 7. Monitoring & Alerting Recommendations
 - **Liveness / Readiness Probe**: Poll `GET /api/health` every 30 seconds. Alert on `status != 200` or latency `> 1500ms`.
 - **Security Alerts**:
   - Spike in `429 Too Many Requests` (`Rate limit exceeded` in structured JSON logs).

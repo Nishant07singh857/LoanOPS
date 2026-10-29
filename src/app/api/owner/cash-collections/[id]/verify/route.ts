@@ -11,6 +11,7 @@ import { db } from '@/lib/db'
 import { requireOwner, audit } from '@/lib/server/auth'
 import { apiHandler, success, badRequest, notFound, conflict, validate } from '@/lib/server/api'
 import { verifyCashPayment, reverseCashPayment } from '@/lib/server/payments'
+import { notifyPaymentReceipt } from '@/lib/server/reminders'
 
 const schema = z.object({
   action: z.enum(['VERIFY', 'REJECT']),
@@ -69,6 +70,16 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
   })
 
   await audit(ctx, 'VERIFY', 'Payment', cc.id, `Verified cash collection ₹${cc.amount / 100} for ${cc.candidate.fullName} (${cc.loan.loanNumber}). Payment ${cc.paymentNumber}, allocated fees=${result.allocatedFees} interest=${result.allocatedInterest} principal=${result.allocatedPrincipal}.`)
+
+  // Receipt notification to the borrower (portal + WhatsApp). Success
+  // path only — never on collect, never on reject. Idempotent per
+  // payment and internally guarded; it never throws, so a notification
+  // problem can never fail the verification itself.
+  await notifyPaymentReceipt({
+    paymentId: cc.id,
+    organizationId: ctx.user.organizationId,
+    receiptNumber: result.receiptNumber,
+  })
 
   return success({
     id: cc.id,

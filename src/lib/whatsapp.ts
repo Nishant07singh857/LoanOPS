@@ -38,6 +38,8 @@ export const WHATSAPP_TEMPLATES = {
     'Dear {candidateName}, your loan {loanNumber} payment of ₹{amount} is OVERDUE (was due {dueDate}). Please pay immediately to avoid late charges. Contact us for assistance. - {orgName}',
   PTP_REMINDER:
     'Hello {candidateName}, as promised, your payment of ₹{amount} for loan {loanNumber} is due tomorrow ({dueDate}). Kindly ensure payment. - {orgName}',
+  RECEIPT:
+    'Hello {candidateName}, we have received your payment of ₹{amount} for loan {loanNumber}. Thank you! - {orgName}',
   DOCUMENT_REQUEST:
     'Hello {candidateName}, we need additional documents for your loan application with {orgName}. Please upload: {amount}. Reply here if you have questions.',
   APPLICATION_REMINDER:
@@ -48,6 +50,18 @@ export const WHATSAPP_TEMPLATES = {
     'Hello, I need assistance with my loan {loanNumber} from {orgName}. Please contact me back. - {candidateName}',
   CANDIDATE_TO_OWNER:
     'Hello, I have a query regarding my loan {loanNumber} with {orgName}. - {candidateName}',
+}
+
+/** Pure wa.me draft URL for a phone + pre-filled message (server-safe). */
+export function buildWhatsAppLink(phone: string, message: string): string {
+  let cleaned = (phone || '').replace(/\D/g, '')
+  if (cleaned.length === 11 && cleaned.startsWith('0')) {
+    cleaned = cleaned.slice(1)
+  }
+  const final = cleaned.length === 10 ? `91${cleaned}` : cleaned
+  return final
+    ? `https://wa.me/${final}?text=${encodeURIComponent(message)}`
+    : `https://wa.me/?text=${encodeURIComponent(message)}`
 }
 
 export function openWhatsApp(phone: string, message: string) {
