@@ -229,4 +229,45 @@ test.describe('Auto reminders: runner, idempotency, owner view', () => {
     await expect(page.getByText('Skipped Ptp').first()).toBeVisible()
     await expect(page.getByText('Queued for staff today')).toBeVisible()
   })
+
+  test('after the PTP expires, the skipped stage is delivered (rows transition in place)', async () => {
+    test.setTimeout(300_000)
+
+    // Move the promise into the past: coverage ends, reminders resume.
+    const ptp = await db.ptp.findFirst({ where: { candidateId } })
+    expect(ptp).not.toBeNull()
+    await db.ptp.update({
+      where: { id: ptp!.id },
+      data: { promiseDate: istDayOffset(-1) },
+    })
+
+    const out = await runRemindersScript(orgId)
+    expect(out).toContain('sent=1') // the resumed OVERDUE_1 portal notification
+    expect(out).toContain('queued=1') // the resumed OVERDUE_1 WhatsApp task
+    expect(out).toContain('skippedPtp=0')
+    expect(out).toContain('alreadyLogged=4')
+
+    // The two SKIPPED_PTP rows transitioned in place — no new rows.
+    const logs = await db.reminderLog.findMany({ where: { organizationId: orgId } })
+    expect(logs.length).toBe(6)
+    const stages = logs.map((l) => `${l.stage}/${l.channel}/${l.status}`).sort()
+    expect(stages).toEqual(
+      [
+        'DUE_SOON_1/PORTAL/SENT',
+        'DUE_SOON_1/WHATSAPP/QUEUED',
+        'OVERDUE_1/PORTAL/SENT',
+        'OVERDUE_1/WHATSAPP/QUEUED',
+        'OVERDUE_7/PORTAL/SENT',
+        'OVERDUE_7/WHATSAPP/QUEUED',
+      ].sort()
+    )
+    expect(await db.notification.count({ where: { candidateId } })).toBe(3)
+    expect(await db.collectionTask.count({ where: { organizationId: orgId } })).toBe(3)
+
+    // And once delivered, the stage is terminal again.
+    const out2 = await runRemindersScript(orgId)
+    expect(out2).toContain('alreadyLogged=6')
+    expect(await db.reminderLog.count({ where: { organizationId: orgId } })).toBe(6)
+    expect(await db.notification.count({ where: { candidateId } })).toBe(3)
+  })
 })

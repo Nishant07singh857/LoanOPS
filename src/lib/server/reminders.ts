@@ -11,8 +11,18 @@
 //                      sent that was not actually delivered.
 //
 // Idempotency: every action first CLAIMS a ReminderLog row under the
-// (installmentId | paymentId, stage, channel) unique constraint. A claim
-// that finds the row already present means another run handled it.
+// (installmentId | paymentId, stage, channel) unique constraint. SENT and
+// QUEUED claims are terminal — a claim that finds one means another run
+// handled it. Two claim states are NOT terminal:
+//   SKIPPED_PTP — logged while a promise-to-pay covered the loan. Once
+//     coverage ends the stage is still owed a real delivery ("expired
+//     promises resume"), so a later uncovered run re-claims the row and
+//     transitions it in place to the delivery outcome.
+//   FAILED — a delivery attempt failed (e.g. a transient provider
+//     outage). Later runs may re-claim it, bounded by
+//     MAX_DELIVERY_ATTEMPTS total attempts; at the cap it stays FAILED.
+// Re-claims are a single conditional UPDATE (… WHERE status = <expected>)
+// so two racing runners can never both win the same row.
 //
 // Kill switch: Organization.remindersEnabled = false short-circuits both
 // the scheduled runner and the receipt path for that org.
@@ -58,12 +68,65 @@ interface ClaimInput {
   message: string
 }
 
+/** Total delivery attempts a FAILED claim gets before it stays terminal. */
+const MAX_DELIVERY_ATTEMPTS = 3
+
+async function findClaimRow(data: ClaimInput) {
+  return db.reminderLog.findFirst({
+    where: {
+      organizationId: data.organizationId,
+      stage: data.stage,
+      channel: data.channel,
+      ...(data.installmentId
+        ? { installmentId: data.installmentId }
+        : { paymentId: data.paymentId }),
+    },
+  })
+}
+
 /**
- * Claims a ReminderLog row. Returns null when the row already exists.
- * Uses createMany + skipDuplicates (INSERT … ON CONFLICT DO NOTHING) so
- * the routine "already claimed" outcome of every re-run is a silent
- * no-op rather than a unique-violation error in the logs; the unique
- * constraint remains the ultimate guard against racing runners.
+ * Re-claims a non-terminal row for delivery with ONE conditional update:
+ * the WHERE pins the status the caller observed (and, for FAILED, the
+ * attempt cap), so exactly one of two racing runners transitions the row
+ * — the loser updates 0 rows and treats the slot as handled. The row is
+ * updated in place (never duplicated): fresh message snapshot, stale
+ * error cleared, FAILED retries count the new attempt.
+ */
+async function reclaimReminder(
+  existingId: string,
+  data: ClaimInput,
+  from: 'SKIPPED_PTP' | 'FAILED'
+) {
+  const transition = await db.reminderLog.updateMany({
+    where:
+      from === 'SKIPPED_PTP'
+        ? { id: existingId, status: 'SKIPPED_PTP' }
+        : { id: existingId, status: 'FAILED', attempts: { lt: MAX_DELIVERY_ATTEMPTS } },
+    data: {
+      status: 'QUEUED',
+      message: data.message,
+      error: null,
+      ...(from === 'FAILED' ? { attempts: { increment: 1 } } : {}),
+    },
+  })
+  if (transition.count !== 1) return null
+  return findClaimRow(data)
+}
+
+/**
+ * Claims a ReminderLog row for delivery. Returns the row the caller now
+ * owns (freshly inserted, or a re-claimed non-terminal row), or null when
+ * the slot is already handled. The insert uses createMany +
+ * skipDuplicates (INSERT … ON CONFLICT DO NOTHING) so the routine
+ * "already claimed" outcome of every re-run is a silent no-op rather
+ * than a unique-violation error in the logs; the unique constraint
+ * remains the ultimate guard against racing runners.
+ *
+ * Re-claim rules (see header): a claim attempted BY the PTP-covered path
+ * (data.status === 'SKIPPED_PTP') never re-claims — while covered, an
+ * existing row of any status stays a plain skip. Otherwise an existing
+ * SKIPPED_PTP row is re-claimed for real delivery, and an existing
+ * FAILED row is re-claimed while its attempt count is below the cap.
  */
 async function claimReminder(data: ClaimInput) {
   const row = {
@@ -78,17 +141,18 @@ async function claimReminder(data: ClaimInput) {
     message: data.message,
   }
   const result = await db.reminderLog.createMany({ data: [row], skipDuplicates: true })
-  if (result.count === 0) return null
-  return db.reminderLog.findFirst({
-    where: {
-      organizationId: data.organizationId,
-      stage: data.stage,
-      channel: data.channel,
-      ...(data.installmentId
-        ? { installmentId: data.installmentId }
-        : { paymentId: data.paymentId }),
-    },
-  })
+  if (result.count === 1) return findClaimRow(data)
+
+  if (data.status === 'SKIPPED_PTP') return null
+  const existing = await findClaimRow(data)
+  if (!existing) return null
+  if (existing.status === 'SKIPPED_PTP') {
+    return reclaimReminder(existing.id, data, 'SKIPPED_PTP')
+  }
+  if (existing.status === 'FAILED' && existing.attempts < MAX_DELIVERY_ATTEMPTS) {
+    return reclaimReminder(existing.id, data, 'FAILED')
+  }
+  return null
 }
 
 async function settleClaim(id: string, status: 'SENT' | 'FAILED', error?: string) {

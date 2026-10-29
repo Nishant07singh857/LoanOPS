@@ -486,6 +486,380 @@ test('DB: runner sends, queues, skips on PTP, and never duplicates', async () =>
 })
 
 // ============================================================
+// 6. DB integration — non-terminal claims: a SKIPPED_PTP row is
+//    re-claimed for real delivery once coverage ends, and a FAILED
+//    WhatsApp row retries with a bounded attempt count.
+//    (Same DATABASE_URL_TEST gating as section 5.)
+// ============================================================
+
+interface ClaimFixture {
+  orgId: string
+  candidateId: string
+  mkLoan: (loanNumber: string) => Promise<string>
+  mkInstallment: (loanId: string, due: string) => Promise<string>
+  mkPtp: (loanId: string, promiseDate: string) => Promise<string>
+}
+
+async function buildClaimFixture(raw: PrismaClient, suffix: string): Promise<ClaimFixture> {
+  const org = await raw.organization.create({
+    data: { name: `Claim Test Org ${suffix}` },
+  })
+  const candidate = await raw.candidate.create({
+    data: { organizationId: org.id, fullName: 'Claim Borrower', mobile: '9812345670' },
+  })
+  const agent = await raw.user.create({
+    data: {
+      organizationId: org.id,
+      email: `claim-agent-${suffix}@example.com`,
+      passwordHash: 'x',
+      name: 'Claim Agent',
+      role: UserRole.AGENT,
+    },
+  })
+  const mkLoan = async (loanNumber: string) => {
+    const loan = await raw.loan.create({
+      data: {
+        organizationId: org.id,
+        loanNumber,
+        candidateId: candidate.id,
+        principalAmount: 1200000,
+        interestType: InterestType.PERCENTAGE,
+        interestRate: 1200,
+        frequency: RepaymentFrequency.MONTHLY,
+        installments: 12,
+        firstDueDate: istDay('2026-08-06'),
+        finalDueDate: istDay('2027-07-06'),
+        totalRepayable: 1350000,
+        installmentAmount: 112500,
+        termsSnapshot: {},
+        status: LoanStatus.ACTIVE,
+        outstandingPrincipal: 1200000,
+      },
+    })
+    return loan.id
+  }
+  const mkInstallment = async (loanId: string, due: string) => {
+    const inst = await raw.installment.create({
+      data: {
+        loanId,
+        installmentNumber: 1,
+        dueDate: istDay(due),
+        openingPrincipal: 1200000,
+        principalComponent: 100000,
+        interestComponent: 12500,
+        feesComponent: 0,
+        totalDue: 112500,
+        closingPrincipal: 1100000,
+        paidAmount: 0,
+        paidPrincipal: 0,
+        paidInterest: 0,
+        status: InstallmentStatus.UPCOMING,
+      },
+    })
+    return inst.id
+  }
+  const mkPtp = async (loanId: string, promiseDate: string) => {
+    const ptp = await raw.ptp.create({
+      data: {
+        candidateId: candidate.id,
+        loanId,
+        agentId: agent.id,
+        promisedAmount: 112500,
+        promiseDate: istDay(promiseDate),
+        status: PtpStatus.ACTIVE,
+      },
+    })
+    return ptp.id
+  }
+  return { orgId: org.id, candidateId: candidate.id, mkLoan, mkInstallment, mkPtp }
+}
+
+async function cleanupClaimFixture(raw: PrismaClient, orgId: string) {
+  if (!orgId) return
+  await raw.reminderLog.deleteMany({ where: { organizationId: orgId } })
+  await raw.notification.deleteMany({ where: { organizationId: orgId } })
+  await raw.collectionTask.deleteMany({ where: { organizationId: orgId } })
+  await raw.payment.deleteMany({ where: { organizationId: orgId } })
+  await raw.ptp.deleteMany({ where: { candidate: { organizationId: orgId } } })
+  await raw.installment.deleteMany({ where: { loan: { organizationId: orgId } } })
+  await raw.loan.deleteMany({ where: { organizationId: orgId } })
+  await raw.candidate.deleteMany({ where: { organizationId: orgId } })
+  await raw.user.deleteMany({ where: { organizationId: orgId } })
+  await raw.organization.deleteMany({ where: { id: orgId } })
+}
+
+test('DB: SKIPPED_PTP claim is delivered for real once the PTP expires', async () => {
+  if (!HAS_DB) {
+    console.log('  (skipped — DATABASE_URL_TEST not set)')
+    return
+  }
+  delete process.env.WHATSAPP_API_TOKEN
+  delete process.env.WHATSAPP_PHONE_NUMBER_ID
+
+  const raw = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_TEST })
+  const suffix = Math.random().toString(36).slice(2, 8)
+  let orgId = ''
+  try {
+    const fx = await buildClaimFixture(raw, suffix)
+    orgId = fx.orgId
+    const loanId = await fx.mkLoan(`LON-CL-${suffix}-A`)
+    await fx.mkInstallment(loanId, '2026-11-04') // OVERDUE_1 at NOW
+    const ptpId = await fx.mkPtp(loanId, '2026-11-10') // covers at NOW
+
+    const { runReminders } = await import('../../src/lib/server/reminders')
+
+    // While covered: both channels log SKIPPED_PTP, nothing is delivered.
+    const s1 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(s1.skippedPtp, 2, JSON.stringify(s1))
+    assert.equal(s1.sent, 0, JSON.stringify(s1))
+    assert.equal(s1.queued, 0, JSON.stringify(s1))
+    const skipped = await raw.reminderLog.findMany({ where: { organizationId: orgId } })
+    assert.equal(skipped.length, 2)
+    assert.ok(skipped.every((l) => l.status === 'SKIPPED_PTP'))
+    assert.equal(await raw.notification.count({ where: { candidateId: fx.candidateId } }), 0)
+    assert.equal(await raw.collectionTask.count({ where: { organizationId: orgId } }), 0)
+    const skippedIds = skipped.map((l) => l.id).sort()
+
+    // The promise day passes — coverage ends and reminders resume.
+    await raw.ptp.update({
+      where: { id: ptpId },
+      data: { promiseDate: istDay('2026-11-04') },
+    })
+
+    // The SAME rows transition in place to the real delivery outcomes.
+    const s2 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(s2.sent, 1, JSON.stringify(s2)) // portal notification
+    assert.equal(s2.queued, 1, JSON.stringify(s2)) // whatsapp staff task
+    assert.equal(s2.skippedPtp, 0, JSON.stringify(s2))
+    assert.equal(s2.alreadyLogged, 0, JSON.stringify(s2))
+    const delivered = await raw.reminderLog.findMany({ where: { organizationId: orgId } })
+    assert.equal(delivered.length, 2, 're-claimed in place, never duplicated')
+    assert.deepEqual(delivered.map((l) => l.id).sort(), skippedIds)
+    const byChannel = new Map(delivered.map((l) => [l.channel, l.status]))
+    assert.equal(byChannel.get('PORTAL'), 'SENT')
+    assert.equal(byChannel.get('WHATSAPP'), 'QUEUED')
+    assert.equal(await raw.notification.count({ where: { candidateId: fx.candidateId } }), 1)
+    assert.equal(await raw.collectionTask.count({ where: { organizationId: orgId } }), 1)
+
+    // A third run is a no-op: delivered claims are terminal again.
+    const s3 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(s3.sent, 0, JSON.stringify(s3))
+    assert.equal(s3.queued, 0, JSON.stringify(s3))
+    assert.equal(s3.alreadyLogged, 2, JSON.stringify(s3))
+    assert.equal(await raw.reminderLog.count({ where: { organizationId: orgId } }), 2)
+    assert.equal(await raw.notification.count({ where: { candidateId: fx.candidateId } }), 1)
+  } finally {
+    await cleanupClaimFixture(raw, orgId)
+    await raw.$disconnect()
+  }
+})
+
+test('DB: SKIPPED_PTP at OVERDUE_30 (no later stage) resumes after PTP expiry', async () => {
+  if (!HAS_DB) {
+    console.log('  (skipped — DATABASE_URL_TEST not set)')
+    return
+  }
+  delete process.env.WHATSAPP_API_TOKEN
+  delete process.env.WHATSAPP_PHONE_NUMBER_ID
+
+  const raw = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_TEST })
+  const suffix = Math.random().toString(36).slice(2, 8)
+  let orgId = ''
+  try {
+    const fx = await buildClaimFixture(raw, suffix)
+    orgId = fx.orgId
+    const loanId = await fx.mkLoan(`LON-CL-${suffix}-30`)
+    await fx.mkInstallment(loanId, '2026-10-06') // exactly 30 IST days before NOW
+    const ptpId = await fx.mkPtp(loanId, '2026-11-10') // covers at NOW
+
+    const { runReminders } = await import('../../src/lib/server/reminders')
+
+    const s1 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(s1.skippedPtp, 2, JSON.stringify(s1))
+    const skipped = await raw.reminderLog.findMany({ where: { organizationId: orgId } })
+    assert.equal(skipped.length, 2)
+    assert.ok(skipped.every((l) => l.stage === 'OVERDUE_30' && l.status === 'SKIPPED_PTP'))
+
+    await raw.ptp.update({
+      where: { id: ptpId },
+      data: { promiseDate: istDay('2026-11-04') },
+    })
+
+    // OVERDUE_30 has no later stage — the resume must happen on THIS stage.
+    const s2 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(s2.sent, 1, JSON.stringify(s2))
+    assert.equal(s2.queued, 1, JSON.stringify(s2))
+    const delivered = await raw.reminderLog.findMany({ where: { organizationId: orgId } })
+    assert.equal(delivered.length, 2)
+    const byChannel = new Map(delivered.map((l) => [l.channel, l.status]))
+    assert.equal(byChannel.get('PORTAL'), 'SENT')
+    assert.equal(byChannel.get('WHATSAPP'), 'QUEUED')
+    assert.equal(await raw.notification.count({ where: { candidateId: fx.candidateId } }), 1)
+    assert.equal(await raw.collectionTask.count({ where: { organizationId: orgId } }), 1)
+  } finally {
+    await cleanupClaimFixture(raw, orgId)
+    await raw.$disconnect()
+  }
+})
+
+test('DB: FAILED WhatsApp claim retries with an attempt cap, then stays terminal', async () => {
+  if (!HAS_DB) {
+    console.log('  (skipped — DATABASE_URL_TEST not set)')
+    return
+  }
+  const raw = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_TEST })
+  const suffix = Math.random().toString(36).slice(2, 8)
+  let orgId = ''
+  let fetchCalls = 0
+  const failFetch = async () => {
+    fetchCalls++
+    throw new Error('provider unreachable')
+  }
+  const okFetch = async () => {
+    fetchCalls++
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ messages: [{ id: 'wamid.test' }] }),
+    }
+  }
+  try {
+    const fx = await buildClaimFixture(raw, suffix)
+    orgId = fx.orgId
+    const { runReminders } = await import('../../src/lib/server/reminders')
+    process.env.WHATSAPP_API_TOKEN = 'test-token-value'
+    process.env.WHATSAPP_PHONE_NUMBER_ID = '1234567890'
+
+    const waRow = (installmentLoanId: string) =>
+      raw.reminderLog.findFirst({
+        where: { organizationId: orgId, loanId: installmentLoanId, channel: 'WHATSAPP' },
+      })
+
+    // --- Phase 1: first attempt fails, the retry succeeds (attempts 1 → 2).
+    const loanA = await fx.mkLoan(`LON-CL-${suffix}-FA`)
+    await fx.mkInstallment(loanA, '2026-11-06') // DUE_SOON_1 at NOW
+    stubFetch(failFetch)
+    const r1 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(r1.sent, 1, JSON.stringify(r1)) // portal
+    assert.equal(r1.failed, 1, JSON.stringify(r1)) // whatsapp via API
+    let wa = await waRow(loanA)
+    assert.equal(wa?.status, 'FAILED')
+    assert.equal(wa?.attempts, 1)
+    assert.equal(fetchCalls, 1)
+
+    stubFetch(okFetch)
+    const r2 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(r2.sent, 1, JSON.stringify(r2)) // the retried whatsapp send
+    assert.equal(r2.alreadyLogged, 1, JSON.stringify(r2)) // portal already SENT
+    wa = await waRow(loanA)
+    assert.equal(wa?.status, 'SENT')
+    assert.equal(wa?.attempts, 2)
+    assert.equal(await raw.reminderLog.count({ where: { organizationId: orgId } }), 2)
+    assert.equal(fetchCalls, 2)
+
+    // --- Phase 2: retries are bounded — attempts 1, 2, 3, then terminal.
+    const loanB = await fx.mkLoan(`LON-CL-${suffix}-FB`)
+    await fx.mkInstallment(loanB, '2026-11-06')
+    stubFetch(failFetch)
+    const r3 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(r3.failed, 1, JSON.stringify(r3))
+    wa = await waRow(loanB)
+    assert.equal(wa?.status, 'FAILED')
+    assert.equal(wa?.attempts, 1)
+    const r4 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(r4.failed, 1, JSON.stringify(r4))
+    wa = await waRow(loanB)
+    assert.equal(wa?.attempts, 2)
+    const r5 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(r5.failed, 1, JSON.stringify(r5))
+    wa = await waRow(loanB)
+    assert.equal(wa?.attempts, 3)
+    assert.equal(fetchCalls, 5)
+    const r6 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(r6.failed, 0, JSON.stringify(r6))
+    assert.equal(r6.sent, 0, JSON.stringify(r6))
+    assert.equal(r6.alreadyLogged, 4, JSON.stringify(r6)) // cap reached: handled
+    wa = await waRow(loanB)
+    assert.equal(wa?.status, 'FAILED')
+    assert.equal(wa?.attempts, 3)
+    assert.equal(fetchCalls, 5, 'no send is attempted past the cap')
+
+    // --- Phase 3: API unconfigured since the failure → staff-task fallback.
+    const loanC = await fx.mkLoan(`LON-CL-${suffix}-FC`)
+    await fx.mkInstallment(loanC, '2026-11-06')
+    const r7 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(r7.failed, 1, JSON.stringify(r7))
+    wa = await waRow(loanC)
+    assert.equal(wa?.status, 'FAILED')
+    assert.equal(wa?.attempts, 1)
+    assert.equal(fetchCalls, 6)
+
+    delete process.env.WHATSAPP_API_TOKEN
+    delete process.env.WHATSAPP_PHONE_NUMBER_ID
+    const r8 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(r8.queued, 1, JSON.stringify(r8)) // re-claimed into a staff task
+    wa = await waRow(loanC)
+    assert.equal(wa?.status, 'QUEUED')
+    assert.equal(wa?.attempts, 2)
+    assert.equal(await raw.collectionTask.count({ where: { organizationId: orgId } }), 1)
+    assert.equal(await raw.reminderLog.count({ where: { organizationId: orgId } }), 6)
+  } finally {
+    globalThis.fetch = savedFetch
+    restoreEnv()
+    await cleanupClaimFixture(raw, orgId)
+    await raw.$disconnect()
+  }
+})
+
+test('DB: concurrent runs over a just-expired PTP deliver exactly once', async () => {
+  if (!HAS_DB) {
+    console.log('  (skipped — DATABASE_URL_TEST not set)')
+    return
+  }
+  delete process.env.WHATSAPP_API_TOKEN
+  delete process.env.WHATSAPP_PHONE_NUMBER_ID
+
+  const raw = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_TEST })
+  const suffix = Math.random().toString(36).slice(2, 8)
+  let orgId = ''
+  try {
+    const fx = await buildClaimFixture(raw, suffix)
+    orgId = fx.orgId
+    const loanId = await fx.mkLoan(`LON-CL-${suffix}-CC`)
+    await fx.mkInstallment(loanId, '2026-11-04') // OVERDUE_1 at NOW
+    const ptpId = await fx.mkPtp(loanId, '2026-11-10') // covers at NOW
+
+    const { runReminders } = await import('../../src/lib/server/reminders')
+    const s1 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(s1.skippedPtp, 2, JSON.stringify(s1))
+
+    await raw.ptp.update({
+      where: { id: ptpId },
+      data: { promiseDate: istDay('2026-11-04') },
+    })
+
+    // Two runners race the re-claim: the conditional transition must let
+    // exactly one of them deliver each channel.
+    const [r1, r2] = await Promise.all([
+      runReminders({ organizationId: orgId, now: NOW }),
+      runReminders({ organizationId: orgId, now: NOW }),
+    ])
+    assert.equal(r1.sent + r2.sent, 1, JSON.stringify([r1, r2]))
+    assert.equal(r1.queued + r2.queued, 1, JSON.stringify([r1, r2]))
+    assert.equal(await raw.notification.count({ where: { candidateId: fx.candidateId } }), 1)
+    assert.equal(await raw.collectionTask.count({ where: { organizationId: orgId } }), 1)
+    const logs = await raw.reminderLog.findMany({ where: { organizationId: orgId } })
+    assert.equal(logs.length, 2)
+    const byChannel = new Map(logs.map((l) => [l.channel, l.status]))
+    assert.equal(byChannel.get('PORTAL'), 'SENT')
+    assert.equal(byChannel.get('WHATSAPP'), 'QUEUED')
+  } finally {
+    await cleanupClaimFixture(raw, orgId)
+    await raw.$disconnect()
+  }
+})
+
+// ============================================================
 // RUNNER
 // ============================================================
 

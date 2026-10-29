@@ -950,6 +950,7 @@ model ReminderLog {
   status         ReminderStatus
   message        String // snapshot of the exact text that was (or would be) sent
   error          String?
+  attempts       Int             @default(1) // delivery attempts so far; FAILED claims retry while attempts < 3
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
