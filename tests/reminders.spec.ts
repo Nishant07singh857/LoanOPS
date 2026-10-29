@@ -151,6 +151,9 @@ test.describe('Auto reminders: runner, idempotency, owner view', () => {
 
   test.afterAll(async () => {
     if (orgId) {
+      // Audit logs (e.g. the page-test owner's LOGIN row) reference the
+      // org with a restrictive FK — they must go before the org itself.
+      await db.auditLog.deleteMany({ where: { organizationId: orgId } })
       await db.reminderLog.deleteMany({ where: { organizationId: orgId } })
       await db.notification.deleteMany({ where: { organizationId: orgId } })
       await db.collectionTask.deleteMany({ where: { organizationId: orgId } })
