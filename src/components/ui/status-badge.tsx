@@ -54,6 +54,10 @@ const statusBadgeVariants = cva(
         MEDIUM: 'bg-info/15 text-info border border-info/20',
         HIGH: 'bg-warning/15 text-warning border border-warning/20',
         URGENT: 'bg-destructive/15 text-destructive border border-destructive/20',
+        // Reminder delivery
+        SENT: 'bg-success/15 text-success border border-success/20',
+        QUEUED: 'bg-warning/15 text-warning border border-warning/20',
+        SKIPPED_PTP: 'bg-muted text-muted-foreground border border-border',
         // AI levels
         AI_HIGH: 'bg-destructive/15 text-destructive border border-destructive/20',
         AI_MEDIUM: 'bg-warning/15 text-warning border border-warning/20',

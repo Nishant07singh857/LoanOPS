@@ -16,12 +16,16 @@ datasource db {
 // ============================================================
 
 model Organization {
-  id        String   @id @default(cuid())
-  name      String
-  logoUrl   String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String   @id @default(cuid())
+  name             String
+  logoUrl          String?
+  isActive         Boolean  @default(true)
+  // Org-level kill switch for the auto-reminder engine + receipt
+  // notifications (src/lib/server/reminders.ts). Off = nothing is
+  // logged, notified or queued for this org.
+  remindersEnabled Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   users                    User[]
   candidates               Candidate[]
@@ -36,6 +40,7 @@ model Organization {
   qrLinks                  QrLink[]
   payments                 Payment[]
   collectionTasks          CollectionTask[]
+  reminderLogs             ReminderLog[]
   webhookEvents            WebhookEvent[]
   reconciliationRuns       ReconciliationRun[]
   reconciliationExceptions ReconciliationException[]
@@ -191,6 +196,7 @@ model Candidate {
   collectionTasks     CollectionTask[]
   supportTickets      SupportTicket[]
   notifications       Notification[]
+  reminderLogs        ReminderLog[]
   consentRecords      ConsentRecord[]
   dataSubjectRequests DataSubjectRequest[]
 
@@ -408,6 +414,7 @@ model Loan {
   refunds         Refund[]
   documents       Document[]
   corrections     FinancialCorrection[]
+  reminderLogs    ReminderLog[]
 
   @@index([organizationId])
   @@index([candidateId])
@@ -444,6 +451,8 @@ model Installment {
   updatedAt          DateTime          @updatedAt
 
   loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  reminderLogs ReminderLog[]
 
   @@unique([loanId, installmentNumber])
   @@index([loanId])
@@ -545,6 +554,7 @@ model Payment {
   candidate    Candidate    @relation(fields: [candidateId], references: [id])
   recordedBy   User?        @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
   verifiedBy   User?        @relation("PaymentVerifiedBy", fields: [verifiedById], references: [id])
+  reminderLogs ReminderLog[]
 
   @@index([organizationId])
   @@index([loanId])
@@ -892,6 +902,67 @@ model Notification {
 
   @@index([organizationId])
   @@index([userId])
+  @@index([candidateId])
+}
+
+// ============================================================
+// AUTO REMINDERS (engine: src/lib/reminders.ts + src/lib/server/reminders.ts)
+// ============================================================
+
+enum ReminderStage {
+  DUE_SOON_3
+  DUE_SOON_1
+  DUE_TODAY
+  OVERDUE_1
+  OVERDUE_3
+  OVERDUE_7
+  OVERDUE_15
+  OVERDUE_30
+  RECEIPT
+}
+
+enum ReminderChannel {
+  PORTAL
+  WHATSAPP
+}
+
+enum ReminderStatus {
+  SENT // delivered (portal notification created / WhatsApp API accepted)
+  QUEUED // handed to a human: a staff CollectionTask carries the wa.me draft
+  SKIPPED_PTP // suppressed by an active promise-to-pay covering the loan
+  FAILED // delivery attempted and failed (see error)
+}
+
+// One row per (installment, stage, channel) — the unique constraints are
+// the idempotency guard: the runner claims a row before acting, so
+// re-running (or racing) the engine can never double-send. Receipt rows
+// key on paymentId instead of installmentId; Postgres treats NULLs as
+// distinct in unique indexes, so the two guards never collide.
+model ReminderLog {
+  id             String          @id @default(cuid())
+  organizationId String
+  candidateId    String
+  loanId         String
+  installmentId  String?
+  paymentId      String?
+  stage          ReminderStage
+  channel        ReminderChannel
+  status         ReminderStatus
+  message        String // snapshot of the exact text that was (or would be) sent
+  error          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  candidate    Candidate    @relation(fields: [candidateId], references: [id])
+  loan         Loan         @relation(fields: [loanId], references: [id])
+  installment  Installment? @relation(fields: [installmentId], references: [id])
+  payment      Payment?     @relation(fields: [paymentId], references: [id])
+
+  @@unique([installmentId, stage, channel])
+  @@unique([paymentId, stage, channel])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, status])
   @@index([candidateId])
 }
 
