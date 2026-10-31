@@ -154,7 +154,7 @@ function derivePan(posted?: string | null) {
 
 export const POST = apiHandler(async (req: NextRequest, { params }: { params: Promise<{ token: string }> }) => {
   const { enforceRateLimit } = await import('@/lib/server/rate-limit')
-  const rlResponse = enforceRateLimit(req, 'public_api')
+  const rlResponse = await enforceRateLimit(req, 'public_api')
   if (rlResponse) return rlResponse
 
   const { token } = await params

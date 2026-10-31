@@ -195,8 +195,8 @@
     font-size: 1rem; /* 16px */
   }
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 10px;
+    height: 10px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
@@ -285,42 +285,55 @@
     display: none;               /* Chrome / Safari / Opera */
   }
 
-  /* Sidebar nav: thin VISIBLE scrollbar. The owner sidebar holds 16 items
-     across 4 groups (~850px of content); on laptop-height viewports it must
-     scroll, and a hidden scrollbar made the lower items look cut off /
-     unreachable. A visible thin bar signals scrollability. */
+  /* Sidebar nav: VISIBLE scrollbar with a genuinely grabbable hit area.
+     The owner sidebar holds 16 items across 4 groups; on laptop-height
+     viewports it must scroll. The webkit bar is 10px wide (the drag hit
+     area); the thumb is inset with a transparent border so the visible
+     pill stays slim and premium, and it intensifies on hover. Firefox
+     only supports the `thin` keyword (no pixel widths) — still visible
+     and draggable there. */
   .sidebar-scroll {
     scrollbar-width: thin;        /* Firefox */
     scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent) transparent;
   }
   .sidebar-scroll::-webkit-scrollbar {
-    width: 6px;
+    width: 10px;
   }
   .sidebar-scroll::-webkit-scrollbar-thumb {
-    background: color-mix(in oklch, var(--muted-foreground) 35%, transparent);
+    background-color: color-mix(in oklch, var(--muted-foreground) 40%, transparent);
+    background-clip: padding-box;
+    border: 2px solid transparent;
     border-radius: 999px;
+  }
+  .sidebar-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklch, var(--muted-foreground) 70%, transparent);
   }
   .sidebar-scroll::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  /* Data tables: thin VISIBLE scrollbar, mirroring .sidebar-scroll.
+  /* Data tables: VISIBLE scrollbar, mirroring .sidebar-scroll.
      The shared Table wrapper scrolls horizontally on wide tables; the
      previous .no-scrollbar hid the bar entirely, so a wide table gave
-     no visual hint it scrolls sideways. A visible thin bar signals
+     no visual hint it scrolls sideways. A visible bar signals
      scrollability. The webkit rule sets height (horizontal axis) as
-     well as width. */
+     well as width — both get the same 10px hit area and inset thumb. */
   .table-scroll {
     scrollbar-width: thin;        /* Firefox */
     scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent) transparent;
   }
   .table-scroll::-webkit-scrollbar {
-    height: 6px;
-    width: 6px;
+    height: 10px;
+    width: 10px;
   }
   .table-scroll::-webkit-scrollbar-thumb {
-    background: color-mix(in oklch, var(--muted-foreground) 35%, transparent);
+    background-color: color-mix(in oklch, var(--muted-foreground) 40%, transparent);
+    background-clip: padding-box;
+    border: 2px solid transparent;
     border-radius: 999px;
+  }
+  .table-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklch, var(--muted-foreground) 70%, transparent);
   }
   .table-scroll::-webkit-scrollbar-track {
     background: transparent;

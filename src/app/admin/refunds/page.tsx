@@ -156,7 +156,7 @@ export default function RefundsPage() {
               <EmptyState icon={<Undo2 className="h-6 w-6" />} title="No refund requests" description="Initiate a refund to see it here." />
             ) : (
               <>
-                <div className="hidden md:block overflow-x-auto w-full">
+                <div className="hidden md:block overflow-x-auto table-scroll w-full">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">

@@ -355,7 +355,7 @@ export default function CollectionsPage() {
               <EmptyState icon={<Banknote className="h-6 w-6" />} title="No cash collections" description="Cash collections recorded by agents will appear here." />
             ) : (
               <>
-                <div className="hidden md:block overflow-x-auto w-full">
+                <div className="hidden md:block overflow-x-auto table-scroll w-full">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">
@@ -542,7 +542,7 @@ export default function CollectionsPage() {
               <EmptyState icon={<AlertTriangle className="h-6 w-6" />} title="No escalations" description="Agent escalations will appear here." />
             ) : (
               <>
-                <div className="hidden md:block overflow-x-auto w-full">
+                <div className="hidden md:block overflow-x-auto table-scroll w-full">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">

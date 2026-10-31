@@ -7,6 +7,7 @@ import { cookies } from 'next/headers'
 import { db } from '@/lib/db'
 import { NextRequest } from 'next/server'
 import { logger } from '@/lib/server/logger'
+import { getRedis, type RedisClientLike } from '@/lib/server/redis'
 
 
 // ============================================================
@@ -499,13 +500,28 @@ export function assertTenant(organizationId: string, user: AuthUser): void {
 // ============================================================
 // LOGIN RATE LIMITING & PROGRESSIVE DELAY (Phase 2 & 4)
 // ============================================================
+//
+// Counters live in Redis when configured (hash at `loginlock:<key>` with
+// the same {count, lockedUntil} shape as the in-memory record), so the
+// lockout is shared across instances. Without Redis — or on any Redis
+// error — they fail open to the original in-memory Map below. Threshold
+// (5 failures) and lockout duration (15 minutes) are identical on both
+// paths, and the durable DB-level lockout (User.failedLoginAttempts /
+// lockedUntil) is unaffected either way.
+// One deliberate deviation on the Redis path: an UNLOCKED counter gets a
+// 24h TTL (refreshed on each failure) so keys cannot accumulate forever;
+// the in-memory original kept unlocked counters until process restart.
+// A 5-failure burst within any 24h span still locks on both paths.
 
 const loginAttempts = new Map<string, { count: number; lockedUntil: number }>()
 
 const MAX_ATTEMPTS = 5
 const LOCKOUT_MS = 15 * 60 * 1000 // 15 minutes
+const UNLOCKED_COUNTER_TTL_SECONDS = 24 * 60 * 60
 
-export function checkLoginRate(key: string): { ok: boolean; retryAfterMs?: number; attempts?: number } {
+type LoginRateResult = { ok: boolean; retryAfterMs?: number; attempts?: number }
+
+function checkLoginRateMemory(key: string): LoginRateResult {
   const now = Date.now()
   const rec = loginAttempts.get(key)
   if (rec) {
@@ -519,7 +535,7 @@ export function checkLoginRate(key: string): { ok: boolean; retryAfterMs?: numbe
   return { ok: true, attempts: rec?.count ?? 0 }
 }
 
-export function recordLoginFailure(key: string): void {
+function recordLoginFailureMemory(key: string): void {
   const now = Date.now()
   if (loginAttempts.size > 5000) {
     for (const [k, v] of loginAttempts.entries()) {
@@ -535,8 +551,91 @@ export function recordLoginFailure(key: string): void {
   loginAttempts.set(key, rec)
 }
 
-export function clearLoginFailures(key: string): void {
+function clearLoginFailuresMemory(key: string): void {
   loginAttempts.delete(key)
+}
+
+function loginLockKey(key: string): string {
+  return `loginlock:${key}`
+}
+
+async function readLoginLockRecord(
+  redis: RedisClientLike,
+  key: string
+): Promise<{ count: number; lockedUntil: number } | null> {
+  const raw = await redis.hgetall(loginLockKey(key))
+  if (!raw || Object.keys(raw).length === 0) return null
+  return {
+    count: Number.parseInt(raw.count ?? '0', 10) || 0,
+    lockedUntil: Number.parseInt(raw.lockedUntil ?? '0', 10) || 0,
+  }
+}
+
+export async function checkLoginRate(key: string): Promise<LoginRateResult> {
+  const redis = getRedis()
+  if (redis) {
+    try {
+      const now = Date.now()
+      const rec = await readLoginLockRecord(redis, key)
+      if (rec) {
+        if (rec.lockedUntil > now) {
+          return { ok: false, retryAfterMs: rec.lockedUntil - now, attempts: rec.count }
+        }
+        if (rec.lockedUntil > 0 && rec.lockedUntil <= now) {
+          await redis.del(loginLockKey(key))
+          return { ok: true, attempts: 0 }
+        }
+        return { ok: true, attempts: rec.count }
+      }
+      return { ok: true, attempts: 0 }
+    } catch (err) {
+      logger.warn('Redis login-rate check failed; falling back to in-memory counters', { error: err })
+    }
+  }
+  return checkLoginRateMemory(key)
+}
+
+export async function recordLoginFailure(key: string): Promise<void> {
+  const redis = getRedis()
+  if (redis) {
+    try {
+      const now = Date.now()
+      const rec = (await readLoginLockRecord(redis, key)) ?? { count: 0, lockedUntil: 0 }
+      rec.count += 1
+      if (rec.count >= MAX_ATTEMPTS) {
+        rec.lockedUntil = now + LOCKOUT_MS
+        rec.count = 0
+        await redis.hset(loginLockKey(key), {
+          count: rec.count,
+          lockedUntil: rec.lockedUntil,
+        })
+        await redis.expire(loginLockKey(key), Math.ceil(LOCKOUT_MS / 1000))
+      } else {
+        await redis.hset(loginLockKey(key), {
+          count: rec.count,
+          lockedUntil: rec.lockedUntil,
+        })
+        await redis.expire(loginLockKey(key), UNLOCKED_COUNTER_TTL_SECONDS)
+      }
+      return
+    } catch (err) {
+      logger.warn('Redis login-failure record failed; falling back to in-memory counters', { error: err })
+    }
+  }
+  recordLoginFailureMemory(key)
+}
+
+export async function clearLoginFailures(key: string): Promise<void> {
+  const redis = getRedis()
+  if (redis) {
+    try {
+      await redis.del(loginLockKey(key))
+      return
+    } catch (err) {
+      logger.warn('Redis login-failure clear failed; falling back to in-memory counters', { error: err })
+    }
+  }
+  clearLoginFailuresMemory(key)
 }
 
 export function getClientIp(req: NextRequest | Request): string {
