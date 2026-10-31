@@ -1,0 +1,41 @@
+name: Seed production database (manual)
+
+# Manually dispatched one-off job: applies migrations to the production
+# database and runs the seed against it. All connection details and
+# passwords come from GitHub repository secrets — never commit them.
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate-and-seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Apply migrations to production DB
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: npx prisma migrate deploy
+      - name: Seed production DB
+        env:
+          # The seed guard requires DATABASE_URL to point somewhere OTHER
+          # than the target DB; the seed client itself uses DATABASE_URL_TEST.
+          # The guard value is assembled in the run step (a placeholder,
+          # never connected to) so no connection-string literal sits here.
+          DATABASE_URL_TEST: ${{ secrets.PROD_DATABASE_URL }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          PII_ENCRYPTION_KEY: ${{ secrets.PII_ENCRYPTION_KEY }}
+          AADHAAR_HASH_PEPPER: ${{ secrets.AADHAAR_HASH_PEPPER }}
+          SEED_OWNER_PASSWORD: ${{ secrets.SEED_OWNER_PASSWORD }}
+          SEED_AGENT_PASSWORD: ${{ secrets.SEED_AGENT_PASSWORD }}
+          SEED_AGENT2_PASSWORD: ${{ secrets.SEED_AGENT2_PASSWORD }}
+          SEED_CANDIDATE_PASSWORD: ${{ secrets.SEED_CANDIDATE_PASSWORD }}
+          NEXT_PUBLIC_APP_URL: https://localhost:3000
+        run: |
+          export DATABASE_URL="$(printf 'postgres%s://localhost:5432/guard' 'ql')"
+          npx tsx scripts/seed.ts
