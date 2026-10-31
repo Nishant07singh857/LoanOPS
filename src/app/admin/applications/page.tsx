@@ -194,7 +194,7 @@ export default function ApplicationsPage() {
       ) : (
         <>
           <Card className="shadow-premium hidden md:block overflow-hidden">
-            <div className="overflow-x-auto w-full">
+            <div className="overflow-x-auto table-scroll w-full">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/40 hover:bg-muted/40">

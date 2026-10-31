@@ -84,7 +84,7 @@ export function apiHandler<T extends (...args: any[]) => Promise<NextResponse>>(
       if (req && typeof req.method === 'string') {
         // 1. Global API rate limit
         if (req.headers) {
-          const rlRes = enforceRateLimit(req, 'api_global')
+          const rlRes = await enforceRateLimit(req, 'api_global')
           if (rlRes) return rlRes
         }
 

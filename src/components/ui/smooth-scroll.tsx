@@ -20,6 +20,14 @@ export function SmoothScroll({ children }: { children: React.ReactNode }) {
       duration: 1.2,
       easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
       smoothWheel: true,
+      // CRITICAL: without this, Lenis preventDefaults every wheel event and
+      // converts it into a window scroll — nested scrollers (the sidebar
+      // nav, table wrappers, dropdowns, dialog panes) could then only be
+      // moved by dragging their scrollbar thumbs. With allowNestedScroll,
+      // Lenis yields when the gesture starts inside a nested scroller that
+      // can still move in that direction; at its end the gesture chains
+      // back to the page. Key regions also carry data-lenis-prevent.
+      allowNestedScroll: true,
     })
 
     let rafId: number

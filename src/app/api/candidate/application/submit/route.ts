@@ -66,7 +66,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireCandidate()
   if (!ctx.user.candidateId) return badRequest('No candidate profile linked to this account')
 
-  const rlResponse = enforceRateLimit(req, 'apply_submit', ctx.user.id)
+  const rlResponse = await enforceRateLimit(req, 'apply_submit', ctx.user.id)
   if (rlResponse) return rlResponse
 
   const body = await req.json().catch(() => null)

@@ -23,7 +23,7 @@ export async function GET(
   const { fileKey } = await context.params
 
   // Rate limit file access to prevent KYC document scraping
-  const rlResponse = enforceRateLimit(req, 'file_access')
+  const rlResponse = await enforceRateLimit(req, 'file_access')
   if (rlResponse) return rlResponse
 
   const url = new URL(req.url)

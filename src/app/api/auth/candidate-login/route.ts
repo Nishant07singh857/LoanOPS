@@ -45,10 +45,10 @@ export const POST = apiHandler(async (req: NextRequest) => {
   const userAgent = req.headers.get('user-agent') || undefined
   const rateKey = `${ip}:${cleanMobile}`
 
-  const rlResponse = enforceRateLimit(req, 'auth_login', cleanMobile)
+  const rlResponse = await enforceRateLimit(req, 'auth_login', cleanMobile)
   if (rlResponse) return rlResponse
 
-  const rl = checkLoginRate(rateKey)
+  const rl = await checkLoginRate(rateKey)
   if (!rl.ok) {
     return tooMany(`Too many login attempts. Please try again in ${Math.ceil(rl.retryAfterMs! / 1000)} seconds.`)
   }
@@ -101,13 +101,13 @@ export const POST = apiHandler(async (req: NextRequest) => {
 
   if (!candidate || !candidate.userId) {
     await constantTimeDummyVerify(parsed.password)
-    recordLoginFailure(rateKey)
+    await recordLoginFailure(rateKey)
     return unauthorized('Invalid credentials')
   }
 
   if (!user || !user.isActive || user.role !== 'CANDIDATE') {
     await constantTimeDummyVerify(parsed.password)
-    recordLoginFailure(rateKey)
+    await recordLoginFailure(rateKey)
     return unauthorized('Invalid credentials')
   }
 
@@ -129,7 +129,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
         lockedUntil: nextAttempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null,
       },
     })
-    recordLoginFailure(rateKey)
+    await recordLoginFailure(rateKey)
     await auditRaw(
       user.organizationId,
       user.id,
@@ -147,7 +147,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
     data: { failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
   })
 
-  clearLoginFailures(rateKey)
+  await clearLoginFailures(rateKey)
 
   const token = await createSession(
     { id: user.id, organizationId: user.organizationId },

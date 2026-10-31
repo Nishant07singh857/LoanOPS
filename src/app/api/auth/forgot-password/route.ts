@@ -17,7 +17,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
   if (!body) return badRequest('Invalid JSON body')
   const { email } = validate(schema, body)
 
-  const rlResponse = enforceRateLimit(req, 'auth_forgot_password', email)
+  const rlResponse = await enforceRateLimit(req, 'auth_forgot_password', email)
   if (rlResponse) return rlResponse
 
   const ip = getClientIp(req)
