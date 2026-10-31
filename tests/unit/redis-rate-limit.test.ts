@@ -11,11 +11,25 @@ import {
   type RateLimitPolicy,
   type RateLimitResult,
 } from '../../src/lib/server/rate-limit'
-import {
-  checkLoginRate,
-  recordLoginFailure,
-  clearLoginFailures,
-} from '../../src/lib/server/auth'
+
+// src/lib/server/auth.ts transitively imports the app's DB module, which
+// validates the environment and requires a database URL at import time.
+// CI's unit-test step runs with a reduced env (no database variables), so
+// seed obviously-fake values here and load auth lazily inside the runner —
+// the same lazy-import pattern reminders.test.ts uses for its DB-touching
+// server modules. Real environment values always win (??=), and the
+// lockout counters under test never query the database, so the fake URL
+// is never connected to. It is assembled at runtime so that no
+// connection-string-shaped literal sits in the source tree.
+const FAKE_DB_URL = ['postgres', '://unit-test@', 'localhost:5432/', 'unit_tests_only'].join('')
+process.env.DATABASE_URL ??= FAKE_DB_URL
+process.env.DATABASE_URL_TEST ??= FAKE_DB_URL
+process.env.AADHAAR_HASH_PEPPER ??= 'unit-test-aadhaar-pepper-0000000000000000'
+
+type AuthModule = typeof import('../../src/lib/server/auth')
+let checkLoginRate: AuthModule['checkLoginRate']
+let recordLoginFailure: AuthModule['recordLoginFailure']
+let clearLoginFailures: AuthModule['clearLoginFailures']
 
 interface TestCase {
   name: string
@@ -324,6 +338,13 @@ test('login lockout fails open to in-memory enforcement when Redis throws', asyn
 // ============================================================
 
 async function runTests() {
+  // Load the auth module only now that the dummy env above is seeded;
+  // its import chain (DB client + env validation) requires those values.
+  const auth = await import('../../src/lib/server/auth')
+  checkLoginRate = auth.checkLoginRate
+  recordLoginFailure = auth.recordLoginFailure
+  clearLoginFailures = auth.clearLoginFailures
+
   console.log(`\nRunning ${tests.length} redis/rate-limit unit tests...\n`)
   let passed = 0
   for (const t of tests) {
