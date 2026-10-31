@@ -5,6 +5,14 @@ name: Seed production database (manual)
 # passwords come from GitHub repository secrets — never commit them.
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "deploy = apply migrations only; reset = WIPE the database and rebuild it from migrations"
+        type: choice
+        options:
+          - deploy
+          - reset
+        default: deploy
 
 jobs:
   migrate-and-seed:
@@ -16,11 +24,18 @@ jobs:
           node-version: 20
       - run: npm ci
       - run: npx prisma generate
-      - name: Apply migrations to production DB
+      - name: Apply migrations to production DB (deploy mode)
+        if: inputs.mode == 'deploy'
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
           DIRECT_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: npx prisma migrate deploy
+      - name: RESET production DB and rebuild from migrations (reset mode)
+        if: inputs.mode == 'reset'
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: npx prisma migrate reset --force --skip-seed
       - name: Seed production DB
         env:
           # The seed guard requires DATABASE_URL to point somewhere OTHER
