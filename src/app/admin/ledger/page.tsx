@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
-import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
+import { formatPaiseToINR, formatPaiseToINRShort, pluralize } from '@/lib/money'
 import { escapeCsvCell } from '@/lib/csv'
 import { cn } from '@/lib/utils'
 
@@ -118,7 +118,7 @@ export default function LedgerPage() {
     link.click()
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
-    toast.success('Exporting ledger...', { description: `${filtered.length} entries exported to CSV.` })
+    toast.success('Exporting ledger...', { description: `${pluralize(filtered.length, 'entry', 'entries')} exported to CSV.` })
   }
 
   return (
@@ -222,7 +222,7 @@ export default function LedgerPage() {
 
       <FadeIn>
         <Card className="shadow-premium">
-          <CardHeader className="pb-2"><CardTitle className="text-base">Ledger Entries</CardTitle><CardDescription>{filtered.length} entries shown</CardDescription></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Ledger Entries</CardTitle><CardDescription>{pluralize(filtered.length, 'entry', 'entries')} shown</CardDescription></CardHeader>
           <CardContent>
             {isLoading ? (
               <div className="space-y-2" role="status" aria-label="Loading ledger entries">

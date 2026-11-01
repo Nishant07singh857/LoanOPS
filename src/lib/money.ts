@@ -17,7 +17,10 @@ export function formatPaiseToINR(paise: number | string | bigint | null | undefi
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 2,
-    minimumFractionDigits: 0,
+    // Always exactly 2 decimals — a live audit found one-decimal renders
+    // (₹7,437.5) on some pages while others showed ₹7,437.50. One shared
+    // formatter, one canonical shape, everywhere.
+    minimumFractionDigits: 2,
   }).format(safe / 100)
 }
 
@@ -35,7 +38,24 @@ export function formatPaiseToINRShort(paise: number | string | bigint | null | u
 export function formatPaiseToPlain(paise: number | string | bigint | null | undefined): string {
   const num = toFiniteNumber(paise)
   if (num === null) return '—'
-  return (num / 100).toFixed(2)
+  // Indian digit grouping + exactly 2 decimals (e.g. "7,437.50"), matching
+  // formatPaiseToINR but without the currency symbol — used inside message
+  // templates that already carry their own ₹ sign.
+  return new Intl.NumberFormat('en-IN', {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  }).format(num / 100)
+}
+
+/**
+ * Singular/plural label for list footers and counts:
+ * pluralize(1, 'application') -> "1 application";
+ * pluralize(12, 'installment') -> "12 installments".
+ * Pass an explicit plural for irregular words.
+ */
+export function pluralize(count: number, singular: string, plural?: string): string {
+  const n = Math.trunc(Math.abs(count))
+  return `${count} ${n === 1 ? singular : (plural ?? `${singular}s`)}`
 }
 
 export function formatBpsToPercent(bps: number | string | null | undefined): string {

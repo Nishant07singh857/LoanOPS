@@ -23,6 +23,9 @@ export interface PortalNavItem {
   label: string
   icon: React.ReactNode
   badge?: number
+  /** What the badge counts (e.g. "Pending applications") — rendered as the
+   *  badge's title/aria-label so the number is never ambiguous. */
+  badgeLabel?: string
 }
 
 export interface PortalNavGroup {
@@ -139,7 +142,7 @@ export function PortalLayout({ role, groups, brand, children, notifications, nav
                           <span className={cn("h-3.5 w-3.5 flex items-center justify-center transition-transform", active && "scale-110")}>{item.icon}</span>
                           <span>{item.label}</span>
                           {item.badge ? (
-                            <Badge variant="secondary" className={cn('text-[10px] h-4 px-1 ml-1', active && 'bg-primary-foreground/20 text-primary-foreground')}>
+                            <Badge variant="secondary" title={item.badgeLabel} aria-label={item.badgeLabel ? `${item.badge} ${item.badgeLabel}` : undefined} className={cn('text-[10px] h-4 px-1 ml-1', active && 'bg-primary-foreground/20 text-primary-foreground')}>
                               {item.badge}
                             </Badge>
                           ) : null}
@@ -305,7 +308,7 @@ function SidebarContent({
                     <span className="flex-shrink-0 h-4 w-4 flex items-center justify-center">{item.icon}</span>
                     <span className="flex-1 truncate">{item.label}</span>
                     {item.badge ? (
-                      <Badge variant="secondary" className={cn('ml-auto text-[10px] h-4 px-1 flex-shrink-0', active && 'bg-primary-foreground/20 text-primary-foreground')}>
+                      <Badge variant="secondary" title={item.badgeLabel} aria-label={item.badgeLabel ? `${item.badge} ${item.badgeLabel}` : undefined} className={cn('ml-auto text-[10px] h-4 px-1 flex-shrink-0', active && 'bg-primary-foreground/20 text-primary-foreground')}>
                         {item.badge}
                       </Badge>
                     ) : null}
@@ -382,15 +385,24 @@ function UserMenu({ user, initials, onLogout }: { user: any; initials: string; o
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
+    // Close on Escape as well as outside click — the menu previously
+    // ignored Escape entirely (live-audit finding G.2).
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('keydown', keyHandler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('keydown', keyHandler)
+    }
   }, [])
 
-  const onSettings = () => {
+  const onProfile = () => {
     setOpen(false)
     if (user?.role === 'CANDIDATE') router.push('/portal/profile')
-    else if (user?.role === 'AGENT') router.push('/agent/performance')
-    else router.push('/admin')
+    else if (user?.role === 'AGENT') router.push('/agent/profile')
+    else router.push('/admin/profile')
   }
 
   return (
@@ -418,17 +430,15 @@ function UserMenu({ user, initials, onLogout }: { user: any; initials: string; o
               <Badge variant="secondary" className="mt-2 text-[10px]">{user?.role}</Badge>
             </div>
             <div className="p-1">
-              {/* Settings exists only where a real settings/profile page
-                  exists (candidate profile). Owner/agent previously routed
-                  to unrelated pages, so the item is hidden for them. */}
-              {user?.role === 'CANDIDATE' && (
-                <button role="menuitem" onClick={onSettings} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-muted transition-colors">
-                  <Settings className="h-4 w-4" /> Settings
-                </button>
-              )}
+              {/* Every role has a real profile page (owner/agent profile
+                  pages added with the live-audit fixes; the menu previously
+                  hid this item for them or routed to unrelated pages). */}
+              <button role="menuitem" onClick={onProfile} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-muted transition-colors">
+                <Settings className="h-4 w-4" /> Profile
+              </button>
               <button
                 role="menuitem"
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                onClick={() => { setTheme(theme === 'dark' ? 'light' : 'dark'); setOpen(false) }}
                 className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm hover:bg-muted transition-colors"
               >
                 <span className="flex items-center gap-2">
@@ -438,7 +448,7 @@ function UserMenu({ user, initials, onLogout }: { user: any; initials: string; o
                 <span className="text-xs text-muted-foreground capitalize">{theme}</span>
               </button>
               <Separator className="my-1" />
-              <button role="menuitem" onClick={onLogout} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-muted text-destructive transition-colors">
+              <button role="menuitem" onClick={() => { setOpen(false); onLogout() }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-muted text-destructive transition-colors">
                 <LogOut className="h-4 w-4" /> Sign out
               </button>
             </div>
@@ -455,8 +465,15 @@ function NavDropdown({ group, pathname, onNavigate }: { group: PortalNavGroup; p
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('keydown', keyHandler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('keydown', keyHandler)
+    }
   }, [])
   
   const isActive = group.items.some(item => pathname === item.href || (item.href !== '/portal' && item.href !== '/agent' && pathname.startsWith(item.href + '/')))
@@ -495,7 +512,7 @@ function NavDropdown({ group, pathname, onNavigate }: { group: PortalNavGroup; p
               >
                 <span className="h-4 w-4">{item.icon}</span>
                 <span className="flex-1">{item.label}</span>
-                {item.badge && <Badge variant="secondary" className="text-[10px] h-4 px-1">{item.badge}</Badge>}
+                {item.badge && <Badge variant="secondary" title={item.badgeLabel} aria-label={item.badgeLabel ? `${item.badge} ${item.badgeLabel}` : undefined} className="text-[10px] h-4 px-1">{item.badge}</Badge>}
               </Link>
             )
           })}

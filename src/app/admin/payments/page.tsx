@@ -26,7 +26,7 @@ import {
 import { toast } from 'sonner'
 import { PaginationControls } from '@/components/ui/pagination-controls'
 import { api } from '@/lib/api-client'
-import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
+import { formatPaiseToINR, formatPaiseToINRShort, pluralize } from '@/lib/money'
 
 interface PaymentRow {
   id: string
@@ -173,7 +173,7 @@ export default function PaymentsPage() {
         <Card className="shadow-premium">
           <CardHeader className="pb-3 space-y-1">
             <CardTitle className="text-base">All Payments</CardTitle>
-            <CardDescription className="mt-1">{rows.length} payments</CardDescription>
+            <CardDescription className="mt-1">{isLoading ? 'Loading…' : pluralize(rows.length, 'payment')}</CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? (

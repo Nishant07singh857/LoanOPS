@@ -32,7 +32,7 @@ import {
 } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { api, ApiRequestError } from '@/lib/api-client'
-import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
+import { formatPaiseToINR, formatPaiseToINRShort, pluralize } from '@/lib/money'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
 import { cn } from '@/lib/utils'
 
@@ -954,7 +954,7 @@ function FollowUpSection({ candidateId, loanId, followUps }: {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="text-base flex items-center gap-2"><History className="h-4 w-4" /> Contact History</CardTitle>
-            <CardDescription className="text-xs">{followUps.length} entries</CardDescription>
+            <CardDescription className="text-xs">{pluralize(followUps.length, 'entry', 'entries')}</CardDescription>
           </div>
           <Button size="sm" onClick={() => setOpen(true)}>
             <Plus className="h-4 w-4" /> Log Contact

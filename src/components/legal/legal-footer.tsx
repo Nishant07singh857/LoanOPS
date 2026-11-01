@@ -70,13 +70,19 @@ export function LegalFooter({ compact = false, className }: LegalFooterProps) {
               <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
               <span>{COMPLIANCE_CONFIG.companyName}</span>
             </div>
-            <p className="text-xs leading-relaxed">
-              Registered Office: {COMPLIANCE_CONFIG.registeredAddress}
-            </p>
-            <div className="text-[11px] space-y-1 pt-1 font-mono text-muted-foreground/90">
-              <p>CIN: {COMPLIANCE_CONFIG.cinNumber}</p>
-              <p>Regulated Entity / NBFC: {COMPLIANCE_CONFIG.rbiRegistration}</p>
-            </div>
+            {COMPLIANCE_CONFIG.registeredAddress && (
+              <p className="text-xs leading-relaxed">
+                Registered Office: {COMPLIANCE_CONFIG.registeredAddress}
+              </p>
+            )}
+            {(COMPLIANCE_CONFIG.cinNumber || COMPLIANCE_CONFIG.rbiRegistration) && (
+              <div className="text-[11px] space-y-1 pt-1 font-mono text-muted-foreground/90">
+                {COMPLIANCE_CONFIG.cinNumber && <p>CIN: {COMPLIANCE_CONFIG.cinNumber}</p>}
+                {COMPLIANCE_CONFIG.rbiRegistration && (
+                  <p>Regulated Entity / NBFC: {COMPLIANCE_CONFIG.rbiRegistration}</p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Column 2: Statutory & Compliance Links */}
@@ -113,9 +119,11 @@ export function LegalFooter({ compact = false, className }: LegalFooterProps) {
               <span>Nodal Grievance &amp; Data Protection Officer</span>
             </div>
             <div className="text-xs space-y-1">
-              <p className="font-medium text-foreground/90">
-                {COMPLIANCE_CONFIG.grievanceOfficer.name}
-              </p>
+              {COMPLIANCE_CONFIG.grievanceOfficer.name && (
+                <p className="font-medium text-foreground/90">
+                  {COMPLIANCE_CONFIG.grievanceOfficer.name}
+                </p>
+              )}
               <p className="text-[11px] text-muted-foreground">
                 {COMPLIANCE_CONFIG.grievanceOfficer.designation}
               </p>

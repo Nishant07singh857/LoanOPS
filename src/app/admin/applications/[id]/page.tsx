@@ -25,6 +25,7 @@ import { toast } from 'sonner'
 import { QRCodeSVG } from 'qrcode.react'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatBpsToPercent } from '@/lib/money'
+import { summarizeApplication } from '@/lib/application-summary'
 import { cn } from '@/lib/utils'
 
 type ActionKind = 'APPROVE' | 'REJECT' | 'REQUEST_INFO'
@@ -409,9 +410,9 @@ export default function ApplicationDetailPage() {
                 <Term label="Principal" value={formatPaiseToINR(Number(app.principalAmount))} />
                 <Term label="Frequency" value={app.frequency} />
                 <Term label="Installments" value={String(app.installments)} />
-                <Term label="Installment Amt" value={app.installmentAmount ? formatPaiseToINR(Number(app.installmentAmount)) : '—'} />
+                <Term label="Installment Amt" value={formatPaiseToINR(summarizeApplication(app).installmentAmount)} />
                 <Term label="Interest Rate" value={app.interestType === 'PERCENTAGE' ? formatBpsToPercent(app.interestRate ?? 0) : app.interestType === 'FIXED' ? formatPaiseToINR(Number(app.fixedInterest ?? 0)) : 'No interest'} />
-                <Term label="Total Repayable" value={app.totalRepayable ? formatPaiseToINR(Number(app.totalRepayable)) : '—'} />
+                <Term label="Total Repayable" value={formatPaiseToINR(summarizeApplication(app).totalRepayable)} />
               </CardContent>
             </Card>
 

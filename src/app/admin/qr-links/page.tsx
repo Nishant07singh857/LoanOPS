@@ -215,7 +215,7 @@ export default function QrLinksPage() {
         <Card className="shadow-premium">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">QR Links</CardTitle>
-            <CardDescription>{links.length} total</CardDescription>
+            <CardDescription>{isLoading ? 'Loading…' : `${links.length} total`}</CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? (

@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
+import { formatPaiseToPlain } from '@/lib/money'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES, type WhatsAppContext } from '@/lib/whatsapp'
 import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
@@ -45,6 +46,26 @@ interface CandidateRow {
   mobile: string
   activeLoanNumbers: string[]
   outstanding: string
+  nextDueAmount: string | null
+  nextDueDate: string | null
+}
+
+function fmtDueDate(d?: string | null) {
+  if (!d) return 'soon'
+  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+/** Template context from a candidate's ACTUAL record — next unpaid
+ *  installment amount/date, never the outstanding total or a fake date. */
+function ctxForCandidate(c: CandidateRow, agentName: string, orgName?: string): WhatsAppContext {
+  return {
+    candidateName: c.fullName,
+    loanNumber: c.activeLoanNumbers[0] ?? '',
+    amount: c.nextDueAmount ? formatPaiseToPlain(Number(c.nextDueAmount)) : formatPaiseToPlain(Number(c.outstanding)),
+    dueDate: fmtDueDate(c.nextDueDate),
+    agentName,
+    orgName,
+  }
 }
 
 export default function AgentWhatsAppPage() {
@@ -90,9 +111,16 @@ export default function AgentWhatsAppPage() {
                     <p className="text-[11px] text-muted-foreground mt-0.5">{t.description}</p>
                   </div>
                 </div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mt-3">Example preview</p>
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mt-3">Sample preview</p>
                 <p className="text-xs text-muted-foreground mt-1.5 line-clamp-3 bg-muted/30 rounded-lg p-2.5">
-                  {WHATSAPP_TEMPLATES[t.key].replace(/\{candidateName\}/g, 'Rahul').replace(/\{loanNumber\}/g, 'LON-2024-0892').replace(/\{amount\}/g, '7,425').replace(/\{dueDate\}/g, '20 Sep 2024').replace(/\{orgName\}/g, 'Sterling Lending').replace(/\{agentName\}/g, user?.name ?? 'Agent')}
+                  {buildWhatsAppMessage(WHATSAPP_TEMPLATES[t.key], {
+                    candidateName: 'Sample Borrower',
+                    loanNumber: 'LON-SAMPLE',
+                    amount: '7,437.50',
+                    dueDate: 'the due date',
+                    agentName: user?.name ?? 'Agent',
+                    orgName: user?.organizationName,
+                  })}
                 </p>
                 <Button variant="outline" size="sm" className="w-full mt-3" onClick={() => setUseTemplate(t.key)}>
                   <Send className="h-3.5 w-3.5" /> Use Template
@@ -137,20 +165,15 @@ function UseTemplateDialog({ template, onClose }: { template: TemplateKey | null
 
   if (!template) return null
 
+  const selectedCandidate = candidates.find((c) => c.id === selected) ?? null
+
   const submit = () => {
-    const cand = candidates.find((c) => c.id === selected)
+    const cand = selectedCandidate
     if (!cand) {
       toast.error('Please pick a candidate')
       return
     }
-    const ctx: WhatsAppContext = {
-      candidateName: cand.fullName,
-      loanNumber: cand.activeLoanNumbers[0] ?? '',
-      amount: (Number(cand.outstanding) / 100).toLocaleString('en-IN'),
-      dueDate: 'soon',
-      agentName: user?.name ?? 'Agent',
-    }
-    const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES[template], ctx)
+    const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES[template], ctxForCandidate(cand, user?.name ?? 'Agent', user?.organizationName))
     openWhatsApp(cand.mobile, msg)
     toast.success('WhatsApp draft opened', { description: `${template.replace(/_/g, ' ')} → ${cand.fullName}` })
     onClose()
@@ -193,9 +216,31 @@ function UseTemplateDialog({ template, onClose }: { template: TemplateKey | null
             </div>
           )}
         </div>
+        {/* Live preview: the picked candidate's real record, or a clearly
+            labelled SAMPLE while nobody is picked. */}
+        <div className="rounded-xl border border-border bg-muted/30 p-3">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            {selectedCandidate ? `Preview — ${selectedCandidate.fullName}` : 'Sample preview'}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1.5 whitespace-pre-wrap">
+            {selectedCandidate
+              ? buildWhatsAppMessage(WHATSAPP_TEMPLATES[template], ctxForCandidate(selectedCandidate, user?.name ?? 'Agent', user?.organizationName))
+              : buildWhatsAppMessage(WHATSAPP_TEMPLATES[template], {
+                  candidateName: 'Sample Borrower',
+                  loanNumber: 'LON-SAMPLE',
+                  amount: '7,437.50',
+                  dueDate: 'the due date',
+                  agentName: user?.name ?? 'Agent',
+                  orgName: user?.organizationName,
+                })}
+          </p>
+          {!selectedCandidate && (
+            <p className="text-[11px] text-muted-foreground mt-2">Pick a candidate above to preview their real message.</p>
+          )}
+        </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit}><Send className="h-4 w-4" /> Send WhatsApp</Button>
+          <Button onClick={submit} disabled={!selectedCandidate}><Send className="h-4 w-4" /> Send WhatsApp</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -240,14 +285,7 @@ function BroadcastForm() {
 
   const sendToCurrent = () => {
     if (!current) return
-    const ctx: WhatsAppContext = {
-      candidateName: current.fullName,
-      loanNumber: current.activeLoanNumbers[0] ?? '',
-      amount: (Number(current.outstanding) / 100).toLocaleString('en-IN'),
-      dueDate: 'soon',
-      agentName: user?.name ?? 'Agent',
-    }
-    const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES[template], ctx)
+    const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES[template], ctxForCandidate(current, user?.name ?? 'Agent', user?.organizationName))
     openWhatsApp(current.mobile, msg)
     setOpenedIds((ids) => [...ids, current.id])
     setCurrentIdx((i) => i + 1)

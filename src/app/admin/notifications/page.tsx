@@ -37,30 +37,54 @@ export default function AdminNotificationsPage() {
 
   const markReadMutation = useMutation({
     mutationFn: (id: string) => api.post('/api/notifications', { id }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['owner-notifications'] }),
-    onError: (err: unknown) => {
+    onMutate: async (id: string) => {
+      await queryClient.cancelQueries({ queryKey: ['owner-notifications'] })
+      const prev = queryClient.getQueryData<{ items: NotificationRow[]; total: number; unreadCount: number }>(['owner-notifications'])
+      queryClient.setQueryData<{ items: NotificationRow[]; total: number; unreadCount: number }>(['owner-notifications'], (old) => {
+        if (!old) return old
+        const wasUnread = old.items.some((n) => n.id === id && !n.isRead)
+        return {
+          ...old,
+          items: old.items.map((n) => (n.id === id ? { ...n, isRead: true } : n)),
+          unreadCount: Math.max(0, (old.unreadCount ?? old.items.filter((n) => !n.isRead).length) - (wasUnread ? 1 : 0)),
+        }
+      })
+      return { prev }
+    },
+    onError: (err: unknown, _id: string, context: { prev?: { items: NotificationRow[]; total: number; unreadCount: number } } | undefined) => {
+      if (context?.prev) queryClient.setQueryData(['owner-notifications'], context.prev)
       const message = err instanceof ApiRequestError ? err.message : 'Please try again.'
       toast.error('Could not mark as read', { description: message })
     },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['owner-notifications'] }),
   })
 
   const markAllMutation = useMutation({
     mutationFn: () => api.post('/api/notifications', { all: true }),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['owner-notifications'] })
+      const prev = queryClient.getQueryData<{ items: NotificationRow[]; total: number; unreadCount: number }>(['owner-notifications'])
+      queryClient.setQueryData<{ items: NotificationRow[]; total: number; unreadCount: number }>(['owner-notifications'], (old) =>
+        old ? { ...old, items: old.items.map((n) => ({ ...n, isRead: true })), unreadCount: 0 } : old
+      )
+      return { prev }
+    },
     onSuccess: () => {
       toast.success('All notifications marked as read')
-      queryClient.invalidateQueries({ queryKey: ['owner-notifications'] })
     },
-    onError: (err: unknown) => {
+    onError: (err: unknown, _vars: void, context: { prev?: { items: NotificationRow[]; total: number; unreadCount: number } } | undefined) => {
+      if (context?.prev) queryClient.setQueryData(['owner-notifications'], context.prev)
       const message = err instanceof ApiRequestError ? err.message : 'Please try again.'
       toast.error('Could not mark all as read', { description: message })
     },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['owner-notifications'] }),
   })
 
   return (
     <div className="space-y-6">
       <SectionHeading
         title="Notifications"
-        description={unread > 0 ? `${unread} unread` : 'You are all caught up.'}
+        description={isLoading ? 'Loading…' : unread > 0 ? `${unread} unread` : 'You are all caught up.'}
         icon={<Bell className="h-5 w-5" />}
         action={
           unread > 0 ? (
@@ -104,7 +128,7 @@ export default function AdminNotificationsPage() {
                       size="sm"
                       variant="ghost"
                       className="shrink-0"
-                      disabled={markReadMutation.isPending}
+                      disabled={markReadMutation.isPending && markReadMutation.variables === n.id}
                       onClick={() => markReadMutation.mutate(n.id)}
                     >
                       Mark read

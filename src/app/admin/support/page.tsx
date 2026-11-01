@@ -113,12 +113,13 @@ export default function SupportPage() {
         icon={<LifeBuoy className="h-5 w-5" />}
       />
 
-      {/* KPI strip */}
+      {/* KPI strip — skeleton figures while the first fetch is in flight;
+          real-looking zeros here read as "no tickets" before data lands. */}
       <StaggerContainer className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-        <StaggerItem><Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Open Tickets</p><p className="text-2xl font-bold tabular-nums text-info">{allTickets.filter((t) => t.status === 'OPEN').length}</p></CardContent></Card></StaggerItem>
-        <StaggerItem><Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">In Review</p><p className="text-2xl font-bold tabular-nums text-warning">{allTickets.filter((t) => t.status === 'IN_REVIEW').length}</p></CardContent></Card></StaggerItem>
-        <StaggerItem><Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Resolved</p><p className="text-2xl font-bold tabular-nums text-success">{allTickets.filter((t) => t.status === 'RESOLVED').length}</p></CardContent></Card></StaggerItem>
-        <StaggerItem><Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total</p><p className="text-2xl font-bold tabular-nums">{allTickets.length}</p></CardContent></Card></StaggerItem>
+        <StaggerItem><Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Open Tickets</p>{isLoading ? <Skeleton className="h-8 w-12 mt-1" /> : <p className="text-2xl font-bold tabular-nums text-info">{allTickets.filter((t) => t.status === 'OPEN').length}</p>}</CardContent></Card></StaggerItem>
+        <StaggerItem><Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">In Review</p>{isLoading ? <Skeleton className="h-8 w-12 mt-1" /> : <p className="text-2xl font-bold tabular-nums text-warning">{allTickets.filter((t) => t.status === 'IN_REVIEW').length}</p>}</CardContent></Card></StaggerItem>
+        <StaggerItem><Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Resolved</p>{isLoading ? <Skeleton className="h-8 w-12 mt-1" /> : <p className="text-2xl font-bold tabular-nums text-success">{allTickets.filter((t) => t.status === 'RESOLVED').length}</p>}</CardContent></Card></StaggerItem>
+        <StaggerItem><Card className="shadow-premium"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total</p>{isLoading ? <Skeleton className="h-8 w-12 mt-1" /> : <p className="text-2xl font-bold tabular-nums">{allTickets.length}</p>}</CardContent></Card></StaggerItem>
       </StaggerContainer>
 
       <FadeIn>

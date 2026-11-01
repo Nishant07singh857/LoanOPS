@@ -52,12 +52,55 @@ export const GET = apiHandler(async (req: NextRequest) => {
     return Object.keys(f).length ? { [field]: f } : {}
   }
 
+  // Business-date filter (live-audit finding D.3): reports previously
+  // filtered every type on createdAt — the row's ingestion time — so a
+  // "Last 30 days" range still returned years-old business records whose
+  // createdAt happened to be recent (seeded/migrated data), and ignored
+  // records whose business date was in range. Each report now filters on
+  // the date the report is about (loan disbursedAt, application
+  // submittedAt, PTP promiseDate), falling back to createdAt only when the
+  // business date is null (e.g. an undisburied loan, a draft application).
+  const businessDateFilter = (primary: string, fallback: string) => {
+    if (!from && !to) return {}
+    const range: any = {}
+    if (from) range.gte = from
+    if (to) range.lt = new Date(to.getTime() + 24 * 60 * 60 * 1000)
+    return {
+      OR: [
+        { [primary]: range },
+        { [primary]: null, [fallback]: range },
+      ],
+    }
+  }
+
+  // Canonical derived loan status — the same derivation the Loans list API
+  // uses (src/app/api/owner/loans/route.ts): an ACTIVE loan whose next
+  // unpaid installment is past due IS "OVERDUE", whatever the stored
+  // status column still says.
+  const deriveLoanStatus = (l: {
+    status: string
+    schedule?: Array<{ dueDate: Date; status: string }>
+  }): string => {
+    if (l.status !== 'ACTIVE') return l.status
+    const next = l.schedule?.[0]
+    if (next && (next.status === 'OVERDUE' || (new Date(next.dueDate) < new Date() && next.status !== 'PAID'))) {
+      return 'OVERDUE'
+    }
+    return l.status
+  }
+  const nextUnpaidSchedule = {
+    where: { status: { not: 'PAID' as const } },
+    orderBy: { dueDate: 'asc' as const },
+    take: 1,
+    select: { dueDate: true, status: true },
+  }
+
   if (type === 'loans') {
     const loans = await db.loan.findMany({
       where: {
         organizationId: orgId,
         ...(status ? { status: status as any } : {}),
-        ...dateFilter('createdAt'),
+        ...businessDateFilter('disbursedAt', 'createdAt'),
         ...(agent ? { candidate: { assignedAgentId: agent } } : {}),
       },
       orderBy: { createdAt: 'desc' },
@@ -65,6 +108,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
         candidate: {
           include: { assignedAgent: { include: { user: { select: { name: true } } } } },
         },
+        schedule: nextUnpaidSchedule,
         _count: { select: { payments: true } },
       },
     })
@@ -77,7 +121,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
         principalAmount: String(l.principalAmount),
         outstandingPrincipal: String(l.outstandingPrincipal),
         totalCollected: String(l.totalCollected),
-        status: l.status,
+        status: deriveLoanStatus(l),
         frequency: l.frequency,
         installments: l.installments,
         agent: l.candidate.assignedAgent?.user.name ?? null,
@@ -168,7 +212,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
       where: {
         organizationId: orgId,
         ...(status ? { status: status as any } : {}),
-        ...dateFilter('createdAt'),
+        ...businessDateFilter('submittedAt', 'createdAt'),
         ...(agent ? { candidate: { assignedAgentId: agent } } : {}),
       },
       orderBy: { createdAt: 'desc' },
@@ -197,7 +241,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
       where: {
         agent: { organizationId: orgId },
         ...(status ? { status: status as any } : {}),
-        ...dateFilter('createdAt'),
+        ...dateFilter('promiseDate'),
         ...(agent ? { agentId: agent } : {}),
       },
       orderBy: { createdAt: 'desc' },
@@ -229,7 +273,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
       where: {
         agent: { organizationId: orgId },
         ...(status ? { status: status as any } : {}),
-        ...dateFilter('createdAt'),
+        ...dateFilter('promiseDate'),
         ...(agent ? { agentId: agent } : {}),
       },
       orderBy: { createdAt: 'desc' },
@@ -264,12 +308,13 @@ export const GET = apiHandler(async (req: NextRequest) => {
         where: {
           organizationId: orgId,
           ...(status ? { status: status as any } : {}),
-          ...dateFilter('createdAt'),
+          ...businessDateFilter('disbursedAt', 'createdAt'),
           ...(agent ? { candidate: { assignedAgentId: agent } } : {}),
         },
         orderBy: { createdAt: 'desc' },
         include: {
           candidate: { select: { fullName: true, mobile: true, assignedAgent: { include: { user: { select: { name: true } } } } } },
+          schedule: nextUnpaidSchedule,
           _count: { select: { payments: true, schedule: true } },
         },
       }),
@@ -304,7 +349,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
         outstandingPrincipal: String(l.outstandingPrincipal),
         outstandingInterest: String(l.outstandingInterest),
         totalCollected: String(l.totalCollected),
-        status: l.status,
+        status: deriveLoanStatus(l),
         frequency: l.frequency,
         installments: l.installments,
         paymentsCount: l._count.payments,
@@ -319,6 +364,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
     const overdueInstallments = await db.installment.findMany({
       where: {
         status: 'OVERDUE',
+        ...dateFilter('dueDate'),
         loan: {
           organizationId: orgId,
           ...(agent ? { candidate: { assignedAgentId: agent } } : {}),

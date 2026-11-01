@@ -1,10 +1,11 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import { ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { ArrowUpRight, ArrowDownRight, ArrowRight } from 'lucide-react'
 
 export interface KPICardProps {
   label: string
@@ -14,6 +15,9 @@ export interface KPICardProps {
   variant?: 'default' | 'success' | 'warning' | 'destructive' | 'info'
   className?: string
   spark?: number[]
+  /** When set, the whole card becomes a link to the list behind the
+   *  counter (live-audit finding D.1: no dead counters). */
+  href?: string
 }
 
 const variantStyles = {
@@ -40,14 +44,8 @@ const sparkColor = {
   info: 'stroke-info',
 }
 
-export function KPICard({ label, value, delta, icon, variant = 'default', className, spark }: KPICardProps) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, ease: 'easeOut' }}
-      className={cn('h-full', className)}
-    >
+export function KPICard({ label, value, delta, icon, variant = 'default', className, spark, href }: KPICardProps) {
+  const card = (
       <Card
         className={cn(
           'relative overflow-hidden border rounded-2xl shadow-premium transition-all hover:shadow-glow sm:hover:-translate-y-0.5',
@@ -61,9 +59,11 @@ export function KPICard({ label, value, delta, icon, variant = 'default', classN
                 <p className="text-[11px] sm:text-xs font-medium text-muted-foreground tracking-wide">
                   {label}
                 </p>
-{/* (A "View ↗" affordance used to render here as a plain div with no
-                  action behind it — removed; it was a dead control on every
-                  KPI card across the owner and agent portals.) */}
+                {href && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-primary">
+                    View <ArrowRight className="h-3 w-3" />
+                  </span>
+                )}
               </div>
               <p className="text-xl sm:text-2xl font-bold tracking-tight mt-1.5 tabular-nums">{value}</p>
               {delta && (
@@ -92,6 +92,22 @@ export function KPICard({ label, value, delta, icon, variant = 'default', classN
           )}
         </CardContent>
       </Card>
+  )
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: 'easeOut' }}
+      className={cn('h-full', className)}
+    >
+      {href ? (
+        <Link href={href} className="block h-full" aria-label={`${label}: ${value} — view list`}>
+          {card}
+        </Link>
+      ) : (
+        card
+      )}
     </motion.div>
   )
 }

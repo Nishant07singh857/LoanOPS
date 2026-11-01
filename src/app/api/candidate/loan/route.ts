@@ -51,9 +51,24 @@ export const GET = apiHandler(async (req: NextRequest) => {
   })
   const hasKyc = !!existingKyc
 
+  // The borrower's assigned agent (name + phone) — the portal's WhatsApp
+  // Agent action must only render when this is non-null. It was previously
+  // never returned, so the button always dead-ended in "No agent assigned".
+  const candidateRow = await db.candidate.findUnique({
+    where: { id: ctx.user.candidateId },
+    select: {
+      assignedAgent: {
+        select: { user: { select: { name: true, phone: true } } },
+      },
+    },
+  })
+  const assignedAgent = candidateRow?.assignedAgent
+    ? { name: candidateRow.assignedAgent.user.name, phone: candidateRow.assignedAgent.user.phone }
+    : null
+
   if (!loan) {
     if (draftApplication) {
-      return success({ draftApplication: maskApplicationKyc(draftApplication), hasKyc })
+      return success({ draftApplication: maskApplicationKyc(draftApplication), hasKyc, assignedAgent })
     }
     const anyLoan = await db.loan.findFirst({
       where: { candidateId: ctx.user.candidateId },
@@ -97,6 +112,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
     createdAt: loan.createdAt,
     application: maskApplicationKyc(loan.application),
     draftApplication: maskApplicationKyc(draftApplication),
+    assignedAgent,
     agreement: agreementTemplate ? {
       id: agreementTemplate.id,
       name: agreementTemplate.name,

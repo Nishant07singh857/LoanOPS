@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatBpsToPercent } from '@/lib/money'
+import { summarizeApplication } from '@/lib/application-summary'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
 import { useSession } from '@/lib/session'
 import {
@@ -95,7 +96,7 @@ export default function CandidateHomePage() {
     retry: false,
   })
 
-  const { data: notifData } = useQuery({
+  const { data: notifData, isLoading: notifLoading } = useQuery({
     queryKey: ['candidate-notifications'],
     queryFn: () => api.get<{ items: NotificationRow[]; total: number; unreadCount: number }>('/api/candidate/notifications?pageSize=10'),
   })
@@ -144,7 +145,9 @@ export default function CandidateHomePage() {
                     Hello, {firstName} <span className="inline-block">👋</span>
                   </h1>
                   <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                    {loan?.loanNumber ? (
+                    {loanLoading ? (
+                      <>Loading your loan details…</>
+                    ) : loan?.loanNumber ? (
                       <>Your loan is <span className="font-semibold text-success">on track</span>. {paidCount} of {installmentsTotal} installments paid.</>
                     ) : loan?.draftApplication ? (
                       <>Complete your loan application below to unlock instant disbursement.</>
@@ -201,21 +204,13 @@ export default function CandidateHomePage() {
                   <div>
                     <p className="text-xs text-muted-foreground uppercase">Installment (EMI)</p>
                     <p className="font-bold tabular-nums">
-                      {formatPaiseToINR(
-                        Number(
-                          loan.draftApplication.installmentAmount ||
-                            Math.round(
-                              Number(loan.draftApplication.totalRepayable || loan.draftApplication.principalAmount) /
-                                Math.max(1, Number(loan.draftApplication.installments || 1))
-                            )
-                        )
-                      )}
+                      {formatPaiseToINR(summarizeApplication(loan.draftApplication).installmentAmount)}
                     </p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground uppercase">Total Repayable</p>
                     <p className="font-bold tabular-nums">
-                      {formatPaiseToINR(Number(loan.draftApplication.totalRepayable || loan.draftApplication.principalAmount))}
+                      {formatPaiseToINR(summarizeApplication(loan.draftApplication).totalRepayable)}
                     </p>
                   </div>
                 </div>
@@ -379,7 +374,7 @@ export default function CandidateHomePage() {
                   </div>
                   <div>
                     <CardTitle className="text-base">Recent Notifications</CardTitle>
-                    <CardDescription className="text-xs">{notifications.length} updates</CardDescription>
+                    <CardDescription className="text-xs">{notifLoading ? 'Loading…' : `${notifications.length} updates`}</CardDescription>
                   </div>
                 </div>
                 <Button asChild variant="ghost" size="sm">
@@ -388,7 +383,11 @@ export default function CandidateHomePage() {
               </div>
             </CardHeader>
             <CardContent>
-              {notifications.length === 0 ? (
+              {notifLoading ? (
+                <div className="space-y-2.5" role="status" aria-label="Loading notifications">
+                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+                </div>
+              ) : notifications.length === 0 ? (
                 <EmptyState icon={<Bell className="h-6 w-6" />} title="No notifications" description="You'll see updates here." />
               ) : (
                 <StaggerContainer className="space-y-2.5">
@@ -456,9 +455,6 @@ export default function CandidateHomePage() {
                   </Link>
                 </Button>
               </div>
-              <Button asChild size="sm" variant="ghost" className="w-full">
-                <Link href="/portal/support"><LifeBuoy className="h-3.5 w-3.5" /> Open Support</Link>
-              </Button>
             </CardContent>
           </Card>
         </FadeIn>
@@ -519,17 +515,17 @@ function DraftApplicationFlow({
   const [errors, setErrors] = React.useState<Record<string, string>>({})
 
   const principalPaise = Number(draftApplication.principalAmount || 0)
-  const totalRepayablePaise = Number(draftApplication.totalRepayable || principalPaise)
+  // Stored preview totals are nullable until approval — derive them from
+  // the application's own terms via the shared schedule-engine helper so
+  // the KFS/agreement figures include interest and fees (previously this
+  // fell back to principal-only and understated both EMI and repayable).
+  const appSummary = summarizeApplication(draftApplication)
+  const totalRepayablePaise = appSummary.totalRepayable
   const installmentsCount = Math.max(1, Number(draftApplication.installments || 1))
-  const installmentPaise = Number(
-    draftApplication.installmentAmount || Math.round(totalRepayablePaise / installmentsCount)
-  )
+  const installmentPaise = appSummary.installmentAmount
   const processingFeePaise = Number(draftApplication.processingFee || 0)
   const otherFeesPaise = Number(draftApplication.otherFees || 0)
-  const totalInterestPaise = Math.max(
-    0,
-    totalRepayablePaise - principalPaise - processingFeePaise - otherFeesPaise
-  )
+  const totalInterestPaise = appSummary.totalInterest
 
   const handleFileChange = (
     e: React.ChangeEvent<HTMLInputElement>,

@@ -17,13 +17,14 @@ export const GET = apiHandler(async (req: NextRequest) => {
   const params = validate(querySchema, Object.fromEntries(url.searchParams))
 
   const where: any = { organizationId: ctx.user.organizationId }
+  // Default view: ALL applications. The previous default silently excluded
+  // APPROVED rows ("they are now Loans"), so the list disagreed with the
+  // Applications Report (1 vs 2 on the seeded data) and approved
+  // applications were unfindable without picking the status filter.
   if (params.status) {
     where.status = params.status
-  } else {
-    // Default view: exclude APPROVED applications since they are now Loans
-    where.status = { not: 'APPROVED' }
   }
-  
+
   if (params.search) {
     where.OR = [
       { applicationNumber: { contains: params.search, mode: 'insensitive' } },

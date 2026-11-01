@@ -5,6 +5,7 @@ import { apiHandler, success } from '@/lib/server/api'
 import { db } from '@/lib/db'
 import { withCache } from '@/lib/server/redis'
 import { refreshOverdueStatuses } from '@/lib/server/overdue'
+import { daysUntilDue } from '@/lib/reminders'
 
 async function getDashboardData(orgId: string) {
   // Run aggregations in parallel
@@ -24,7 +25,7 @@ async function getDashboardData(orgId: string) {
     paymentsDueTodayCount,
     paymentsOverdueCount,
     pendingCashVerificationsCount,
-    activePtpCount,
+    activePtpRows,
     brokenPtpCount,
     openTasksCount,
     openEscalationsCount,
@@ -58,7 +59,14 @@ async function getDashboardData(orgId: string) {
         status: 'PENDING_VERIFICATION',
       },
     }),
-    db.ptp.count({ where: { candidate: { organizationId: orgId }, status: 'ACTIVE' } }),
+    // Active PTP promise dates — ptpDueToday below must count only PTPs
+    // whose promise date is actually today (IST calendar day, the same
+    // convention the reminder engine uses); it previously counted ALL
+    // active PTPs, so the "PTP Due Today" KPI overstated every day.
+    db.ptp.findMany({
+      where: { candidate: { organizationId: orgId }, status: 'ACTIVE' },
+      select: { promiseDate: true },
+    }),
     db.ptp.count({ where: { candidate: { organizationId: orgId }, status: 'BROKEN' } }),
     db.collectionTask.count({ where: { organizationId: orgId, status: { in: ['OPEN', 'ASSIGNED'] } } }),
     db.escalation.count({ where: { candidate: { organizationId: orgId }, status: 'OPEN' } }),
@@ -104,7 +112,8 @@ async function getDashboardData(orgId: string) {
     loansReadyForDisbursement: loansReadyForDisbursementCount,
     paymentsDueToday: paymentsDueTodayCount,
     paymentsOverdue: paymentsOverdueCount,
-    ptpDueToday: activePtpCount,
+    ptpDueToday: activePtpRows.filter((p) => daysUntilDue(new Date(p.promiseDate), new Date()) === 0).length,
+    activePtps: activePtpRows.length,
     brokenPtp: brokenPtpCount,
     openTasks: openTasksCount,
     openEscalations: openEscalationsCount,

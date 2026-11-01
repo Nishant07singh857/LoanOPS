@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/table'
 import { PaginationControls } from '@/components/ui/pagination-controls'
 import { api } from '@/lib/api-client'
-import { formatPaiseToINR } from '@/lib/money'
+import { formatPaiseToINR, pluralize } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
 type ChipKey = 'ALL' | 'ACTIVE' | 'PENDING_DISBURSEMENT' | 'OVERDUE' | 'CLOSED' | 'DEFAULTED'
@@ -205,7 +205,7 @@ export default function LoansPage() {
         <p className="text-sm text-muted-foreground">
           {isLoading
             ? 'Loading…'
-            : <>Showing <span className="font-semibold text-foreground">{filtered.length}</span> of {allLoans.length} loans</>}
+            : <>Showing <span className="font-semibold text-foreground">{filtered.length}</span> of {pluralize(allLoans.length, 'loan')}</>}
         </p>
       </div>
 

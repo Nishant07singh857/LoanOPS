@@ -28,6 +28,7 @@ import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
 import { useSession } from '@/lib/session'
+import { pluralize } from '@/lib/money'
 
 const CATEGORIES = ['Repayment', 'Receipt', 'KYC', 'Agreement', 'Disbursement', 'Other']
 
@@ -194,7 +195,7 @@ export default function SupportPage() {
                 </div>
                 <div>
                   <CardTitle className="text-base">My Support Requests</CardTitle>
-                  <CardDescription className="text-xs">{tickets.length} tickets · {tickets.filter((t) => t.status === 'OPEN' || t.status === 'IN_REVIEW').length} active</CardDescription>
+                  <CardDescription className="text-xs">{pluralize(tickets.length, 'ticket')} · {tickets.filter((t) => t.status === 'OPEN' || t.status === 'IN_REVIEW').length} active</CardDescription>
                 </div>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setNewOpen(true)}>

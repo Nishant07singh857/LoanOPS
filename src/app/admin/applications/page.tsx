@@ -18,7 +18,7 @@ import {
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { PaginationControls } from '@/components/ui/pagination-controls'
 import { api } from '@/lib/api-client'
-import { formatPaiseToINR } from '@/lib/money'
+import { formatPaiseToINR, pluralize } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -159,7 +159,7 @@ export default function ApplicationsPage() {
 
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {isLoading ? 'Loading…' : <>Showing <span className="font-semibold text-foreground">{apps.length}</span> applications</>}
+          {isLoading ? 'Loading…' : <>Showing <span className="font-semibold text-foreground">{pluralize(apps.length, 'application')}</span></>}
         </p>
       </div>
 

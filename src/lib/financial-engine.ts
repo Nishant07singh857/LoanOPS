@@ -6,6 +6,34 @@
 export type InterestType = 'PERCENTAGE' | 'FIXED' | 'NONE'
 export type RepaymentFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY'
 
+/** Human period noun for a repayment frequency: 'month' | 'week' | 'day'.
+ *  Used so rate labels name the actual period ("18% per month") instead of
+ *  the ambiguous "% per period". */
+export function frequencyPeriodNoun(frequency: RepaymentFrequency | string | null | undefined): string {
+  switch (frequency) {
+    case 'DAILY':
+      return 'day'
+    case 'WEEKLY':
+      return 'week'
+    case 'MONTHLY':
+    default:
+      return 'month'
+  }
+}
+
+/** Adjective form: 'monthly' | 'weekly' | 'daily'. */
+export function frequencyAdjective(frequency: RepaymentFrequency | string | null | undefined): string {
+  switch (frequency) {
+    case 'DAILY':
+      return 'daily'
+    case 'WEEKLY':
+      return 'weekly'
+    case 'MONTHLY':
+    default:
+      return 'monthly'
+  }
+}
+
 export function calculateInstallmentsFromTenure(tenureMonths: number, frequency: RepaymentFrequency): number {
   if (frequency === 'DAILY') return tenureMonths * 30;
   if (frequency === 'WEEKLY') return tenureMonths * 4;

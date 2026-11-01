@@ -25,7 +25,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { useSession } from '@/lib/session'
-import { formatPaiseToINR } from '@/lib/money'
+import { formatPaiseToINR, paiseToRupees, rupeesToPaise } from '@/lib/money'
 import { cn, maskAadhaar, maskPan, maskBankAccount } from '@/lib/utils'
 import { COMPLIANCE_CONFIG } from '@/lib/compliance-config'
 import { LegalFooter } from '@/components/legal/legal-footer'
@@ -217,17 +217,8 @@ export default function ProfilePage() {
                 <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
                   <Edit className="h-3.5 w-3.5" /> Edit
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-destructive border-destructive/40 hover:bg-destructive/10"
-                  onClick={() => {
-                    toast.success('Signed out', { description: 'You can sign back in any time.' })
-                    setTimeout(() => logout(), 600)
-                  }}
-                >
-                  <LogOut className="h-3.5 w-3.5" /> Logout
-                </Button>
+                {/* (A second Logout button used to sit here as well as in
+                    the dedicated sign-out card below — deduped to one.) */}
               </div>
             </div>
           </CardContent>
@@ -558,7 +549,9 @@ function EditProfileDialog({ open, onOpenChange, profile }: { open: boolean; onO
       setAddress(profile.address ?? '')
       setOccupation(profile.occupation ?? '')
       setEmployer(profile.employer ?? '')
-      setMonthlyIncome(profile.monthlyIncome != null ? String(profile.monthlyIncome) : '')
+      // monthlyIncome is stored in paise; the field is labelled (₹), so
+      // prefill in rupees (7500000 paise -> "75000"), never the raw paise.
+      setMonthlyIncome(profile.monthlyIncome != null ? String(paiseToRupees(profile.monthlyIncome)) : '')
       setBankName(profile.bankName ?? '')
       setBankIfsc(profile.bankIfsc ?? '')
       setUpiId(profile.upiId ?? '')
@@ -577,7 +570,7 @@ function EditProfileDialog({ open, onOpenChange, profile }: { open: boolean; onO
         bankIfsc: bankIfsc.trim() || null,
         upiId: upiId.trim() || null,
       }
-      if (monthlyIncome.trim()) payload.monthlyIncome = Number(monthlyIncome)
+      if (monthlyIncome.trim()) payload.monthlyIncome = rupeesToPaise(Number(monthlyIncome))
       return api.patch('/api/candidate/profile', payload)
     },
     onSuccess: () => {
