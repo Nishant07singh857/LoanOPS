@@ -177,6 +177,36 @@ export const POST = apiHandler(async (req: NextRequest) => {
 
   const created = await db.$transaction(
     async (tx) => {
+      // Write order matters (round-3 P1): the candidate row is
+      // written BEFORE the user row — the same order the public
+      // apply transaction uses. When an apply and a signup race on
+      // the same fresh mobile, opposite orders deadlock on the two
+      // identity unique indexes (each transaction holding one index
+      // entry and waiting on the other), and the deadlock victim
+      // surfaced as a 500. With a shared order, both transactions
+      // contend on the candidate index first: the loser blocks,
+      // then fails with a plain unique violation, which the error
+      // mapping turns into a 409 — the same answer the sequential
+      // duplicate path gives.
+      const candidateRow = existingCandidate
+        ? await tx.candidate.update({
+            where: { id: existingCandidate.id },
+            data: {
+              fullName: safeName,
+              // Claim codes are single-use — clear them once consumed.
+              ...(claimCodeUsed
+                ? { claimCodeHash: null, claimCodeExpiresAt: null }
+                : {}),
+            },
+          })
+        : await tx.candidate.create({
+            data: {
+              organizationId: org.id,
+              fullName: safeName,
+              mobile: cleanMobile,
+            },
+          })
+
       const user = await tx.user.create({
         data: {
           organizationId: targetOrgId,
@@ -189,26 +219,10 @@ export const POST = apiHandler(async (req: NextRequest) => {
         },
       })
 
-      const candidate = existingCandidate
-        ? await tx.candidate.update({
-            where: { id: existingCandidate.id },
-            data: {
-              userId: user.id,
-              fullName: safeName,
-              // Claim codes are single-use — clear them once consumed.
-              ...(claimCodeUsed
-                ? { claimCodeHash: null, claimCodeExpiresAt: null }
-                : {}),
-            },
-          })
-        : await tx.candidate.create({
-            data: {
-              organizationId: org.id,
-              userId: user.id,
-              fullName: safeName,
-              mobile: cleanMobile,
-            },
-          })
+      const candidate = await tx.candidate.update({
+        where: { id: candidateRow.id },
+        data: { userId: user.id },
+      })
 
       // Record explicit DPDP Act 2023 consents
       const consentEntries =
