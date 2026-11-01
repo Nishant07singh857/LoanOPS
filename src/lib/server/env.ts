@@ -52,6 +52,17 @@ const baseEnvSchema = z.object({
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
   KV_REST_API_URL: z.string().optional(),
   KV_REST_API_TOKEN: z.string().optional(),
+
+  // --- Optional launch integrations ---
+  // All OPTIONAL and inert when unset: Sentry initialises only when a
+  // DSN exists (src/sentry.server.config.ts, src/instrumentation-client.ts)
+  // with PII data collection locked down + scrubbing, and the Search Console
+  // verification meta tag renders only when its token exists
+  // (src/app/layout.tsx). No format is enforced — a bad value must
+  // never crash boot. See docs/LAUNCH.md for the owner-side setup.
+  SENTRY_DSN: z.string().optional(),
+  NEXT_PUBLIC_SENTRY_DSN: z.string().optional(),
+  GOOGLE_SITE_VERIFICATION: z.string().optional(),
 })
 
 const envSchema = baseEnvSchema.superRefine((env, ctx) => {

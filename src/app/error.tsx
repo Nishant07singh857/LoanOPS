@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Wallet, AlertTriangle, RotateCcw, Home } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { reportClientError } from '@/lib/error-reporting'
 
 export default function Error({
   error,
@@ -17,6 +18,8 @@ export default function Error({
 }) {
   React.useEffect(() => {
     console.error('[App Error Boundary]', error)
+    // No-op unless Sentry is enabled via NEXT_PUBLIC_SENTRY_DSN.
+    reportClientError(error)
   }, [error])
 
   const handleRetry = () => {

@@ -28,7 +28,8 @@ import {
 } from '@/components/ui/table'
 import { PaginationControls } from '@/components/ui/pagination-controls'
 import { toast } from 'sonner'
-import { api, ApiRequestError } from '@/lib/api-client'
+import { api } from '@/lib/api-client'
+import { generateCashIdempotencyKey, postCashCollectionWithIdempotency } from '@/lib/idempotency'
 import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
@@ -73,47 +74,6 @@ interface CandidateRow {
   fullName: string
   mobile: string
   activeLoanNumbers: string[]
-}
-
-function generateCashIdempotencyKey() {
-  return `cash_${Date.now()}_${Math.random().toString(36).slice(2)}`
-}
-
-async function postCashCollectionWithIdempotency(payload: Record<string, any>, idempotencyKey: string) {
-  const r = await fetch('/api/agent/cash-collections', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: {
-      'Content-Type': 'application/json',
-      'Idempotency-Key': idempotencyKey,
-    },
-    body: JSON.stringify({ ...payload, idempotencyKey }),
-  })
-  const text = await r.text()
-  let json: any = null
-  if (text) {
-    try {
-      json = JSON.parse(text)
-    } catch {
-      // ignore non-JSON
-    }
-  }
-  if (!r.ok) {
-    const rawErr = json?.error
-    const message =
-      rawErr && typeof rawErr === 'object'
-        ? String(rawErr.message || r.statusText || 'Request failed')
-        : typeof rawErr === 'string'
-          ? rawErr
-          : r.statusText || 'Request failed'
-    throw new ApiRequestError(
-      String(rawErr?.code || 'UNKNOWN'),
-      message,
-      r.status,
-      rawErr?.details
-    )
-  }
-  return json && typeof json === 'object' && 'data' in json ? json.data : json
 }
 
 function isToday(d: Date) {

@@ -1,0 +1,12 @@
+# LoanOPS
+
+> LoanOPS is a loan operations platform for lending businesses: loan origination, KYC, disbursement, repayment schedules, collections, and audit, with owner, agent, and borrower portals.
+
+## Public pages
+
+- [Home](https://loanops.vercel.app/): Product overview and portal entry points.
+- [KFS & APR](https://loanops.vercel.app/kfs): Key Fact Statement format and APR calculation guide.
+- [Fair Practices](https://loanops.vercel.app/fair-practices): Fair practices code for lending operations.
+- [Grievance Redressal](https://loanops.vercel.app/grievance): How to raise a complaint and escalation tiers, including RBI CMS and Sachet portal links.
+- [Privacy Policy](https://loanops.vercel.app/privacy): How personal data is collected, used, and protected.
+- [Terms of Service](https://loanops.vercel.app/terms): Terms governing use of the platform.

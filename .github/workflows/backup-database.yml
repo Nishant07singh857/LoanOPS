@@ -1,0 +1,55 @@
+name: Backup production database (weekly)
+
+# Belt-and-braces pg_dump of the production database, complementing
+# Neon's point-in-time history (only ~6 hours on the Free plan — not a
+# backup strategy for a ledger). Runs weekly and on manual dispatch.
+#
+# The dump connection comes from the BACKUP_DATABASE_URL repository
+# secret. Until that secret exists the job SKIPS CLEANLY with a
+# notice — it never fails and never invents a connection. No
+# credential literal appears in this file; the secret is only ever
+# referenced, and passed to pg_dump through the environment.
+on:
+  workflow_dispatch:
+  schedule:
+    # Mondays 02:30 UTC (08:00 IST) — off-peak for the borrower base.
+    - cron: '30 2 * * 1'
+
+jobs:
+  pg-dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check backup configuration
+        id: check
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          if [ -z "${BACKUP_DATABASE_URL}" ]; then
+            echo "::notice::BACKUP_DATABASE_URL secret is not set — skipping database backup. Add it under Settings → Secrets and variables → Actions to enable weekly backups."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dump production database
+        if: steps.check.outputs.configured == 'true'
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          stamp="$(date -u +%Y%m%d-%H%M%S)"
+          echo "stamp=${stamp}" >> "$GITHUB_ENV"
+          # postgres:17 client — pg_dump must be >= the server version
+          # (Neon runs newer majors than the CI database image).
+          docker run --rm -e BACKUP_DATABASE_URL postgres:17-alpine \
+            sh -c 'pg_dump --no-owner --no-privileges "$BACKUP_DATABASE_URL"' \
+            | gzip > "loanops-backup-${stamp}.sql.gz"
+          ls -lh loanops-backup-*.sql.gz
+
+      - name: Upload backup artifact
+        if: steps.check.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: loanops-db-backup-${{ env.stamp }}
+          path: loanops-backup-*.sql.gz
+          retention-days: 90
+          if-no-files-found: error
