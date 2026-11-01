@@ -1,6 +1,4 @@
-// ============================================================
 // CLAIM-GATE FOOTPRINT PREDICATE
-// ============================================================
 // Decides whether a pre-created candidate carries a "sensitive
 // footprint" and therefore may only be claimed (linked to a new
 // portal login) with an owner-issued claim code at signup.

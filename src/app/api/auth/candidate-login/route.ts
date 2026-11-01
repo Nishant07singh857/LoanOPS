@@ -1,5 +1,5 @@
 // POST /api/auth/candidate-login — candidate portal login
-// Hardened for Phase 2 & 4:
+// The handler enforces:
 // - Central rate limiting keyed by IP + mobile
 // - Constant-time dummy bcrypt check on missing candidate (no timing enumeration)
 // - Identical error message for unknown mobile vs wrong password

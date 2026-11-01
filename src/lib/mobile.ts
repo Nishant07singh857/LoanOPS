@@ -1,6 +1,4 @@
-// ============================================================
 // INDIAN MOBILE CANONICALIZATION
-// ============================================================
 // Single source of truth for turning any user-typed mobile spelling
 // into the canonical 10-digit Indian mobile (^[6-9]\d{9}$) that is
 // stored on Candidate.mobile and used for every lookup.
@@ -70,8 +68,4 @@ export function canonicalizeMobile(input: unknown): string | null {
   }
 
   return CANONICAL_MOBILE_REGEX.test(digits) ? digits : null
-}
-
-export function isCanonicalMobile(value: string): boolean {
-  return CANONICAL_MOBILE_REGEX.test(value)
 }

@@ -26,18 +26,6 @@ export type ReminderStageCode =
 
 export type ReminderChannelCode = 'PORTAL' | 'WHATSAPP'
 
-/** Stages in firing order (RECEIPT is event-driven, not date-driven). */
-export const REMINDER_STAGES: ReminderStageCode[] = [
-  'DUE_SOON_3',
-  'DUE_SOON_1',
-  'DUE_TODAY',
-  'OVERDUE_1',
-  'OVERDUE_3',
-  'OVERDUE_7',
-  'OVERDUE_15',
-  'OVERDUE_30',
-]
-
 const OVERDUE_THRESHOLDS: Array<{ days: number; stage: ReminderStageCode }> = [
   { days: 30, stage: 'OVERDUE_30' },
   { days: 15, stage: 'OVERDUE_15' },
@@ -46,9 +34,7 @@ const OVERDUE_THRESHOLDS: Array<{ days: number; stage: ReminderStageCode }> = [
   { days: 1, stage: 'OVERDUE_1' },
 ]
 
-// ---------------------------------------------------------------
 // Calendar-day math in a timezone
-// ---------------------------------------------------------------
 
 const dayParts = new Intl.DateTimeFormat('en-US', {
   timeZone: REMINDER_TIMEZONE,
@@ -103,9 +89,7 @@ export function stageForDueDate(dueDate: Date, now: Date): ReminderStageCode | n
   return stageForDayDiff(daysUntilDue(dueDate, now))
 }
 
-// ---------------------------------------------------------------
 // PTP suppression
-// ---------------------------------------------------------------
 
 export interface PtpLike {
   status: string
@@ -124,9 +108,7 @@ export function isPtpCovered(ptps: PtpLike[], now: Date): boolean {
   )
 }
 
-// ---------------------------------------------------------------
 // Messages (wording stays in src/lib/whatsapp.ts templates)
-// ---------------------------------------------------------------
 
 export function firstName(fullName: string): string {
   return (fullName || '').trim().split(/\s+/)[0] || 'there'

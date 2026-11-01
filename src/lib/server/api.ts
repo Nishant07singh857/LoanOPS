@@ -1,5 +1,5 @@
 // Standard API response helpers for Next.js App Router route handlers.
-// Hardened for Phases 3, 4, 5:
+// The handler enforces:
 // - Global rate limiting (429 + Retry-After)
 // - Request body size limit (413 Payload Too Large) & JSON nesting depth limit
 // - Automatic XSS & Prototype Pollution sanitization on JSON bodies and validate()
@@ -16,9 +16,7 @@ import { sanitizeJsonPayload } from '@/lib/server/security'
 
 export { sanitizeText, sanitizeInput }
 
-// ============================================================
 // RESPONSE TYPES
-// ============================================================
 
 export type ApiSuccess<T> = { data: T; meta?: Record<string, unknown> }
 export type ApiError = { error: { code: string; message: string; details?: unknown } }
@@ -58,9 +56,7 @@ export const serverError = (msg = 'Server Error') => {
   return fail('SERVER_ERROR', safeMsg, 500)
 }
 
-// ============================================================
 // ERROR HANDLING & SECURITY WRAPPER
-// ============================================================
 
 export class HttpError extends Error {
   status: number
@@ -187,9 +183,7 @@ export function apiHandler<T extends (...args: any[]) => Promise<NextResponse>>(
   }) as T
 }
 
-// ============================================================
 // VALIDATION & MASS-ASSIGNMENT DEFENSE
-// ============================================================
 
 const PERMITTED_GLOBAL_META_KEYS = new Set(['consents', 'captchaToken', 'csrfToken'])
 
@@ -230,9 +224,7 @@ export function validateBody<T>(schema: z.ZodType<T>, body: any): T {
   return validate(schema, body)
 }
 
-// ============================================================
 // PAGINATION
-// ============================================================
 
 export const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -250,23 +242,22 @@ export function paginate(page: number, pageSize: number) {
   }
 }
 
-// ============================================================
 // MONEY: safe paise serialization
-// ============================================================
 
 export function serializePaise(paise: number): string {
   return String(Math.trunc(paise))
 }
 
-// ============================================================
 // ID & NUMBER GENERATORS
-// ============================================================
 
 let counter = 0
 export function genNumber(prefix: string): string {
   counter += 1
   const ts = Date.now().toString(36)
-  const rand = Math.floor(Math.random() * 0xffff).toString(36)
+  // Random segment from the CSPRNG (via genToken), not Math.random():
+  // these numbers identify payments, applications and tickets, and a
+  // predictable generator would make them enumerable in sequence.
+  const rand = parseInt(genToken(2), 16).toString(36)
   return `${prefix}-${ts}${rand}${counter.toString(36)}`.toUpperCase()
 }
 

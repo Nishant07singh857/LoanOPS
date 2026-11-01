@@ -14,7 +14,6 @@ import { capturePayment } from '@/lib/server/payments'
 import { createHmac, timingSafeEqual } from 'crypto'
 
 const WEBHOOK_SECRET = process.env.PAYMENT_WEBHOOK_SECRET
-const SIGNATURE_REQUIRED = true
 const PROVIDER = 'mock'
 
 const schema = z.object({
@@ -38,7 +37,6 @@ function verifySignature(
   status: string,
   signature: string | undefined,
 ): boolean {
-  if (!SIGNATURE_REQUIRED) return true // dev mode — accept any payload
   if (!signature) return false
   try {
     const expected = createHmac('sha256', WEBHOOK_SECRET as string)

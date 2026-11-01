@@ -82,62 +82,6 @@ export function sanitizeJsonPayload<T>(value: T, depth = 0, maxDepth = 12): T {
 }
 
 /**
- * Validates raw request body size and parses + sanitizes JSON safely.
- */
-export async function parseAndValidateJsonBody(
-  req: Request,
-  options: { maxBytes?: number; maxDepth?: number } = {}
-): Promise<{ ok: true; data: any } | { ok: false; status: number; message: string }> {
-  const maxBytes = options.maxBytes ?? 6 * 1024 * 1024 // 6 MB default (allows 5MB base64 receipt photo)
-  const maxDepth = options.maxDepth ?? 12
-
-  const contentLength = req.headers.get('content-length')
-  if (contentLength && Number(contentLength) > maxBytes) {
-    return {
-      ok: false,
-      status: 413,
-      message: `Request body exceeds maximum allowed size (${Math.round(maxBytes / 1024)} KB)`,
-    }
-  }
-
-  let rawText: string
-  try {
-    rawText = await req.text()
-  } catch {
-    return { ok: false, status: 400, message: 'Failed to read request body' }
-  }
-
-  if (Buffer.byteLength(rawText, 'utf8') > maxBytes) {
-    return {
-      ok: false,
-      status: 413,
-      message: `Request body exceeds maximum allowed size (${Math.round(maxBytes / 1024)} KB)`,
-    }
-  }
-
-  if (!rawText.trim()) {
-    return { ok: false, status: 400, message: 'Request body cannot be empty' }
-  }
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(rawText)
-  } catch {
-    return { ok: false, status: 400, message: 'Invalid JSON body' }
-  }
-
-  try {
-    const sanitized = sanitizeJsonPayload(parsed, 0, maxDepth)
-    return { ok: true, data: sanitized }
-  } catch (err: any) {
-    if (String(err?.message).includes('PAYLOAD_DEPTH_EXCEEDED')) {
-      return { ok: false, status: 400, message: 'JSON nesting depth exceeds maximum allowed limit' }
-    }
-    return { ok: false, status: 400, message: 'Invalid request payload' }
-  }
-}
-
-/**
  * Validates internal redirect paths to prevent Open Redirect vulnerabilities.
  */
 export function validateSafeRedirect(target: string | null | undefined, fallback = '/'): string {
@@ -233,6 +177,30 @@ export function stripImageMetadata(buf: Buffer, mime: AllowedUploadMime): Buffer
     }
     return Buffer.concat(chunks)
   }
+  if (mime === 'image/png') {
+    // Walk PNG chunks and drop the text/metadata carriers (tEXt, zTXt,
+    // iTXt, eXIf). Every other chunk is copied verbatim; any structural
+    // surprise returns the original buffer rather than corrupting the
+    // image (same fail-safe as the JPEG path above).
+    const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    if (buf.length < 8 || !buf.subarray(0, 8).equals(PNG_SIGNATURE)) return buf
+    const DROP_TYPES = new Set(['tEXt', 'zTXt', 'iTXt', 'eXIf'])
+    const chunks: Buffer[] = [buf.subarray(0, 8)]
+    let offset = 8
+    while (offset + 8 <= buf.length) {
+      const dataLen = buf.readUInt32BE(offset)
+      const type = buf.subarray(offset + 4, offset + 8).toString('ascii')
+      const chunkEnd = offset + 8 + dataLen + 4 // header + data + CRC
+      if (dataLen > buf.length || chunkEnd > buf.length) return buf
+      if (!DROP_TYPES.has(type)) {
+        chunks.push(buf.subarray(offset, chunkEnd))
+      }
+      offset = chunkEnd
+      if (type === 'IEND') break
+    }
+    if (offset !== buf.length) return buf
+    return Buffer.concat(chunks)
+  }
   return buf
 }
 
@@ -249,13 +217,6 @@ function getFileSigningSecret(): string {
   }
   // Development/test only.
   return 'dev-file-signing-secret'
-}
-
-export function signPrivateFileUrl(fileKey: string, ttlSeconds = 900): string {
-  const exp = Math.floor(Date.now() / 1000) + ttlSeconds
-  const payload = `${fileKey}:${exp}`
-  const sig = createHmac('sha256', getFileSigningSecret()).update(payload).digest('hex')
-  return `/api/files/${encodeURIComponent(fileKey)}?exp=${exp}&sig=${sig}`
 }
 
 export function verifyPrivateFileSignature(fileKey: string, expStr: string, sig: string): boolean {

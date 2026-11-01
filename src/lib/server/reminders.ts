@@ -215,9 +215,7 @@ async function deliverWhatsApp(
   return 'QUEUED'
 }
 
-// ---------------------------------------------------------------
 // Scheduled installment reminders
-// ---------------------------------------------------------------
 
 export interface RunRemindersOptions {
   organizationId?: string
@@ -419,9 +417,7 @@ export async function runReminders(
   return summary
 }
 
-// ---------------------------------------------------------------
 // Receipt notifications (owner payment VERIFY success path only)
-// ---------------------------------------------------------------
 
 export interface ReceiptNotificationInput {
   paymentId: string

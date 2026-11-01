@@ -31,6 +31,7 @@ import {
   stripImageMetadata,
 } from '../../src/lib/server/security'
 import { escapeCsvCell, neutralizeCsvFormula } from '../../src/lib/csv'
+import { genNumber } from '../../src/lib/server/api'
 
 interface TestCase {
   name: string
@@ -410,6 +411,45 @@ test('CSV export cells neutralize formula injection (OWASP)', () => {
 })
 
 let passed = 0
+// 17. PNG metadata stripping (hardening): tEXt/eXIf chunks are dropped,
+//     structural chunks survive byte-identical, malformed input is returned
+//     untouched. (The JPEG path is covered by test 12 above.)
+test('stripImageMetadata removes PNG text/metadata chunks and keeps image chunks', () => {
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4)
+    len.writeUInt32BE(data.length, 0)
+    return Buffer.concat([len, Buffer.from(type, 'ascii'), data, Buffer.alloc(4)])
+  }
+  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  const ihdr = chunk('IHDR', Buffer.alloc(13, 1))
+  const text = chunk('tEXt', Buffer.from('Comment\x00gps-coordinates-here', 'latin1'))
+  const exif = chunk('eXIf', Buffer.from('II*\x00fake-exif-profile', 'latin1'))
+  const idat = chunk('IDAT', Buffer.from([0x78, 0x9c, 0x01, 0x02, 0x03]))
+  const iend = chunk('IEND', Buffer.alloc(0))
+  const png = Buffer.concat([signature, ihdr, text, exif, idat, iend])
+
+  assert.equal(detectMagicBytesMime(png), 'image/png')
+  const stripped = stripImageMetadata(png, 'image/png')
+  assert.ok(!stripped.includes(Buffer.from('gps-coordinates-here')))
+  assert.ok(!stripped.includes(Buffer.from('fake-exif-profile')))
+  assert.ok(stripped.equals(Buffer.concat([signature, ihdr, idat, iend])))
+
+  // Malformed PNG (declared length runs past the buffer) -> returned as-is.
+  const corrupt = Buffer.concat([signature, Buffer.from([0xff, 0xff, 0xff, 0xff]), Buffer.from('IHDR')])
+  assert.ok(stripImageMetadata(corrupt, 'image/png').equals(corrupt))
+})
+
+// 18. genNumber format + uniqueness (hardening: CSPRNG-backed random segment)
+test('genNumber produces prefixed, upper-case, unique identifiers', () => {
+  const seen = new Set<string>()
+  for (let i = 0; i < 200; i++) {
+    const n = genNumber('PAY')
+    assert.match(n, /^PAY-[A-Z0-9]+$/)
+    assert.ok(!seen.has(n), `duplicate genNumber output: ${n}`)
+    seen.add(n)
+  }
+})
+
 async function runTests() {
   for (const t of tests) {
     try {

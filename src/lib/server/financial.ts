@@ -62,9 +62,7 @@ function computeFeesPerInstallment(input: ScheduleInput): bigint {
   return safeDiv(totalFees, BigInt(Math.max(1, input.installments)))
 }
 
-// ============================================================
 // SCHEDULE GENERATION — deterministic, closes principal to 0
-// ============================================================
 
 export function generateSchedule(input: ScheduleInput): ScheduleResult {
   const principal = input.principalPaise
@@ -128,9 +126,7 @@ export function generateSchedule(input: ScheduleInput): ScheduleResult {
   }
 }
 
-// ============================================================
 // DATE ARITHMETIC — preserves anchor day semantics
-// ============================================================
 
 function addInterval(start: Date, frequency: RepaymentFrequency, n: number): Date {
   const d = new Date(start)
@@ -155,9 +151,7 @@ function addInterval(start: Date, frequency: RepaymentFrequency, n: number): Dat
   return d
 }
 
-// ============================================================
 // ALLOCATION ENGINE — FEE → INTEREST → PRINCIPAL (chronological)
-// ============================================================
 
 export interface InstallmentState {
   installmentNumber: number
@@ -230,9 +224,7 @@ export function allocatePayment(
   }
 }
 
-// ============================================================
 // UTILS
-// ============================================================
 
 function safeDiv(a: bigint, b: bigint): bigint {
   if (b === BigInt(0)) return BigInt(0)

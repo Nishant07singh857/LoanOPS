@@ -1,5 +1,5 @@
 // POST /api/auth/login — owner/agent (and email-based candidate) login
-// Hardened for Phase 2 & 4:
+// The handler enforces:
 // - Central rate limiter (429 + Retry-After) keyed by IP + email
 // - Constant-time dummy bcrypt verification when user is missing (no timing enumeration)
 // - Identical error messages for wrong email vs wrong password
