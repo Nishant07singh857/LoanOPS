@@ -479,17 +479,49 @@ test.describe('Round 3 — P4/Info-2 upload pipeline', () => {
   test('successful collection stores a rebuilt PNG; failed collection leaves no file', async ({
     request,
   }) => {
-    await apiLogin(request, AGENT_EMAIL, AGENT_PASSWORD, '10.45.1.1')
-    const loan = await db.loan.findFirst({ where: { loanNumber: RAHUL_LOAN_NUMBER } })
-    expect(loan).toBeTruthy()
+    // Use a FRESH loan owned by this test: a successful collection
+    // allocates against the loan's schedule, so collecting on the
+    // seeded demo loan would mutate state other specs assert on
+    // (seed-coherence expects its installment 2 to stay OVERDUE).
+    await apiLogin(request, OWNER_EMAIL, OWNER_PASSWORD, '10.45.1.1')
+    const token = await createQrLink(request, '10.45.1.2')
+    const applyRes = await request.post(`${BASE_URL}/api/apply/${token}`, {
+      headers: { Origin: BASE_URL, 'x-forwarded-for': '10.45.1.3' },
+      data: {
+        fullName: 'Upload Pipeline Applicant',
+        mobile: freshMobile(),
+        password: SIGNUP_PASSWORD,
+        consents: CONSENTS,
+      },
+    })
+    expect(applyRes.status()).toBe(201)
+    const applyData = (await applyRes.json()).data
+    const approveRes = await request.post(
+      `${BASE_URL}/api/owner/applications/${applyData.applicationId}/approve`,
+      { headers: { Origin: BASE_URL }, data: { reviewNotes: 'RT3 upload check' } }
+    )
+    expect(approveRes.status()).toBe(200)
+    const loanId: string = (await approveRes.json()).data.loanId
+    const disbRes = await request.post(`${BASE_URL}/api/owner/loans/${loanId}/disburse`, {
+      headers: { Origin: BASE_URL },
+      data: {
+        method: 'OFFLINE',
+        amount: '3000000',
+        reference: `DISB-RT3-UP-${Date.now()}`,
+      },
+    })
+    expect(disbRes.status()).toBe(200)
 
-    // Control: a valid collection with the trailing-data PNG.
+    await apiLogin(request, AGENT_EMAIL, AGENT_PASSWORD, '10.45.1.4')
+
+    // Control: a valid collection with the trailing-data PNG. The
+    // fresh candidate is unassigned (pool), so the agent may collect.
     const before = await uploadDirListing()
     const okRes = await request.post(`${BASE_URL}/api/agent/cash-collections`, {
       headers: { Origin: BASE_URL },
       data: {
-        candidateId: RAHUL_ID,
-        loanId: loan!.id,
+        candidateId: applyData.candidateId,
+        loanId,
         amount: '100',
         proofUrl: PNG_DATA_URL,
       },
@@ -509,7 +541,7 @@ test.describe('Round 3 — P4/Info-2 upload pipeline', () => {
       headers: { Origin: BASE_URL },
       data: {
         candidateId: PRIYA_ID,
-        loanId: loan!.id,
+        loanId,
         amount: '100',
         proofUrl: PNG_DATA_URL,
       },
