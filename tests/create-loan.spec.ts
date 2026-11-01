@@ -41,7 +41,7 @@ test.describe('Create Loan Application', () => {
     
     // Choose Interest Type
     await page.getByText('Percentage', { exact: true }).click();
-    await page.getByLabel('Interest Rate (% per period)').fill('2');
+    await page.getByLabel('Interest Rate (% per month)').fill('2');
     
     // Repayment Frequency
     await page.getByText('Monthly', { exact: true }).click();
