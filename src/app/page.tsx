@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { SessionProvider, useSession, type Role } from '@/lib/session'
+import { JsonLd } from '@/components/json-ld'
 import { LegalFooter } from '@/components/legal/legal-footer'
 import { CookieBanner } from '@/components/legal/cookie-banner'
 
@@ -264,6 +265,8 @@ function LandingInner() {
 export default function Page() {
   return (
     <SessionProvider>
+      {/* Homepage-only JSON-LD (Organization + SoftwareApplication). */}
+      <JsonLd />
       <LandingInner />
     </SessionProvider>
   )

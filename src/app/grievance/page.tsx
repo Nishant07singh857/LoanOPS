@@ -163,6 +163,21 @@ export default function GrievancePage() {
                   RBI CMS Portal (cms.rbi.org.in) <ExternalLink className="h-3 w-3" />
                 </a>
               </p>
+              <p>
+                <a
+                  href={COMPLIANCE_CONFIG.sachetPortalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-primary underline font-medium"
+                >
+                  RBI Sachet Portal (sachet.rbi.org.in) <ExternalLink className="h-3 w-3" />
+                </a>
+              </p>
+              <p className="text-xs">
+                The Reserve Bank of India&apos;s Sachet portal lets you check whether an entity
+                collecting deposits is registered with a regulator, and report unauthorised
+                deposit schemes.
+              </p>
               <p className="text-xs">
                 Toll-Free RBI CRPC: <strong>14448</strong> · For personal data breaches/rights under DPDP Act 2023, you may also escalate to the <strong>Data Protection Board of India</strong>.
               </p>

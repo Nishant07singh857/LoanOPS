@@ -216,6 +216,12 @@ contract); both are idempotent and safe to re-run.
   workflow (deploy or reset mode) using GitHub secrets. The demo seed
   requires explicit seed-password secrets and refuses production
   without `ALLOW_PROD_SEED=true`.
+- **Launch integrations** are env-gated and inert until the owner
+  configures them: Sentry error tracking (DSN-gated, PII-scrubbed),
+  Search Console verification + sitemap/robots, Vercel Analytics, and
+  the weekly `backup-database.yml` pg_dump workflow (skips cleanly
+  until `BACKUP_DATABASE_URL` exists). The owner-side steps live in
+  [docs/LAUNCH.md](LAUNCH.md).
 
 ## 8. Testing map
 

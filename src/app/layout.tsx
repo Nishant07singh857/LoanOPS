@@ -7,6 +7,8 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { SmoothScroll } from "@/components/ui/smooth-scroll";
 import { ThemeProvider } from "@/components/theme-provider";
 import { QueryProvider } from "@/lib/query-client";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,6 +21,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
+  // Google Search Console HTML-tag verification (URL-prefix property —
+  // loanops.vercel.app is a Vercel-owned domain, so DNS verification
+  // is impossible). Rendered only when the token is configured; the
+  // token is a public verification string, not a secret.
+  ...(process.env.GOOGLE_SITE_VERIFICATION
+    ? { verification: { google: process.env.GOOGLE_SITE_VERIFICATION } }
+    : {}),
   title: "LoanOps — Premium Loan Operations Platform",
   description: "Production-grade loan operations platform with Owner, Agent & Candidate portals. Origination, KYC, disbursement, repayments, collections, AI insights, and audit.",
   keywords: ["LoanOps", "Lending", "Fintech", "Loan Management", "Collections", "NBFC"],
@@ -61,6 +71,12 @@ export default function RootLayout({
             <Sonner position="top-right" richColors closeButton duration={4000} />
           </QueryProvider>
         </ThemeProvider>
+        {/* Cookieless Vercel Web Analytics + Speed Insights. Both are
+            inert off Vercel and until enabled in the project dashboard
+            (see docs/LAUNCH.md); chosen over GA4 to keep the public
+            site free of cookie/consent machinery under DPDP. */}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

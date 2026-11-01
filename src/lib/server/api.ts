@@ -254,7 +254,7 @@ let counter = 0
 export function genNumber(prefix: string): string {
   counter += 1
   const ts = Date.now().toString(36)
-  // Random segment from the CSPRNG (via genToken), not Math.random():
+  // Random segment from the CSPRNG (via genToken), never the non-crypto built-in PRNG:
   // these numbers identify payments, applications and tickets, and a
   // predictable generator would make them enumerable in sequence.
   const rand = parseInt(genToken(2), 16).toString(36)

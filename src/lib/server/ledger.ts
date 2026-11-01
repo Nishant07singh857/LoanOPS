@@ -5,6 +5,7 @@
 
 import { db } from '@/lib/db'
 import { AuditAction } from '@prisma/client'
+import { genToken } from '@/lib/server/api'
 
 export type LedgerType =
   | 'DISBURSEMENT'
@@ -43,7 +44,10 @@ export async function postLedger(entry: PostEntry, tx: any = db): Promise<{ entr
   }
 
   ledgerSeq = (ledgerSeq + 1) % 100000
-  const entryNumber = `LED-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 0xffff).toString(36).toUpperCase()}${ledgerSeq.toString(36).toUpperCase()}`
+  // Decorative uniqueness segment from the CSPRNG (genToken) — the
+  // same pattern as genNumber in server/api.ts.
+  const randSegment = parseInt(genToken(2), 16).toString(36).toUpperCase()
+  const entryNumber = `LED-${Date.now().toString(36).toUpperCase()}-${randSegment}${ledgerSeq.toString(36).toUpperCase()}`
 
   const created = await tx.ledgerEntry.create({
     data: {
