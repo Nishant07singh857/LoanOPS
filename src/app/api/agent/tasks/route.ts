@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requireAgent, audit } from '@/lib/server/auth'
 import { apiHandler, success, created, badRequest, notFound, forbidden, validate, paginate, paginationSchema } from '@/lib/server/api'
+import { MAX_INT32_PAISE } from '@/lib/loan-terms'
 
 const listSchema = paginationSchema.extend({
   status: z.enum(['OPEN', 'ASSIGNED', 'RESOLVED', 'CLOSED']).optional(),
@@ -63,7 +64,13 @@ const createSchema = z.object({
   title: z.string().min(1).max(300),
   description: z.string().max(5000).optional().nullable(),
   amount: z.union([z.string().regex(/^\d+$/), z.number().int().nonnegative()]).optional().nullable(),
-  dueDate: z.string().min(1).max(40),
+  // An unparseable date must fail validation (422), not reach
+  // Prisma as an Invalid Date and 500 (red-team round 3, P3 family).
+  dueDate: z
+    .string()
+    .min(1)
+    .max(40)
+    .refine((v) => !Number.isNaN(Date.parse(v)), { message: 'Invalid dueDate' }),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
   notes: z.string().max(5000).optional().nullable(),
 }).strict()
@@ -76,6 +83,12 @@ export const POST = apiHandler(async (req: NextRequest) => {
   const body = await req.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON body')
   const data = validate(createSchema, body)
+
+  // Task amount is an Int32 paise column: the digit-string schema is
+  // unbounded, so cap it here (red-team round 3, P3 family sweep).
+  if (data.amount != null && BigInt(data.amount) > BigInt(MAX_INT32_PAISE)) {
+    return badRequest('Amount exceeds the maximum supported amount')
+  }
 
   // Validate candidate belongs to org & is assigned to this agent — or
   // unassigned (pool candidate, e.g. QR self-apply: any agent may work them).

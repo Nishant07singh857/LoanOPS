@@ -51,6 +51,12 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
     otherFeesPaise: BigInt(app.otherFees || 0),
   })
 
+  // The computed total lands in Int32 paise columns on the loan: an
+  // application whose stored fees push it past the limit must stop
+  // here with a 422, not 500 at loan creation (red-team round 3, P3).
+  const totalCheck = validateLoanTerms({ totalRepayablePaise: schedule.totalRepayable })
+  if (!totalCheck.ok) return unprocessable(totalCheck.error)
+
   const loanNumber = genNumber('LON')
   const termsSnapshot = {
     applicationId: app.id,

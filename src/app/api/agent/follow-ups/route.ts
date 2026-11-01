@@ -60,7 +60,13 @@ const schema = z.object({
   contactMethod: z.enum(['PHONE', 'WHATSAPP', 'IN_APP', 'FIELD_VISIT']),
   outcome: z.string().max(500).optional().nullable(),
   notes: z.string().max(5000).optional().nullable(),
-  nextFollowUp: z.string().min(1).max(40).optional().nullable(),
+  nextFollowUp: z
+    .string()
+    .min(1)
+    .max(40)
+    .refine((v) => !Number.isNaN(Date.parse(v)), { message: 'Invalid nextFollowUp' })
+    .optional()
+    .nullable(),
   // Sent by the candidate-detail frontend; the handler records contactDate as now:
   contactDate: z.string().min(1).max(40).optional().nullable(),
 }).strict()

@@ -11,6 +11,12 @@ export const GET = apiHandler(async (req: NextRequest) => {
   const type = url.searchParams.get('type') || 'loans'
   const from = url.searchParams.get('from') ? new Date(url.searchParams.get('from')!) : null
   const to = url.searchParams.get('to') ? new Date(url.searchParams.get('to')!) : null
+  // An unparseable date must be a 422, not a 500: an Invalid Date
+  // object otherwise flows into Prisma's date filters and throws
+  // there (red-team round 3, P3 — `from=garbage`).
+  if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) {
+    return unprocessable('Invalid date filter: from/to must be valid dates')
+  }
   const agent = url.searchParams.get('agent') || null
   const status = url.searchParams.get('status') || null
 

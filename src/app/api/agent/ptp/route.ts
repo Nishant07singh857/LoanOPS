@@ -6,6 +6,7 @@ import { db } from '@/lib/db'
 import { requireAgent, audit } from '@/lib/server/auth'
 import { apiHandler, success, created, badRequest, notFound, forbidden, validate, paginate, paginationSchema } from '@/lib/server/api'
 import { parsePaise } from '@/lib/server/financial'
+import { MAX_INT32_PAISE } from '@/lib/loan-terms'
 
 const listSchema = paginationSchema.extend({
   status: z.enum(['ACTIVE', 'FULFILLED', 'BROKEN', 'CANCELLED']).optional(),
@@ -61,7 +62,13 @@ const schema = z.object({
   candidateId: z.string().min(1),
   loanId: z.string().min(1),
   promisedAmount: z.union([z.string().min(1).max(40), z.number()]),
-  promiseDate: z.string().min(1).max(40),
+  // An unparseable date must fail validation (422), not reach
+  // Prisma as an Invalid Date and 500 (red-team round 3, P3 family).
+  promiseDate: z
+    .string()
+    .min(1)
+    .max(40)
+    .refine((v) => !Number.isNaN(Date.parse(v)), { message: 'Invalid promiseDate' }),
   notes: z.string().max(5000).optional().nullable(),
 }).strict()
 
@@ -95,6 +102,12 @@ export const POST = apiHandler(async (req: NextRequest) => {
 
   const promisedAmountPaise = parsePaise(data.promisedAmount)
   if (promisedAmountPaise <= BigInt(0)) return badRequest('Promised amount must be positive')
+  // promisedAmount is an Int32 paise column: an unbounded value
+  // (10^20 in the round-3 probe) reached Prisma and 500'd. The
+  // ceiling is the column limit itself (red-team round 3, P3).
+  if (promisedAmountPaise > BigInt(MAX_INT32_PAISE)) {
+    return badRequest('Promised amount exceeds the maximum supported amount')
+  }
 
   const ptp = await db.ptp.create({
     data: {

@@ -25,7 +25,18 @@ export const MAX_INTEREST_RATE_BPS = 10_000
 // Existing schema convention across apply / create / mint routes.
 export const MAX_INSTALLMENTS = 360
 
-const INT32_MAX = BigInt(2_147_483_647)
+// Every money column is a Postgres Int (Int32) of paise, so no stored
+// figure — principal, fee, income, or a computed total — may exceed
+// this. Values past it used to reach Prisma and surface as generic
+// 500s instead of clean 4xx rejections (red-team round 3, P3).
+export const MAX_INT32_PAISE = 2_147_483_647
+const INT32_MAX = BigInt(MAX_INT32_PAISE)
+
+// A single fee or fixed-interest figure obeys the same ₹1 crore
+// ceiling as the principal (red-team round 3, P3): the round-2
+// ceilings covered principal/rate/tenure but left the fee fields
+// digit-string unbounded, so a fee alone could overflow the column.
+export const MAX_FEE_PAISE = MAX_PRINCIPAL_PAISE
 
 export interface LoanTermsInput {
   /** Paise, as a digit string (API payloads), number, or bigint. */
@@ -34,6 +45,30 @@ export interface LoanTermsInput {
   /** Basis points (100 = 1%). */
   interestRateBps?: number | null
   installments?: number | null
+  /** Paise, as a digit string (API payloads), number, or bigint. */
+  fixedInterestPaise?: string | number | bigint | null
+  /** Paise, as a digit string (API payloads), number, or bigint. */
+  processingFeePaise?: string | number | bigint | null
+  /** Paise, as a digit string (API payloads), number, or bigint. */
+  otherFeesPaise?: string | number | bigint | null
+  /**
+   * The engine-computed total repayable (BigInt-exact). Even when
+   * every input is individually within its ceiling, the SUM can pass
+   * the Int32 column limit (principal + 100% interest + fees), so
+   * routes re-check the computed total before inserting.
+   */
+  totalRepayablePaise?: string | number | bigint | null
+}
+
+/**
+ * True when a digit-string paise value parses and stays within the
+ * given ceiling. Used by route schemas for money fields that are not
+ * loan terms (candidate income / obligations) but share the Int32
+ * paise columns.
+ */
+export function paiseStringWithinCeiling(value: string, ceiling: bigint): boolean {
+  const parsed = parsePrincipal(value)
+  return parsed !== null && parsed <= ceiling
 }
 
 export type LoanTermsCheck = { ok: true } | { ok: false; error: string }
@@ -93,6 +128,37 @@ export function validateLoanTerms(terms: LoanTermsInput): LoanTermsCheck {
     const n = terms.installments
     if (!Number.isInteger(n) || n < 1 || n > MAX_INSTALLMENTS) {
       return { ok: false, error: `Installments must be between 1 and ${MAX_INSTALLMENTS}` }
+    }
+  }
+
+  // Fee / fixed-interest ceilings (red-team round 3, P3). Each is a
+  // single money figure stored in an Int32 paise column, so it obeys
+  // the same ₹1 crore ceiling as the principal.
+  const feeFields: Array<[string, string | number | bigint | null | undefined]> = [
+    ['Fixed interest', terms.fixedInterestPaise],
+    ['Processing fee', terms.processingFeePaise],
+    ['Other fees', terms.otherFeesPaise],
+  ]
+  for (const [label, raw] of feeFields) {
+    if (raw === undefined || raw === null) continue
+    const fee = parsePrincipal(raw)
+    if (fee === null || fee < BigInt(0)) {
+      return { ok: false, error: `${label} must be a valid non-negative amount` }
+    }
+    if (fee > BigInt(MAX_FEE_PAISE)) {
+      return { ok: false, error: `${label} must not exceed ₹1 crore` }
+    }
+  }
+
+  if (terms.totalRepayablePaise !== undefined && terms.totalRepayablePaise !== null) {
+    const total = parsePrincipal(terms.totalRepayablePaise)
+    if (total === null || total < BigInt(0)) {
+      return { ok: false, error: 'Total repayable must be a valid non-negative amount' }
+    }
+    // The computed total is stored in an Int32 paise column: one paise
+    // over the limit must be a 422 here, not a Prisma 500 at insert.
+    if (total > INT32_MAX) {
+      return { ok: false, error: 'Total repayable exceeds the maximum supported amount' }
     }
   }
 

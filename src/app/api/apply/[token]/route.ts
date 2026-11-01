@@ -3,13 +3,13 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { apiHandler, success, badRequest, notFound, conflict, unprocessable, validate, genNumber, HttpError } from '@/lib/server/api'
+import { apiHandler, success, badRequest, notFound, conflict, unprocessable, validate, genNumber, HttpError, isUniqueConstraintError } from '@/lib/server/api'
 import { generateSchedule } from '@/lib/server/financial'
 import { encryptPII, hashPII } from '@/lib/server/crypto'
 import { getClientIp, validatePasswordPolicy } from '@/lib/server/auth'
 import { maskAadhaar, maskPan, PAN_REGEX } from '@/lib/utils'
 import { canonicalizeMobile } from '@/lib/mobile'
-import { validateLoanTerms } from '@/lib/loan-terms'
+import { validateLoanTerms, paiseStringWithinCeiling, MAX_PRINCIPAL_PAISE } from '@/lib/loan-terms'
 import { COMPLIANCE_CONFIG } from '@/lib/compliance-config'
 
 export const dynamic = 'force-dynamic'
@@ -68,8 +68,24 @@ const submitSchema = z.object({
   // Financial
   occupation: z.string().max(200).optional(),
   employer: z.string().max(200).optional(),
-  monthlyIncome: z.string().regex(/^\d+$/).optional(),
-  existingObligations: z.string().regex(/^\d+$/).optional(),
+  // Income / obligations land in Int32 paise columns on the candidate:
+  // a digit string alone is unbounded, so cap them at the system's
+  // single-figure ceiling (red-team round 3, P3) — 422, never a
+  // Prisma 500 at insert.
+  monthlyIncome: z
+    .string()
+    .regex(/^\d+$/)
+    .refine((v) => paiseStringWithinCeiling(v, BigInt(MAX_PRINCIPAL_PAISE)), {
+      message: 'Monthly income exceeds the maximum supported amount',
+    })
+    .optional(),
+  existingObligations: z
+    .string()
+    .regex(/^\d+$/)
+    .refine((v) => paiseStringWithinCeiling(v, BigInt(MAX_PRINCIPAL_PAISE)), {
+      message: 'Existing obligations exceed the maximum supported amount',
+    })
+    .optional(),
   // Bank
   bankName: z.string().max(200).optional(),
   bankAccount: z.string().max(50).optional(),
@@ -229,12 +245,17 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
   // Shared terms ceilings, applied to the RESOLVED terms (request
   // values merged over the link's presets) — so a preset minted
   // before these caps existed cannot smuggle uncapped terms past
-  // apply (red-team round 2, N3/N5). Violations are 422, never 500.
+  // apply (red-team round 2, N3/N5). Round 3 (P3) extended the same
+  // ceilings to the fee fields, which the round-2 pass left
+  // unbounded. Violations are 422, never 500.
   const termsCheck = validateLoanTerms({
     principalPaise: principalAmount,
     interestType,
     interestRateBps: interestRate ?? null,
     installments,
+    fixedInterestPaise: fixedInterest ?? null,
+    processingFeePaise: processingFee ?? null,
+    otherFeesPaise: otherFees ?? null,
   })
   if (!termsCheck.ok) return unprocessable(termsCheck.error)
 
@@ -263,6 +284,12 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
     processingFeePaise: BigInt(processingFee || 0),
     otherFeesPaise: BigInt(otherFees || 0),
   })
+
+  // The engine is BigInt-exact, but totalRepayable is stored in an
+  // Int32 paise column: a total one paise over the limit must be a
+  // 422 here, not a 500 at insert (red-team round 3, P3).
+  const totalCheck = validateLoanTerms({ totalRepayablePaise: schedule.totalRepayable })
+  if (!totalCheck.ok) return unprocessable(totalCheck.error)
 
   // SECURITY: a public apply link must never attach to an existing
   // candidate. Matching a registered mobile here previously let a link
@@ -482,7 +509,11 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
     // The (organizationId, mobile) unique index fired: a concurrent
     // registration of this mobile won the race between the re-check
     // above and the insert. Same friendly 409 as the re-check path.
-    if (err?.code === 'P2002') {
+    // The violation does not always arrive as P2002 — inside an
+    // interactive transaction it can surface at commit time as an
+    // unknown-request error naming the constraint (red-team round 3,
+    // P1) — so match every unique-violation shape, not just the code.
+    if (isUniqueConstraintError(err)) {
       return conflict(
         'This mobile number is already registered. Please log in to your account or contact your agent for a new application.'
       )

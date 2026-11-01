@@ -84,11 +84,17 @@ export const POST = apiHandler(async (req: NextRequest) => {
 
   // Preset terms obey the same ceilings as every other write path
   // (red-team round 2, N3/N5) — and are re-checked at apply time.
+  // Round 3 (P3) adds the preset fee fields: they land in Int32
+  // columns on the link itself, so an unbounded digit string 500'd
+  // here before apply ever saw it.
   const termsCheck = validateLoanTerms({
     principalPaise: input.prePrincipal ?? null,
     interestType: input.preInterestType,
     interestRateBps: input.preInterestRate ?? null,
     installments: input.preInstallments ?? null,
+    fixedInterestPaise: input.preFixedInterest ?? null,
+    processingFeePaise: input.processingFee ?? null,
+    otherFeesPaise: input.otherFees ?? null,
   })
   if (!termsCheck.ok) return unprocessable(termsCheck.error)
 
