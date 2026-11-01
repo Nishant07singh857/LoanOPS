@@ -92,6 +92,22 @@ const envSchema = baseEnvSchema.superRefine((env, ctx) => {
 
 export type ValidatedEnv = z.infer<typeof envSchema>
 
+/**
+ * True while `next build` is collecting page data / generating static
+ * pages. In that phase route modules are imported but never executed,
+ * and deployment env vars may be legitimately absent — Vercel scopes
+ * env vars per environment, so Preview deployments can have none at
+ * all. Import-time startup guards (here, db.ts, auth.ts) therefore
+ * warn-and-continue during the build phase only; every other phase
+ * keeps the strict fail-fast behaviour.
+ */
+export function isBuildPhase(): boolean {
+  return (
+    process.env.npm_lifecycle_event === 'build' ||
+    process.env.NEXT_PHASE === 'phase-production-build'
+  )
+}
+
 let _validated: ValidatedEnv | null = null
 
 /**
@@ -111,11 +127,21 @@ export function validateEnv(): ValidatedEnv {
     )
     const message = `\nEnvironment validation failed:\n${lines.join('\n')}\n`
 
-    const isBuildPhase = process.env.npm_lifecycle_event === 'build' || process.env.NEXT_PHASE === 'phase-production-build'
+    const buildPhase = isBuildPhase()
 
-    if (isProduction && !isBuildPhase) {
+    if (isProduction && !buildPhase) {
       console.error(message)
       process.exit(1)
+    } else if (buildPhase) {
+      // Build phase: report the same failures as one warning, WITHOUT
+      // the per-variable ❌ lines — Vercel surfaces ❌ lines in build
+      // logs as build errors, and a build (e.g. a Preview deployment
+      // with no env vars) has nothing to validate yet. The real check
+      // still runs, unchanged, when the built app boots.
+      const keys = Object.keys(errors).join(', ')
+      console.warn(
+        `⚠️  [build mode] Environment validation deferred to runtime — missing/invalid: ${keys}. Continuing build…\n`
+      )
     } else {
       console.warn(`⚠️  [dev/build mode] ${message}Continuing with defaults…\n`)
     }
