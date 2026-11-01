@@ -182,7 +182,7 @@ export default function SupportPage() {
           <Card className="shadow-premium">
             <CardHeader className="pb-2"><CardTitle className="text-base">Tickets</CardTitle><CardDescription>{filtered.length} shown</CardDescription></CardHeader>
             <CardContent>
-              <div className="hidden md:block overflow-x-auto w-full">
+              <div className="hidden md:block overflow-x-auto table-scroll w-full">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/40">

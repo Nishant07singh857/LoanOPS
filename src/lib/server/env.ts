@@ -38,6 +38,15 @@ const baseEnvSchema = z.object({
   ENABLE_ONLINE_PAYMENTS: z.string().optional(),
   PAYMENT_WEBHOOK_SECRET: z.string().optional(),
   COOKIE_SECURE: z.string().optional(),
+
+  // --- Optional Redis (Upstash REST) ---
+  // Accelerator only (rate-limit counters + dashboard cache). Both vars
+  // are OPTIONAL: absence is valid and the app fails open to in-memory /
+  // direct-DB behavior. No format is enforced here on purpose — a
+  // malformed value must not crash boot; src/lib/server/redis.ts treats
+  // an unusable client as "no Redis".
+  UPSTASH_REDIS_REST_URL: z.string().optional(),
+  UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
 })
 
 const envSchema = baseEnvSchema.superRefine((env, ctx) => {

@@ -54,12 +54,12 @@ export const POST = apiHandler(async (req: NextRequest) => {
   const ip = getClientIp(req)
   const userAgent = req.headers.get('user-agent') || undefined
 
-  const rlResponse = enforceRateLimit(req, 'auth_signup')
+  const rlResponse = await enforceRateLimit(req, 'auth_signup')
   if (rlResponse) return rlResponse
 
   const body = await req.json().catch(() => null)
   if (!body) {
-    recordLoginFailure(ip)
+    await recordLoginFailure(ip)
     return badRequest('Invalid JSON')
   }
   const input = validate(signupSchema, body)
@@ -69,7 +69,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
   // and 0 / 91 / 0091 prefixes fold to the stored 10-digit form.
   const cleanMobile = canonicalizeMobile(input.mobile)
   if (!cleanMobile) {
-    recordLoginFailure(ip)
+    await recordLoginFailure(ip)
     return badRequest('Please enter a valid 10-digit mobile number')
   }
 
@@ -96,7 +96,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
   })
   if (existingUser) {
     await constantTimeDummyVerify(input.password)
-    recordLoginFailure(ip)
+    await recordLoginFailure(ip)
     return badRequest('Unable to complete registration with the provided details')
   }
 
@@ -126,7 +126,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
 
   const failRegistration = async () => {
     await constantTimeDummyVerify(input.password)
-    recordLoginFailure(ip)
+    await recordLoginFailure(ip)
     // Generic message — never reveal whether the mobile, the code, or
     // the candidate record was the problem.
     return badRequest('Unable to complete registration with the provided details')

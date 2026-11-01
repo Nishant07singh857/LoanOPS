@@ -129,7 +129,7 @@ const schema = z.object({
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireAgent()
 
-  const rlResponse = enforceRateLimit(req, 'cash_collection', ctx.user.id)
+  const rlResponse = await enforceRateLimit(req, 'cash_collection', ctx.user.id)
   if (rlResponse) return rlResponse
 
   const body = await req.json().catch(() => null)

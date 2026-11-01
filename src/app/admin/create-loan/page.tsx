@@ -445,7 +445,7 @@ export default function CreateLoanPage() {
                     {showSchedule ? 'Hide Schedule Breakdown' : `View ${preview.installments.length}-Installment Schedule`}
                   </Button>
                   {showSchedule && (
-                    <div className="max-h-60 overflow-y-auto overflow-x-auto w-full rounded-lg border border-border">
+                    <div className="max-h-60 overflow-y-auto overflow-x-auto table-scroll w-full rounded-lg border border-border">
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-muted/40 text-[11px]">

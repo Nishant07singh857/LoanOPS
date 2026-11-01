@@ -46,10 +46,10 @@ export const POST = apiHandler(async (req: NextRequest) => {
   const userAgent = req.headers.get('user-agent') || undefined
   const rateKey = `${ip}:${parsed.email}`
 
-  const rlResponse = enforceRateLimit(req, 'auth_login', parsed.email)
+  const rlResponse = await enforceRateLimit(req, 'auth_login', parsed.email)
   if (rlResponse) return rlResponse
 
-  const rl = checkLoginRate(rateKey)
+  const rl = await checkLoginRate(rateKey)
   if (!rl.ok) {
     return tooMany(`Too many login attempts. Please try again in ${Math.ceil(rl.retryAfterMs! / 1000)} seconds.`)
   }
@@ -62,7 +62,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
 
   if (!user) {
     await constantTimeDummyVerify(parsed.password)
-    recordLoginFailure(rateKey)
+    await recordLoginFailure(rateKey)
     return unauthorized('Invalid credentials')
   }
 
@@ -92,7 +92,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
         lockedUntil: nextAttempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null,
       },
     })
-    recordLoginFailure(rateKey)
+    await recordLoginFailure(rateKey)
     await auditRaw(
       user.organizationId,
       user.id,
@@ -116,7 +116,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
     }
     const step = matchTotpStep(user.totpSecret, parsed.totpCode)
     if (step === null || isTotpStepReplay(step, user.totpLastStep)) {
-      recordLoginFailure(rateKey)
+      await recordLoginFailure(rateKey)
       await auditRaw(
         user.organizationId,
         user.id,
@@ -141,7 +141,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
       ...(totpStepUsed !== null ? { totpLastStep: totpStepUsed } : {}),
     },
   })
-  clearLoginFailures(rateKey)
+  await clearLoginFailures(rateKey)
 
   const candidate =
     user.role === 'CANDIDATE' ? await db.candidate.findUnique({ where: { userId: user.id } }) : null

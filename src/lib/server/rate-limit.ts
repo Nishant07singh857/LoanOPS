@@ -1,11 +1,17 @@
 // Central Rate Limiter & Abuse Protection (Phase 4)
 //
-// HONEST LIMITATION: rate limits are IN-MEMORY and PER-INSTANCE only.
-// There is no Redis/distributed backend in this module (the Upstash Redis
-// client in src/lib/redis.ts is used for caching, not for rate limiting).
-// On multi-instance or serverless deployments each instance keeps its own
-// buckets, so effective limits multiply by the instance count and reset on
-// cold start / restart. Do not treat these limits as a distributed control.
+// BACKENDS: when Upstash Redis is configured (see src/lib/server/redis.ts),
+// counters live in Redis (INCR + EXPIRE fixed window) and are shared across
+// instances. When Redis is absent OR any Redis command fails, the limiter
+// fails open to the original in-memory sliding-window buckets.
+//
+// HONEST LIMITATION of the fallback: in-memory buckets are PER-INSTANCE
+// only — on multi-instance or serverless deployments each instance keeps
+// its own buckets, so effective limits multiply by the instance count and
+// reset on cold start / restart. The Redis path has no such limitation.
+// Policies (limits + windows) are identical on both paths; only the
+// window bookkeeping differs (fixed window on Redis, sliding window in
+// memory).
 //
 // Client IP handling: forwarded headers (x-forwarded-for etc.) are only
 // trusted when the deployment explicitly opts in via TRUST_PROXY="true" or
@@ -15,6 +21,7 @@
 import { createHash } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { logger } from '@/lib/server/logger'
+import { getRedis, type RedisClientLike } from '@/lib/server/redis'
 
 export type RateLimitScope =
   | 'auth_login'
@@ -104,18 +111,76 @@ export interface RateLimitResult {
   limit: number
 }
 
-export function checkRateLimit(
+function normalizeRateLimitKey(
   scope: RateLimitScope,
-  keyParts: Array<string | undefined | null>,
-  customPolicy?: RateLimitPolicy
-): RateLimitResult {
-  const policy = customPolicy ?? RATE_LIMIT_POLICIES[scope]
-  const now = Date.now()
-  cleanupBuckets(now)
-
-  const normalizedKey = `${scope}:${keyParts
+  keyParts: Array<string | undefined | null>
+): string {
+  return `${scope}:${keyParts
     .map((p) => (p ? String(p).trim().toLowerCase() : 'anon'))
     .join(':')}`
+}
+
+/**
+ * Redis-backed fixed-window counter (INCR + EXPIRE). Returns null when the
+ * caller must fall back to the in-memory limiter (Redis error mid-flight).
+ * The first request in a window creates the key and arms its expiry; a
+ * blocked request never extends the window, mirroring the in-memory
+ * semantics where blocked attempts do not push timestamps.
+ */
+async function checkRateLimitRedis(
+  redis: RedisClientLike,
+  scope: RateLimitScope,
+  normalizedKey: string,
+  policy: RateLimitPolicy
+): Promise<RateLimitResult | null> {
+  const redisKey = `ratelimit:${normalizedKey}`
+  const windowSeconds = Math.max(1, Math.ceil(policy.windowMs / 1000))
+
+  const count = await redis.incr(redisKey)
+  if (count === 1) {
+    await redis.expire(redisKey, windowSeconds)
+  }
+
+  if (count > policy.maxRequests) {
+    let ttl = await redis.ttl(redisKey)
+    if (ttl < 0) {
+      // Key exists without an expiry (e.g. the EXPIRE above raced a
+      // failure): re-arm it so the block is bounded by the window.
+      await redis.expire(redisKey, windowSeconds)
+      ttl = windowSeconds
+    }
+    const retryAfterSeconds = Math.max(1, ttl)
+    logger.warn('Rate limit exceeded', {
+      scope,
+      bucket: normalizedKey,
+      limit: policy.maxRequests,
+      retryAfterSeconds,
+      backend: 'redis',
+    })
+    return {
+      ok: false,
+      remaining: 0,
+      retryAfterSeconds,
+      limit: policy.maxRequests,
+    }
+  }
+
+  return {
+    ok: true,
+    remaining: Math.max(0, policy.maxRequests - count),
+    retryAfterSeconds: 0,
+    limit: policy.maxRequests,
+  }
+}
+
+/** Original in-memory sliding-window limiter; also the fail-open fallback. */
+function checkRateLimitMemory(
+  scope: RateLimitScope,
+  normalizedKey: string,
+  policy: RateLimitPolicy
+): RateLimitResult {
+  const now = Date.now()
+  cleanupBuckets(now)
 
   const existing = memoryBuckets.get(normalizedKey) ?? { timestamps: [], blockedUntil: 0 }
 
@@ -168,19 +233,49 @@ export function checkRateLimit(
   }
 }
 
-export function enforceRateLimit(
+/**
+ * Rate-limit check. Uses Redis when configured; any Redis failure fails
+ * open to the in-memory limiter for that request (availability of the
+ * auth surface beats strictness of the counter, and the in-memory path
+ * still enforces the same policy per instance).
+ */
+export async function checkRateLimit(
+  scope: RateLimitScope,
+  keyParts: Array<string | undefined | null>,
+  customPolicy?: RateLimitPolicy
+): Promise<RateLimitResult> {
+  const policy = customPolicy ?? RATE_LIMIT_POLICIES[scope]
+  const normalizedKey = normalizeRateLimitKey(scope, keyParts)
+
+  const redis = getRedis()
+  if (redis) {
+    try {
+      const result = await checkRateLimitRedis(redis, scope, normalizedKey, policy)
+      if (result) return result
+    } catch (err) {
+      logger.warn('Redis rate limit check failed; falling back to in-memory limiter', {
+        scope,
+        error: err,
+      })
+    }
+  }
+
+  return checkRateLimitMemory(scope, normalizedKey, policy)
+}
+
+export async function enforceRateLimit(
   req: NextRequest,
   scope: RateLimitScope,
   identifier?: string | null,
   customPolicy?: RateLimitPolicy
-): NextResponse | null {
+): Promise<NextResponse | null> {
   const ip = extractClientIp(req)
   // Support isolated test bucket key in non-production so parallel security tests can trigger 429 deterministically
   const testBucket =
     process.env.NODE_ENV !== 'production' ? req.headers.get('x-ratelimit-test-key') : null
   const effectiveIp = testBucket ? `${ip}:${testBucket}` : ip
 
-  const res = checkRateLimit(scope, [effectiveIp, identifier], customPolicy)
+  const res = await checkRateLimit(scope, [effectiveIp, identifier], customPolicy)
   if (!res.ok) {
     return NextResponse.json(
       {

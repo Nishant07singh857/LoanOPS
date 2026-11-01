@@ -278,10 +278,14 @@ function SidebarContent({
           </div>
         </div>
       )}
-      <nav aria-label="Sidebar navigation" className="flex-1 min-h-0 overflow-y-auto sidebar-scroll py-2 px-2 space-y-2 pb-4">
+      {/* data-lenis-prevent: Lenis (desktop smooth scroll) must never
+          intercept wheel/touch gestures that start in the nav — it scrolls
+          natively and chains to the page at its ends. This one nav element
+          serves both the desktop sidebar and the mobile drawer. */}
+      <nav aria-label="Sidebar navigation" data-lenis-prevent className="flex-1 min-h-0 overflow-y-auto sidebar-scroll py-1.5 px-2 space-y-1.5 pb-3">
         {groups.map((group) => (
           <div key={group.label}>
-            <p className="px-3 mb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{group.label}</p>
+            <p className="px-3 mb-0.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{group.label}</p>
             <div className="space-y-0.5">
               {group.items.map((item) => {
                 const active = pathname === item.href || (item.href !== '/admin' && item.href !== '/agent' && item.href !== '/portal' && pathname.startsWith(item.href + '/'))
@@ -292,7 +296,7 @@ function SidebarContent({
                     onClick={onNavigate}
                     aria-current={active ? 'page' : undefined}
                     className={cn(
-                      'flex items-center gap-3 px-3 py-1.5 rounded-xl text-sm font-medium transition-all min-h-[40px]',
+                      'flex items-center gap-3 px-3 py-1 rounded-xl text-sm font-medium transition-all min-h-[36px]',
                       active
                         ? 'bg-gradient-to-r from-primary via-primary/95 to-primary/90 text-primary-foreground shadow-glow border-l-2 border-amber-400 font-semibold'
                         : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'

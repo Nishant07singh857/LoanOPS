@@ -389,7 +389,7 @@ export default function AgentCandidateDetailPage() {
                     </CardHeader>
                     <CardContent>
                       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Schedule</p>
-                      <div className="rounded-lg border border-border overflow-x-auto">
+                      <div className="rounded-lg border border-border overflow-x-auto table-scroll">
                         <Table>
                           <TableHeader>
                             <TableRow className="bg-muted/40">

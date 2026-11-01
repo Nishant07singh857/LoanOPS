@@ -160,7 +160,7 @@ export default function DisbursementsPage() {
               <EmptyState icon={<Clock className="h-6 w-6" />} title="No pending disbursements" description="Approved loans awaiting disbursement will appear here." />
             ) : (
               <>
-                <div className="hidden md:block overflow-x-auto w-full">
+                <div className="hidden md:block overflow-x-auto table-scroll w-full">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">
@@ -261,7 +261,7 @@ export default function DisbursementsPage() {
               <EmptyState icon={<Banknote className="h-6 w-6" />} title="No disbursements yet" description="Disbursements will appear here once initiated." />
             ) : (
               <>
-                <div className="hidden md:block overflow-x-auto w-full">
+                <div className="hidden md:block overflow-x-auto table-scroll w-full">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">

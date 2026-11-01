@@ -223,7 +223,7 @@ export default function ReconciliationPage() {
               <EmptyState icon={<Scale className="h-6 w-6" />} title="No reconciliation runs yet" description="Click 'Run Recon Now' to start a new reconciliation run." />
             ) : (
               <>
-                <div className="hidden md:block overflow-x-auto w-full">
+                <div className="hidden md:block overflow-x-auto table-scroll w-full">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">
@@ -314,7 +314,7 @@ export default function ReconciliationPage() {
               <EmptyState icon={<CheckCircle2 className="h-6 w-6" />} title="No open exceptions" description="All reconciliation exceptions are resolved." />
             ) : (
               <>
-                <div className="hidden md:block overflow-x-auto w-full">
+                <div className="hidden md:block overflow-x-auto table-scroll w-full">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">

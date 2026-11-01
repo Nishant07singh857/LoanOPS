@@ -192,7 +192,7 @@ export default function PaymentsPage() {
               <EmptyState icon={<Receipt className="h-6 w-6" />} title="No payments found" description="Payments will appear here once candidates pay or agents record cash." />
             ) : (
               <>
-                <div className="hidden md:block overflow-x-auto w-full">
+                <div className="hidden md:block overflow-x-auto table-scroll w-full">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">

@@ -160,7 +160,7 @@ export default function RemindersPage() {
             />
           ) : (
             <>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto table-scroll">
                 <Table>
                   <TableHeader>
                     <TableRow>

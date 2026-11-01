@@ -51,6 +51,52 @@ test.describe('Owner sidebar — desktop / laptop', () => {
   })
 })
 
+test.describe('Owner sidebar — wheel scrolling', () => {
+  test('mouse wheel over the sidebar nav scrolls the nav itself (no scrollbar dragging)', async ({ page }) => {
+    await loginAsOwner(page, '10.10.0.13')
+    // Short viewport: the 16-item owner nav genuinely overflows the sidebar.
+    await page.setViewportSize({ width: 1280, height: 600 })
+    await page.goto('/admin')
+
+    const nav = page.locator('aside').getByRole('navigation', { name: 'Sidebar navigation' })
+    await expect(nav).toBeVisible()
+
+    // Premise: content is taller than the visible nav box, so scrolling is required.
+    const { scrollHeight, clientHeight } = await nav.evaluate((el) => ({
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    }))
+    expect(scrollHeight, 'owner nav must overflow at a 600px-tall viewport').toBeGreaterThan(clientHeight)
+
+    const box = await nav.boundingBox()
+    expect(box, 'sidebar nav must have a bounding box').not.toBeNull()
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2)
+
+    // Regression guard: Lenis (desktop smooth scrolling) used to swallow
+    // wheel events over the nav and scroll the page instead, so the only
+    // way down was dragging the 6px scrollbar thumb. The wheel must move
+    // the nav's own scrollTop.
+    await page.mouse.wheel(0, 600)
+    await expect
+      .poll(async () => nav.evaluate((el) => el.scrollTop), { timeout: 5000 })
+      .toBeGreaterThan(0)
+
+    // The last nav group must be reachable by wheel alone.
+    const support = nav.getByRole('link', { name: 'Support', exact: true })
+    await expect
+      .poll(
+        async () =>
+          nav.evaluate((el, link) => {
+            const navRect = el.getBoundingClientRect()
+            const linkRect = (link as HTMLElement).getBoundingClientRect()
+            return linkRect.bottom <= navRect.bottom + 1
+          }, await support.elementHandle()),
+        { timeout: 5000 }
+      )
+      .toBe(true)
+  })
+})
+
 test.describe('Owner sidebar — mobile drawer', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 

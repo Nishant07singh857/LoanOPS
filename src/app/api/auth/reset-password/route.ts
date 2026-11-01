@@ -13,7 +13,7 @@ const schema = z
   .strict()
 
 export const POST = apiHandler(async (req: NextRequest) => {
-  const rlResponse = enforceRateLimit(req, 'auth_forgot_password')
+  const rlResponse = await enforceRateLimit(req, 'auth_forgot_password')
   if (rlResponse) return rlResponse
 
   const body = await req.json().catch(() => null)

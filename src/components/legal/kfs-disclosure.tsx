@@ -136,7 +136,7 @@ export function KfsDisclosure({
           </div>
         )}
 
-        <div className="overflow-x-auto rounded-xl border border-border/70">
+        <div className="overflow-x-auto table-scroll rounded-xl border border-border/70">
           <table className="w-full text-xs sm:text-sm border-collapse">
             <thead>
               <tr className="bg-muted/60 text-left border-b border-border/70">

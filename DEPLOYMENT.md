@@ -111,3 +111,40 @@ owner under **Operations → Reminders** (`/admin/reminders`).
   - Spike in `AuditLog` entries with `action = 'LOGIN_FAILED'` or `action = 'REVEAL_PII'`.
 - **Financial Reconciliation**:
   - Run daily reconciliation in `/admin/reconciliation` and alert if any `PENDING_VERIFICATION` field cash collection remains unverified by the Owner for more than 48 hours.
+
+---
+
+## 8. Optional Redis (Upstash)
+
+Redis is an **accelerator only — the application runs identically without it**.
+Set both variables to enable it. The recommended setup for the Vercel-hosted
+deployment: in the Vercel dashboard for the `loanops` project, add the
+**Upstash** integration from the Vercel Marketplace (Storage / Marketplace) —
+it creates a free Upstash database and adds both variables to the project
+automatically. Redeploy once afterwards so the new env vars take effect.
+(Equivalently, create a database in the Upstash console and copy the REST
+URL and token shown there into the project's env vars manually.)
+
+```bash
+UPSTASH_REDIS_REST_URL=""    # REST endpoint of the Upstash database
+UPSTASH_REDIS_REST_TOKEN=""  # REST token (read-write)
+```
+
+What it powers when configured:
+
+- **Rate limiting / login throttling** (`src/lib/server/rate-limit.ts`,
+  `src/lib/server/auth.ts`): counters move from per-instance in-memory
+  buckets to Redis (INCR + EXPIRE fixed windows, key prefix `ratelimit:`;
+  login lockout counters as hashes, key prefix `loginlock:`), so limits
+  are shared across instances instead of multiplying per instance.
+  Policies (limits, windows, lockout threshold and duration) are
+  unchanged; the DB-level account lockout is unaffected.
+- **Owner dashboard cache** (`GET /api/owner/dashboard`): the computed KPI
+  payload is cached per organization for **30 seconds**
+  (key `dashboard-kpis:<organizationId>` — never shared across orgs).
+
+**Fail-open contract:** if either variable is unset, or any Redis command
+errors, the app silently falls back to the in-memory limiter and to direct
+database queries for that request. A Redis outage must never take the app
+(or its login rate limits) down. The Upstash free tier is more than
+sufficient for this workload (a handful of commands per request at most).

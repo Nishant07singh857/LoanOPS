@@ -475,7 +475,7 @@ export default function LoanDetailPage() {
               <CardDescription>{loan.schedule.length} installments · total {formatPaiseToINR(Number(loan.totalRepayable))}</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="hidden md:block overflow-x-auto w-full">
+              <div className="hidden md:block overflow-x-auto table-scroll w-full">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/40">
@@ -536,7 +536,7 @@ export default function LoanDetailPage() {
               {loan.payments.length === 0 ? (
                 <EmptyState icon={<Wallet className="h-6 w-6" />} title="No payments yet" description="Payments will appear here once the candidate pays or agents record cash." />
               ) : (
-                <div className="overflow-x-auto w-full">
+                <div className="overflow-x-auto table-scroll w-full">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">
@@ -641,7 +641,7 @@ export default function LoanDetailPage() {
               {loan.disbursements.length === 0 ? (
                 <EmptyState icon={<Banknote className="h-6 w-6" />} title="No disbursements yet" description="Click 'Disburse' to initiate a disbursement." />
               ) : (
-                <div className="overflow-x-auto w-full">
+                <div className="overflow-x-auto table-scroll w-full">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">

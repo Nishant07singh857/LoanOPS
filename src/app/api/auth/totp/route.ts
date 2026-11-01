@@ -35,7 +35,7 @@ const actionSchema = z
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()
-  const rlResponse = enforceRateLimit(req, 'auth_otp', ctx.user.id)
+  const rlResponse = await enforceRateLimit(req, 'auth_otp', ctx.user.id)
   if (rlResponse) return rlResponse
 
   const body = await req.json().catch(() => null)

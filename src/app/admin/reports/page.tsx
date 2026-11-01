@@ -252,7 +252,7 @@ export default function ReportsPage() {
                 ) : items.length === 0 ? (
                   <EmptyState icon={<FileText className="h-6 w-6" />} title="No records found" description="Adjust filters and try a different report type." />
                 ) : active === 'loans' ? (
-                  <div className="overflow-x-auto w-full">
+                  <div className="overflow-x-auto table-scroll w-full">
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/40">
@@ -279,7 +279,7 @@ export default function ReportsPage() {
                     </Table>
                   </div>
                 ) : active === 'applications' ? (
-                  <div className="overflow-x-auto w-full">
+                  <div className="overflow-x-auto table-scroll w-full">
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/40">
@@ -304,7 +304,7 @@ export default function ReportsPage() {
                     </Table>
                   </div>
                 ) : active === 'payments' ? (
-                  <div className="overflow-x-auto w-full">
+                  <div className="overflow-x-auto table-scroll w-full">
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/40">
@@ -331,7 +331,7 @@ export default function ReportsPage() {
                     </Table>
                   </div>
                 ) : active === 'collections' ? (
-                  <div className="overflow-x-auto w-full">
+                  <div className="overflow-x-auto table-scroll w-full">
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/40">
@@ -356,7 +356,7 @@ export default function ReportsPage() {
                     </Table>
                   </div>
                 ) : active === 'ptps' ? (
-                  <div className="overflow-x-auto w-full">
+                  <div className="overflow-x-auto table-scroll w-full">
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/40">

@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server'
 import { requireOwner } from '@/lib/server/auth'
 import { apiHandler, success } from '@/lib/server/api'
 import { db } from '@/lib/db'
-import { withCache } from '@/lib/redis'
+import { withCache } from '@/lib/server/redis'
 import { refreshOverdueStatuses } from '@/lib/server/overdue'
 
 async function getDashboardData(orgId: string) {
@@ -124,8 +124,11 @@ export const GET = apiHandler(async (req: NextRequest) => {
     // ignore — the standalone cron (scripts/mark-overdue.ts) is the backstop
   }
 
-  // Cache dashboard data in Redis for 5 minutes (300 seconds)
-  const data = await withCache(`dashboard-kpis:${orgId}`, 300, () => getDashboardData(orgId))
+  // Cache the computed KPIs per organization for 30 seconds when Redis is
+  // configured (matches the admin layout's 30s React Query staleTime).
+  // The key embeds the org id, so data is never served across orgs; any
+  // Redis error bypasses the cache and computes fresh (fail-open).
+  const data = await withCache(`dashboard-kpis:${orgId}`, 30, () => getDashboardData(orgId))
   
   return success(data)
 })
