@@ -8,7 +8,7 @@ import { COMPLIANCE_CONFIG } from '@/lib/compliance-config'
 import { LegalFooter } from '@/components/legal/legal-footer'
 
 export const metadata = {
-  title: `Fair Practices Code & Collection Conduct | ${COMPLIANCE_CONFIG.companyName}`,
+  title: { absolute: `Fair Practices Code & Collection Conduct | ${COMPLIANCE_CONFIG.companyName}` },
   description: 'RBI Fair Practices Code and Field Agent Collection Code of Conduct.',
 }
 

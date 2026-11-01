@@ -8,7 +8,7 @@ import { COMPLIANCE_CONFIG } from '@/lib/compliance-config'
 import { LegalFooter } from '@/components/legal/legal-footer'
 
 export const metadata = {
-  title: `Grievance Redressal Mechanism | ${COMPLIANCE_CONFIG.companyName}`,
+  title: { absolute: `Grievance Redressal Mechanism | ${COMPLIANCE_CONFIG.companyName}` },
   description: 'Multi-tier Grievance Redressal Mechanism, Nodal Officer Contact, and RBI Ombudsman Escalation.',
 }
 

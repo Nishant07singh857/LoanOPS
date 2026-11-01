@@ -20,6 +20,10 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const DEFAULT_TITLE = "LoanOps — Premium Loan Operations Platform";
+const DEFAULT_DESCRIPTION =
+  "Loan operations platform for lending businesses — origination, KYC, disbursement, repayment schedules, collections and audit trails across owner, agent and borrower portals.";
+
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
   // Google Search Console HTML-tag verification (URL-prefix property —
@@ -29,19 +33,30 @@ export const metadata: Metadata = {
   ...(process.env.GOOGLE_SITE_VERIFICATION
     ? { verification: { google: process.env.GOOGLE_SITE_VERIFICATION } }
     : {}),
-  title: "LoanOps — Premium Loan Operations Platform",
-  description: "Production-grade loan operations platform with Owner, Agent & Candidate portals. Origination, KYC, disbursement, repayments, collections, AI insights, and audit.",
+  // `default` is the title every page without its own renders (byte-for-
+  // byte what the plain string produced before); `template` brands any
+  // page-level title. Pages whose titles predate the template declare
+  // them `absolute`, so their rendered titles do not change. Icons come
+  // from the app/favicon.ico, app/icon.svg and app/apple-icon file
+  // conventions, not from metadata.
+  title: {
+    default: DEFAULT_TITLE,
+    template: "%s · LoanOps",
+  },
+  description: DEFAULT_DESCRIPTION,
   keywords: ["LoanOps", "Lending", "Fintech", "Loan Management", "Collections", "NBFC"],
   authors: [{ name: "LoanOps" }],
-  icons: {
-    icon: "/favicon.ico",
-  },
   openGraph: {
-    title: "LoanOps — Premium Loan Operations Platform",
-    description: "Production-grade loan operations platform with Owner, Agent & Candidate portals. Origination, KYC, disbursement, repayments, collections, AI insights, and audit.",
+    title: DEFAULT_TITLE,
+    description: DEFAULT_DESCRIPTION,
     type: "website",
     locale: "en_US",
     siteName: "LoanOps",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: DEFAULT_TITLE,
+    description: DEFAULT_DESCRIPTION,
   },
 };
 
