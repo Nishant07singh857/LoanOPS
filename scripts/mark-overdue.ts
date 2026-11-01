@@ -5,11 +5,14 @@
 // system-wide guarantee for orgs nobody has logged into.
 
 import { refreshOverdueStatuses } from '../src/lib/server/overdue'
+import { pingHeartbeat } from '../src/lib/server/heartbeat'
 import { db } from '../src/lib/db'
 
 async function main() {
   const count = await refreshOverdueStatuses()
   console.log(`[mark-overdue] ${count} installment(s) transitioned to OVERDUE`)
+  // Success ping for the cron heartbeat monitor (docs/LAUNCH.md §4).
+  await pingHeartbeat(process.env.HEARTBEAT_MARK_OVERDUE_URL, 'mark-overdue')
 }
 
 main()

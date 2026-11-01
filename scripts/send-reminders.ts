@@ -11,6 +11,7 @@
 // opt out entirely with Organization.remindersEnabled = false.
 
 import { runReminders } from '../src/lib/server/reminders'
+import { pingHeartbeat } from '../src/lib/server/heartbeat'
 import { db } from '../src/lib/db'
 
 async function main() {
@@ -26,6 +27,11 @@ async function main() {
       `sent=${summary.sent} queued=${summary.queued} skippedPtp=${summary.skippedPtp} ` +
       `failed=${summary.failed} alreadyLogged=${summary.alreadyLogged} noStage=${summary.noStage}${mode}`
   )
+  // Success ping for the cron heartbeat monitor (docs/LAUNCH.md §4).
+  // Skipped on dry runs — a preview is not a scheduled execution.
+  if (!dryRun) {
+    await pingHeartbeat(process.env.HEARTBEAT_REMINDERS_URL, 'send-reminders')
+  }
 }
 
 main()
