@@ -31,6 +31,13 @@ export const GET = apiHandler(async (req: NextRequest, { params }: { params: Pro
       followUps: { where: { agentId: ctx.user.id }, orderBy: { contactDate: 'desc' }, take: 20, include: { loan: { select: { loanNumber: true } } } },
       escalations: { where: { agentId: ctx.user.id }, orderBy: { createdAt: 'desc' }, take: 20 },
       payments: { where: { method: 'CASH', recordedById: ctx.user.id }, orderBy: { createdAt: 'desc' }, take: 20 },
+      applications: { orderBy: { createdAt: 'desc' }, take: 20 },
+      supportTickets: { orderBy: { createdAt: 'desc' }, take: 20 },
+      reminderLogs: {
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        include: { loan: { select: { loanNumber: true } } },
+      },
     },
   })
   if (!c) return notFound('Candidate not found')
@@ -138,6 +145,33 @@ export const GET = apiHandler(async (req: NextRequest, { params }: { params: Pro
       collectionDate: cc.createdAt,
       status: cc.status,
       reference: cc.reference,
+    })),
+    applications: c.applications.map((a) => ({
+      id: a.id,
+      applicationNumber: a.applicationNumber,
+      principalAmount: String(a.principalAmount),
+      purpose: a.purpose,
+      status: a.status,
+      submittedAt: a.submittedAt,
+      createdAt: a.createdAt,
+    })),
+    supportTickets: c.supportTickets.map((t) => ({
+      id: t.id,
+      ticketNumber: t.ticketNumber,
+      category: t.category,
+      subject: t.subject,
+      status: t.status,
+      createdAt: t.createdAt,
+      updatedAt: t.updatedAt,
+    })),
+    reminders: c.reminderLogs.map((r) => ({
+      id: r.id,
+      loanId: r.loanId,
+      loanNumber: r.loan.loanNumber,
+      stage: r.stage,
+      channel: r.channel,
+      status: r.status,
+      createdAt: r.createdAt,
     })),
     kyc: rawKyc
       ? {

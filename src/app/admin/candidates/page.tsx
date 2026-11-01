@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Users, Search, Phone, Mail, MapPin, Eye } from 'lucide-react'
@@ -169,6 +170,11 @@ function CandidatesPageInner() {
                     )}
                   </div>
                   <div className="flex gap-2 pt-2 border-t border-border">
+                    <Button asChild variant="default" size="sm" className="flex-1 min-h-[44px] sm:min-h-8" aria-label={`View ${c.fullName} details`}>
+                      <Link href={`/admin/candidates/${c.id}`}>
+                        <Eye className="h-3.5 w-3.5" /> View
+                      </Link>
+                    </Button>
                     <Button asChild variant="outline" size="sm" className="flex-1 min-h-[44px] sm:min-h-8" aria-label={`Call ${c.fullName}`}>
                       <a href={`tel:${c.mobile.replace(/\s/g, '')}`}>
                         <Phone className="h-3.5 w-3.5" /> Call

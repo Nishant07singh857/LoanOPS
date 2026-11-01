@@ -8,7 +8,7 @@ import {
   ArrowLeft, User, Phone, Mail, MapPin, Building2, MessageCircle,
   Banknote, Handshake, AlertTriangle, Calendar, Clock,
   ScrollText, ChevronRight, Send, Plus, CheckCircle2, XCircle, History,
-  Receipt, Upload, ShieldCheck,
+  Receipt, Upload, ShieldCheck, FileText, LifeBuoy, Bell,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -110,6 +110,31 @@ interface CandidateDetail {
     receiptNumber?: string | null
     reference?: string | null
   }>
+  applications: Array<{
+    id: string
+    applicationNumber: string
+    principalAmount: string
+    purpose: string
+    status: string
+    submittedAt?: string | null
+    createdAt: string
+  }>
+  supportTickets: Array<{
+    id: string
+    ticketNumber: string
+    category: string
+    subject: string
+    status: string
+    createdAt: string
+  }>
+  reminders: Array<{
+    id: string
+    loanNumber: string
+    stage: string
+    channel: string
+    status: string
+    createdAt: string
+  }>
   kyc: any | null
   createdAt: string
 }
@@ -180,7 +205,7 @@ export default function AgentCandidateDetailPage() {
   const [presetInstallment, setPresetInstallment] = React.useState<number | null>(null)
   const [presetAmountPaise, setPresetAmountPaise] = React.useState<number | null>(null)
 
-  const { data: c, isLoading } = useQuery({
+  const { data: c, isLoading, isError, refetch } = useQuery({
     queryKey: ['agent-candidate', candidateId],
     queryFn: () => api.get<CandidateDetail>(`/api/agent/candidates/${candidateId}`),
     enabled: !!candidateId,
@@ -254,11 +279,23 @@ export default function AgentCandidateDetailPage() {
       </div>
 
       {isLoading ? (
-        <div className="space-y-4">
+        <div className="space-y-4" role="status" aria-label="Loading candidate details">
           <Skeleton className="h-32 w-full" />
           <Skeleton className="h-12 w-full" />
           <Skeleton className="h-64 w-full" />
         </div>
+      ) : isError ? (
+        <Card className="border-destructive/40 bg-destructive/5 shadow-premium">
+          <CardContent className="p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-destructive">Failed to load candidate details</p>
+              <p className="text-xs text-muted-foreground mt-0.5">The candidate could not be loaded. Please try again.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => refetch()} className="min-h-[44px] sm:min-h-8">
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
       ) : !c ? (
         <EmptyState
           icon={<User className="h-6 w-6" />}
@@ -345,6 +382,7 @@ export default function AgentCandidateDetailPage() {
               <TabsTrigger value="ptp">PTP</TabsTrigger>
               <TabsTrigger value="history">History</TabsTrigger>
               <TabsTrigger value="escalations">Escalations</TabsTrigger>
+              <TabsTrigger value="support">Support</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-4">
@@ -477,6 +515,71 @@ export default function AgentCandidateDetailPage() {
 
             <TabsContent value="escalations" className="space-y-4">
               <EscalationSection candidateId={c.id} loanId={loan?.id} escalations={escs} />
+            </TabsContent>
+
+            <TabsContent value="support" className="space-y-4">
+              <Card className="shadow-premium">
+                <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><FileText className="h-4 w-4" /> Applications</CardTitle></CardHeader>
+                <CardContent>
+                  {(c.applications ?? []).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No applications submitted by this candidate.</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {(c.applications ?? []).map((a) => (
+                        <li key={a.id} className="flex items-start justify-between gap-2 border-b border-border pb-3 last:border-0 last:pb-0">
+                          <div>
+                            <p className="text-sm font-medium tabular-nums">{formatPaiseToINR(a.principalAmount)} <span className="text-muted-foreground font-normal">· {a.purpose}</span></p>
+                            <p className="text-xs text-muted-foreground mt-0.5"><span className="font-mono">{a.applicationNumber}</span> · {fmtDate(a.submittedAt ?? a.createdAt)}</p>
+                          </div>
+                          <StatusBadge variant={a.status}>{formatStatus(a.status)}</StatusBadge>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-premium">
+                <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><LifeBuoy className="h-4 w-4" /> Support Tickets</CardTitle></CardHeader>
+                <CardContent>
+                  {(c.supportTickets ?? []).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No support tickets raised by this candidate.</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {(c.supportTickets ?? []).map((t) => (
+                        <li key={t.id} className="flex items-start justify-between gap-2 border-b border-border pb-3 last:border-0 last:pb-0">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{t.subject}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5"><span className="font-mono">{t.ticketNumber}</span> · {t.category} · {fmtDate(t.createdAt)}</p>
+                          </div>
+                          <StatusBadge variant={t.status}>{formatStatus(t.status)}</StatusBadge>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-premium">
+                <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Bell className="h-4 w-4" /> Reminder History</CardTitle></CardHeader>
+                <CardContent>
+                  {(c.reminders ?? []).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No reminders have been sent to this candidate yet.</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {(c.reminders ?? []).map((r) => (
+                        <li key={r.id} className="flex items-start justify-between gap-2 border-b border-border pb-3 last:border-0 last:pb-0">
+                          <div>
+                            <p className="text-sm font-medium">{formatStatus(r.stage)} <span className="text-muted-foreground font-normal">via {formatStatus(r.channel)}</span></p>
+                            <p className="text-xs text-muted-foreground mt-0.5">Loan {r.loanNumber} · {fmtDate(r.createdAt)}</p>
+                          </div>
+                          <StatusBadge variant={r.status}>{formatStatus(r.status)}</StatusBadge>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
           </Tabs>
 
