@@ -25,7 +25,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import { PaginationControls } from '@/components/ui/pagination-controls'
 import { api } from '@/lib/api-client'
-import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
+import { formatPaiseToINR, formatPaiseToINRShort, pluralize } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
 interface LoanRow {
@@ -143,7 +143,7 @@ export default function DisbursementsPage() {
         <Card className="shadow-premium border-l-4 border-l-warning">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2"><Clock className="h-4 w-4" /> Pending Disbursements</CardTitle>
-            <CardDescription>{pending.length} loans awaiting disbursement</CardDescription>
+            <CardDescription>{pluralize(pending.length, 'loan')} awaiting disbursement</CardDescription>
           </CardHeader>
           <CardContent>
             {pendingLoading ? (

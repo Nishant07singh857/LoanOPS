@@ -154,7 +154,7 @@ export default function FairPracticesPage() {
                 Report any violation immediately to our Nodal Grievance Officer: {COMPLIANCE_CONFIG.grievanceOfficer.email}
               </span>
               <Button size="sm" variant="outline" asChild className="h-8 text-xs">
-                <Link href="/grievance">Lodge a Complaint &rarr;</Link>
+                <Link href="/grievance">Grievance Redressal &rarr;</Link>
               </Button>
             </div>
           </CardContent>

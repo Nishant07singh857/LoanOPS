@@ -22,9 +22,9 @@ import { toast } from 'sonner'
 
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
-import { generateSchedulePreview, calculateInstallmentsFromTenure, type ScheduleInput, type InterestType, type RepaymentFrequency } from '@/lib/financial-engine'
+import { generateSchedulePreview, calculateInstallmentsFromTenure, frequencyPeriodNoun, frequencyAdjective, type ScheduleInput, type InterestType, type RepaymentFrequency } from '@/lib/financial-engine'
 import { QRCodeSVG } from 'qrcode.react'
-import { formatPaiseToINR, formatBpsToPercent, parseDisplayPaise } from '@/lib/money'
+import { formatPaiseToINR, formatBpsToPercent, parseDisplayPaise, pluralize } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
 interface CandidateRow {
@@ -45,7 +45,7 @@ export default function CreateLoanPage() {
   const [interestType, setInterestType] = React.useState<InterestType>('PERCENTAGE')
   const [rateBps, setRateBps] = React.useState('') // input in percent, stored as bps
   const [fixedInterest, setFixedInterest] = React.useState('') // input in rupees
-  const [frequency, setFrequency] = React.useState<RepaymentFrequency>('WEEKLY')
+  const [frequency, setFrequency] = React.useState<RepaymentFrequency>('MONTHLY')
   const [tenureMonths, setTenureMonths] = React.useState('12')
   const [firstDueDate, setFirstDueDate] = React.useState('')
   const [processingFee, setProcessingFee] = React.useState('')
@@ -293,7 +293,7 @@ export default function CreateLoanPage() {
 
                 {interestType === 'PERCENTAGE' && (
                   <div className="mt-2">
-                    <Label htmlFor="rate">Interest Rate (% per period)</Label>
+                    <Label htmlFor="rate">Interest Rate (% per {frequencyPeriodNoun(frequency)})</Label>
                     <div className="relative mt-1.5">
                       <Input id="rate" value={rateBps} onChange={(e) => setRateBps(e.target.value)} placeholder="18" type="text" inputMode="decimal" />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">%</span>
@@ -332,7 +332,7 @@ export default function CreateLoanPage() {
                   <div>
                     <Label htmlFor="tenure">Tenure in Months</Label>
                     <Input id="tenure" value={tenureMonths} onChange={(e) => setTenureMonths(e.target.value)} type="number" min={1} />
-                    <p className="text-xs text-muted-foreground mt-1">Calculates to {installmentsNum} {frequency.toLowerCase()} installments</p>
+                    <p className="text-xs text-muted-foreground mt-1">Calculates to {pluralize(installmentsNum, `${frequencyAdjective(frequency)} installment`)}</p>
                   </div>
                   <div>
                     <Label htmlFor="firstDue">First Due Date</Label>
@@ -387,11 +387,12 @@ export default function CreateLoanPage() {
                   {preview ? formatPaiseToINR(Number(preview.installmentAmount)) : '—'}
                 </p>
                 <p className="text-xs opacity-90 mt-1">
-                  {installmentsNum} {frequency.toLowerCase()} installments
+                  {pluralize(installmentsNum, `${frequencyAdjective(frequency)} installment`)}
                 </p>
               </div>
               <div className="space-y-2">
                 <Row label="Principal" value={principalPaise > 0 ? formatPaiseToINR(principalPaise) : '—'} />
+                <Row label="Interest Rate" value={interestType === 'PERCENTAGE' ? `${Number(rateBps) || 0}% per ${frequencyPeriodNoun(frequency)}` : interestType === 'FIXED' ? `${formatPaiseToINR(fixedInterestPaise)} (Fixed)` : '0% (No Interest)'} />
                 <Row label="Frequency" value={frequency.charAt(0) + frequency.slice(1).toLowerCase()} />
                 <Row label="Installments" value={String(installmentsNum)} />
               </div>

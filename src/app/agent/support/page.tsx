@@ -19,6 +19,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
+import { pluralize } from '@/lib/money'
 import { api, ApiRequestError } from '@/lib/api-client'
 
 interface Ticket {
@@ -75,7 +76,7 @@ export default function AgentSupportPage() {
         <Card className="shadow-premium">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2"><LifeBuoy className="h-4 w-4" /> My Support Tickets</CardTitle>
-            <CardDescription className="text-xs">{tickets.length} tickets · {activeCount} active</CardDescription>
+            <CardDescription className="text-xs">{pluralize(tickets.length, 'ticket')} · {activeCount} active</CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? (

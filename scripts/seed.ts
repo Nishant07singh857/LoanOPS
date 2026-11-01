@@ -9,11 +9,12 @@
 // Accounts created: owner@loanops.in (OWNER), agent@loanops.in and
 // agent2@loanops.in (AGENT), and Priya Sharma (CANDIDATE, mobile login).
 
-import { PrismaClient, UserRole, InterestType, RepaymentFrequency, ApplicationStatus, LoanStatus, InstallmentStatus, PaymentMethod, PaymentStatus, PtpStatus, EscalationReason, EscalationStatus, TaskStatus, TaskPriority, AuditAction, NotificationType, DocumentType } from '@prisma/client'
+import { PrismaClient, UserRole, InterestType, RepaymentFrequency, ApplicationStatus, LoanStatus, InstallmentStatus, PaymentMethod, PaymentStatus, PtpStatus, EscalationReason, EscalationStatus, TaskStatus, TaskPriority, AuditAction, NotificationType, DocumentType, DisbursementMethod, DisbursementStatus } from '@prisma/client'
 import { randomBytes } from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import { encryptPII } from '../src/lib/server/crypto'
 import { generateSchedule } from '../src/lib/server/financial'
+import { postLedger, ACCOUNTS } from '../src/lib/server/ledger'
 import { maskAadhaar, maskPan } from '../src/lib/utils'
 
 // --- Safety: seed only against DATABASE_URL_TEST, never the main DB ---
@@ -82,6 +83,32 @@ async function main() {
   }
 
   console.log('🌱 Seeding database...')
+
+  // --- Story dates, relative to the seed-run date ---
+  // The seeded story used to be pinned to fixed 2024 dates, so a fresh
+  // demo showed a loan "772 days overdue" and a payment dated the day the
+  // seed ran. All story dates now anchor to the run date: the loan was
+  // disbursed ~5 weeks ago, installment #1 was paid on its due date,
+  // installment #2 fell due a couple of days ago (recently overdue), and
+  // the PTP promise lands a few days out. Amounts/terms are unchanged.
+  const startOfDay = (d: Date) => {
+    const x = new Date(d)
+    x.setHours(0, 0, 0, 0)
+    return x
+  }
+  const daysAgo = (n: number) => {
+    const d = startOfDay(new Date())
+    d.setDate(d.getDate() - n)
+    return d
+  }
+  const daysFromNow = (n: number) => {
+    const d = startOfDay(new Date())
+    d.setDate(d.getDate() + n)
+    return d
+  }
+  const disbursedAt2 = daysAgo(35)
+  const firstDue2 = daysAgo(32) // installment #1 due (and paid) here
+  const appliedAt2 = daysAgo(36) // app-002 submitted/reviewed/accepted
 
   // --- Organization ---
   const org = await db.organization.upsert({
@@ -340,6 +367,7 @@ By accepting this Agreement, the Borrower confirms that all information provided
     where: { applicationNumber: 'APP-2024-1024' },
     update: {
       kycPan: encryptPII('ABCDP1234E'),
+      firstDueDate: daysFromNow(30),
     },
     create: {
       id: 'app-001',
@@ -354,7 +382,7 @@ By accepting this Agreement, the Borrower confirms that all information provided
       frequency: RepaymentFrequency.MONTHLY,
       tenureCount: 12,
       installments: 12,
-      firstDueDate: new Date('2024-09-20'),
+      firstDueDate: daysFromNow(30),
       processingFee: 75000,
       otherFees: 0,
       status: ApplicationStatus.SUBMITTED,
@@ -372,6 +400,10 @@ By accepting this Agreement, the Borrower confirms that all information provided
     where: { applicationNumber: 'APP-2024-0892' },
     update: {
       kycPan: encryptPII('BPMPR5678F'),
+      firstDueDate: firstDue2,
+      agreementAcceptedAt: appliedAt2,
+      submittedAt: appliedAt2,
+      reviewedAt: appliedAt2,
     },
     create: {
       id: 'app-002',
@@ -386,7 +418,7 @@ By accepting this Agreement, the Borrower confirms that all information provided
       frequency: RepaymentFrequency.MONTHLY,
       tenureCount: 12,
       installments: 12,
-      firstDueDate: new Date('2024-08-20'),
+      firstDueDate: firstDue2,
       processingFee: 75000,
       otherFees: 0,
       status: ApplicationStatus.APPROVED,
@@ -394,9 +426,9 @@ By accepting this Agreement, the Borrower confirms that all information provided
       kycStatus: 'VERIFIED',
       agreementTemplateId: agreement.id,
       agreementVersion: '3.1',
-      agreementAcceptedAt: new Date('2024-08-12'),
-      submittedAt: new Date('2024-08-12'),
-      reviewedAt: new Date('2024-08-12'),
+      agreementAcceptedAt: appliedAt2,
+      submittedAt: appliedAt2,
+      reviewedAt: appliedAt2,
       reviewedById: owner.id,
       reviewNotes: 'KYC verified, income sufficient, low obligations.',
     },
@@ -421,7 +453,7 @@ By accepting this Agreement, the Borrower confirms that all information provided
     fixedInterestPaise: BigInt(0),
     frequency: RepaymentFrequency.MONTHLY,
     installments: installments2,
-    firstDueDate: new Date('2024-08-20'),
+    firstDueDate: firstDue2,
     processingFeePaise: BigInt(processingFee2),
     otherFeesPaise: BigInt(0),
   })
@@ -440,7 +472,7 @@ By accepting this Agreement, the Borrower confirms that all information provided
     interestRate: interestRate2,
     frequency: 'MONTHLY',
     installments: installments2,
-    firstDueDate: new Date('2024-08-20').toISOString(),
+    firstDueDate: firstDue2.toISOString(),
     finalDueDate: schedule2.finalDueDate.toISOString(),
     processingFee: processingFee2,
     otherFees: 0,
@@ -450,7 +482,20 @@ By accepting this Agreement, the Borrower confirms that all information provided
 
   const loan2 = await db.loan.upsert({
     where: { loanNumber: 'LON-2024-0892' },
-    update: {},
+    // Refresh the story dates/derived totals on re-seed so an existing
+    // database converges to the same coherent state as a fresh one.
+    update: {
+      firstDueDate: firstDue2,
+      finalDueDate: schedule2.finalDueDate,
+      totalRepayable: totalRepayable2,
+      installmentAmount: installmentAmount2,
+      termsSnapshot,
+      disbursedAt: disbursedAt2,
+      outstandingPrincipal: outstandingPrincipal2,
+      outstandingInterest: outstandingInterest2,
+      outstandingFees: outstandingFees2,
+      totalCollected: totalCollected2,
+    },
     create: {
       id: 'loan-001',
       organizationId: org.id,
@@ -462,7 +507,7 @@ By accepting this Agreement, the Borrower confirms that all information provided
       interestRate: interestRate2,
       frequency: RepaymentFrequency.MONTHLY,
       installments: installments2,
-      firstDueDate: new Date('2024-08-20'),
+      firstDueDate: firstDue2,
       finalDueDate: schedule2.finalDueDate,
       processingFee: processingFee2,
       otherFees: 0,
@@ -470,7 +515,7 @@ By accepting this Agreement, the Borrower confirms that all information provided
       installmentAmount: installmentAmount2,
       termsSnapshot,
       status: LoanStatus.ACTIVE,
-      disbursedAt: new Date('2024-08-12'),
+      disbursedAt: disbursedAt2,
       outstandingPrincipal: outstandingPrincipal2,
       outstandingInterest: outstandingInterest2,
       outstandingFees: outstandingFees2,
@@ -479,36 +524,44 @@ By accepting this Agreement, the Borrower confirms that all information provided
   })
 
   // --- Generate schedule for loan-001 (12 monthly installments, from the engine) ---
+  // Statuses mirror what the app's own overdue sweep would produce today:
+  // #1 PAID on its due date; any later installment whose due date has
+  // passed is OVERDUE (with the relative dates above, #2 is a few days
+  // overdue — not years); the rest are UPCOMING.
+  const todayStart = startOfDay(new Date())
   for (let i = 0; i < schedule2.installments.length; i++) {
     const plan = schedule2.installments[i]
     const isPaid = i === 0
-    const isDue = i === 1
 
     const status: InstallmentStatus = isPaid
       ? InstallmentStatus.PAID
-      : isDue
-        ? InstallmentStatus.DUE
+      : plan.dueDate < todayStart
+        ? InstallmentStatus.OVERDUE
         : InstallmentStatus.UPCOMING
+
+    const installmentData = {
+      dueDate: plan.dueDate,
+      openingPrincipal: Number(plan.openingPrincipal),
+      principalComponent: Number(plan.principalComponent),
+      interestComponent: Number(plan.interestComponent),
+      feesComponent: Number(plan.feesComponent),
+      totalDue: Number(plan.totalDue),
+      closingPrincipal: Number(plan.closingPrincipal),
+      paidFees: isPaid ? Number(plan.feesComponent) : 0,
+      paidInterest: isPaid ? Number(plan.interestComponent) : 0,
+      paidPrincipal: isPaid ? Number(plan.principalComponent) : 0,
+      paidAmount: isPaid ? Number(plan.totalDue) : 0,
+      status,
+      paidAt: isPaid ? firstDue2 : null,
+    }
 
     await db.installment.upsert({
       where: { loanId_installmentNumber: { loanId: loan2.id, installmentNumber: plan.installmentNumber } },
-      update: {},
+      update: installmentData,
       create: {
         loanId: loan2.id,
         installmentNumber: plan.installmentNumber,
-        dueDate: plan.dueDate,
-        openingPrincipal: Number(plan.openingPrincipal),
-        principalComponent: Number(plan.principalComponent),
-        interestComponent: Number(plan.interestComponent),
-        feesComponent: Number(plan.feesComponent),
-        totalDue: Number(plan.totalDue),
-        closingPrincipal: Number(plan.closingPrincipal),
-        paidFees: isPaid ? Number(plan.feesComponent) : 0,
-        paidInterest: isPaid ? Number(plan.interestComponent) : 0,
-        paidPrincipal: isPaid ? Number(plan.principalComponent) : 0,
-        paidAmount: isPaid ? Number(plan.totalDue) : 0,
-        status,
-        paidAt: isPaid ? new Date('2024-08-20') : null,
+        ...installmentData,
       },
     })
   }
@@ -518,7 +571,10 @@ By accepting this Agreement, the Borrower confirms that all information provided
   // for installment #1, so it matches the installment's paid* fields exactly.
   await db.payment.upsert({
     where: { paymentNumber: 'PAY-2024-8841' },
-    update: {},
+    update: {
+      createdAt: firstDue2,
+      allocatedAt: firstDue2,
+    },
     create: {
       id: 'payment-001',
       organizationId: org.id,
@@ -533,18 +589,98 @@ By accepting this Agreement, the Borrower confirms that all information provided
       allocatedInterest: Number(firstInstallment2.interestComponent),
       allocatedPrincipal: Number(firstInstallment2.principalComponent),
       unallocated: 0,
-      allocatedAt: new Date('2024-08-20'),
+      createdAt: firstDue2,
+      allocatedAt: firstDue2,
       receiptNumber: 'RCP-2024-8841',
       idempotencyKey: 'idem-pay-001',
       providerEventId: 'evt-mock-001',
     },
   })
 
+  // --- Disbursement for loan-001 (offline, matching the audit-log story) ---
+  // The loan was ACTIVE with ₹75,000 disbursed but had NO Disbursement
+  // row, so the Disbursements page/APIs totalled ₹0 while the dashboard
+  // showed ₹75,000. The row shape mirrors the disburse route exactly.
+  const disbReference2 = `DISB-${loan2.loanNumber}`
+  await db.disbursement.upsert({
+    where: { id: 'disb-001' },
+    update: {
+      amount: principal2,
+      reference: disbReference2,
+      initiatedAt: disbursedAt2,
+      completedAt: disbursedAt2,
+    },
+    create: {
+      id: 'disb-001',
+      loanId: loan2.id,
+      method: DisbursementMethod.OFFLINE,
+      amount: principal2,
+      reference: disbReference2,
+      status: DisbursementStatus.COMPLETED,
+      initiatedById: owner.id,
+      initiatedAt: disbursedAt2,
+      completedAt: disbursedAt2,
+    },
+  })
+
+  // --- Ledger entries for the disbursement + the allocated payment ---
+  // Posted through the app's own ledger service (postLedger) with the
+  // seed's client, in exactly the shapes the disburse route and the
+  // payment-allocation service write: disbursement Dr Loans Receivable /
+  // Cr Cash (offline); payment components Dr Bank (UPI) / Cr Fee Income,
+  // Interest Income, Loans Receivable. Guarded so re-seeding does not
+  // duplicate append-only entries.
+  const existingDisbEntry = await db.ledgerEntry.findFirst({
+    where: { organizationId: org.id, type: 'DISBURSEMENT', reference: disbReference2 },
+  })
+  if (!existingDisbEntry) {
+    await postLedger(
+      {
+        organizationId: org.id,
+        loanId: loan2.id,
+        type: 'DISBURSEMENT',
+        debitAccount: ACCOUNTS.LOANS_RECEIVABLE,
+        creditAccount: ACCOUNTS.CASH,
+        amount: BigInt(principal2),
+        description: `Disbursement for ${loan2.loanNumber}`,
+        reference: disbReference2,
+      },
+      db
+    )
+  }
+  const existingPaymentEntry = await db.ledgerEntry.findFirst({
+    where: { organizationId: org.id, paymentId: 'payment-001' },
+  })
+  if (!existingPaymentEntry) {
+    const paymentLedger: Array<{ type: 'PAYMENT_FEES' | 'PAYMENT_INTEREST' | 'PAYMENT_PRINCIPAL'; creditAccount: string; amount: bigint; kind: string }> = [
+      { type: 'PAYMENT_FEES', creditAccount: ACCOUNTS.FEE_INCOME, amount: firstInstallment2.feesComponent, kind: 'fee' },
+      { type: 'PAYMENT_INTEREST', creditAccount: ACCOUNTS.INTEREST_INCOME, amount: firstInstallment2.interestComponent, kind: 'interest' },
+      { type: 'PAYMENT_PRINCIPAL', creditAccount: ACCOUNTS.LOANS_RECEIVABLE, amount: firstInstallment2.principalComponent, kind: 'principal' },
+    ]
+    for (const entry of paymentLedger) {
+      if (entry.amount <= BigInt(0)) continue
+      await postLedger(
+        {
+          organizationId: org.id,
+          loanId: loan2.id,
+          paymentId: 'payment-001',
+          type: entry.type,
+          debitAccount: ACCOUNTS.BANK,
+          creditAccount: entry.creditAccount,
+          amount: entry.amount,
+          description: `Payment ${entry.kind} allocation for payment PAY-2024-8841`,
+          reference: 'PAY-2024-8841',
+        },
+        db
+      )
+    }
+  }
+
   // --- Collection task (assigned to agent1) for next due installment ---
-  const nextDueDate = new Date('2024-09-20')
+  const nextDueDate = schedule2.installments[1].dueDate
   await db.collectionTask.upsert({
     where: { id: 'task-001' },
-    update: {},
+    update: { dueDate: nextDueDate },
     create: {
       id: 'task-001',
       organizationId: org.id,
@@ -560,17 +696,17 @@ By accepting this Agreement, the Borrower confirms that all information provided
     },
   })
 
-  // --- PTP ---
+  // --- PTP (promise a few days out, so PTP-due surfaces stay truthful) ---
   await db.ptp.upsert({
     where: { id: 'ptp-001' },
-    update: {},
+    update: { promiseDate: daysFromNow(3) },
     create: {
       id: 'ptp-001',
       candidateId: candidate2.id,
       loanId: loan2.id,
       agentId: agentUser.id,
       promisedAmount: 500000,
-      promiseDate: new Date('2024-09-25'),
+      promiseDate: daysFromNow(3),
       status: PtpStatus.ACTIVE,
       notes: 'Will pay after shop revenue comes in',
     },
@@ -598,17 +734,29 @@ By accepting this Agreement, the Borrower confirms that all information provided
         message: 'Priya Sharma submitted APP-2024-1024 for ₹75,000.',
         isRead: false,
       },
-      {
-        id: 'notif-003',
-        organizationId: org.id,
-        userId: agentUser.id,
-        type: NotificationType.COLLECTION_REMINDER,
-        title: 'Payment due reminder',
-        message: 'Rahul Verma installment #2 (₹7,437.50) due 20 Sep.',
-        isRead: false,
-      },
     ],
     skipDuplicates: true,
+  })
+
+  // notif-003 names installment #2's due date — upserted separately so a
+  // re-seed refreshes the date text to the current story timeline.
+  const installment2DueText = schedule2.installments[1].dueDate.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+  })
+  const notif3Message = `Rahul Verma installment #2 (₹${(installmentAmount2 / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) due ${installment2DueText}.`
+  await db.notification.upsert({
+    where: { id: 'notif-003' },
+    update: { message: notif3Message },
+    create: {
+      id: 'notif-003',
+      organizationId: org.id,
+      userId: agentUser.id,
+      type: NotificationType.COLLECTION_REMINDER,
+      title: 'Payment due reminder',
+      message: notif3Message,
+      isRead: false,
+    },
   })
 
   // --- Audit logs ---

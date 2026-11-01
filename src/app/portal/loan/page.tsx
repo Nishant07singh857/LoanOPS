@@ -21,6 +21,7 @@ import {
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatBpsToPercent } from '@/lib/money'
+import { frequencyPeriodNoun } from '@/lib/financial-engine'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
 import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
@@ -70,6 +71,12 @@ interface CandidateLoan {
     isActive: boolean
   } | null
   assignedAgent?: { name?: string; phone?: string | null } | null
+  draftApplication?: {
+    applicationNumber: string
+    status: string
+    kycStatus?: string | null
+  } | null
+  hasKyc?: boolean
 }
 
 function fmtDate(d?: string | null) {
@@ -164,7 +171,29 @@ export default function LoanDetailPage() {
   }
 
   if (!loan || !loan.loanNumber) {
-    const hasDraft = Boolean((loan as any)?.draftApplication)
+    const draft = loan?.draftApplication ?? null
+    const hasDraft = Boolean(draft)
+    // State-aware copy (live-audit finding A.3): a KYC-verified borrower
+    // whose application is already SUBMITTED/UNDER_REVIEW was told to
+    // "complete your KYC and agreement on the Home dashboard" — a section
+    // that does not exist for them — and the button looped back to Home.
+    // Each application state now gets its truthful status and next step.
+    const kycVerified = Boolean(loan?.hasKyc) || draft?.kycStatus === 'VERIFIED'
+    const underReview = draft?.status === 'SUBMITTED' || draft?.status === 'UNDER_REVIEW'
+    const emptyTitle = !hasDraft
+      ? 'No active loan'
+      : underReview
+        ? 'Application under review'
+        : 'Application in progress'
+    const emptyDescription = !hasDraft
+      ? 'Your loan will appear here once an application is approved and disbursed.'
+      : underReview
+        ? `Your application ${draft?.applicationNumber ?? ''} is with the lending team for review.${
+            kycVerified ? ' Your KYC is verified — nothing more is needed from you right now.' : ''
+          } You will be notified as soon as a decision is made, and the loan will appear here once it is disbursed.`
+        : draft?.status === 'INFORMATION_REQUESTED'
+          ? 'The lending team has requested more information on your application. Open it on the Home dashboard to see what is needed and respond.'
+          : 'Your application is in progress. Continue it on the Home dashboard — that is where you complete your KYC and accept the loan agreement.'
     return (
       <div className="space-y-6">
         <SectionHeading
@@ -172,21 +201,19 @@ export default function LoanDetailPage() {
           description={`Full details of your active loan with ${orgName}.`}
           icon={<Wallet className="h-5 w-5" />}
           action={
-            <Button variant="outline" size="sm" onClick={onWhatsAppAgent} className="text-info border-info/40 hover:bg-info/10">
-              <MessageCircle className="h-4 w-4" /> WhatsApp Agent
-            </Button>
+            loan?.assignedAgent?.phone ? (
+              <Button variant="outline" size="sm" onClick={onWhatsAppAgent} className="text-info border-info/40 hover:bg-info/10">
+                <MessageCircle className="h-4 w-4" /> WhatsApp Agent
+              </Button>
+            ) : undefined
           }
         />
         <EmptyState
           icon={<Wallet className="h-6 w-6" />}
-          title={hasDraft ? 'Application in progress' : 'No active loan'}
-          description={
-            hasDraft
-              ? 'You have a pending loan application. Complete your KYC and agreement on the Home dashboard.'
-              : 'Your loan will appear here once an application is approved and disbursed.'
-          }
+          title={emptyTitle}
+          description={emptyDescription}
           action={
-            hasDraft ? (
+            hasDraft && !underReview ? (
               <Button asChild size="sm">
                 <Link href="/portal">Go to Application <ChevronRight className="h-4 w-4" /></Link>
               </Button>
@@ -214,9 +241,11 @@ export default function LoanDetailPage() {
         description={`Full details of your active loan with ${orgName}.`}
         icon={<Wallet className="h-5 w-5" />}
         action={
-          <Button variant="outline" size="sm" onClick={onWhatsAppAgent} className="text-info border-info/40 hover:bg-info/10">
-            <MessageCircle className="h-4 w-4" /> WhatsApp Agent
-          </Button>
+          loan.assignedAgent?.phone ? (
+            <Button variant="outline" size="sm" onClick={onWhatsAppAgent} className="text-info border-info/40 hover:bg-info/10">
+              <MessageCircle className="h-4 w-4" /> WhatsApp Agent
+            </Button>
+          ) : undefined
         }
       />
 
@@ -297,7 +326,7 @@ export default function LoanDetailPage() {
                 <TermRow label="Principal Amount" value={formatPaiseToINR(Number(loan.principalAmount))} icon={<IndianRupee className="h-4 w-4" />} />
                 <TermRow label="Interest Type" value={loan.interestType === 'PERCENTAGE' ? 'Percentage (flat)' : loan.interestType === 'FIXED' ? 'Fixed Amount' : 'No Interest'} icon={<Percent className="h-4 w-4" />} />
                 {loan.interestType === 'PERCENTAGE' && loan.interestRate != null && (
-                  <TermRow label="Interest Rate" value={`${formatBpsToPercent(loan.interestRate)} per period`} icon={<Percent className="h-4 w-4" />} />
+                  <TermRow label="Interest Rate" value={`${formatBpsToPercent(loan.interestRate)} per ${frequencyPeriodNoun(loan.frequency)}`} icon={<Percent className="h-4 w-4" />} />
                 )}
                 {loan.interestType === 'FIXED' && loan.fixedInterest && (
                   <TermRow label="Fixed Interest" value={formatPaiseToINR(Number(loan.fixedInterest))} icon={<IndianRupee className="h-4 w-4" />} />

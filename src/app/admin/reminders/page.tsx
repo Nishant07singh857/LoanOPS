@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { BellRing, CheckCircle2, Clock3, Ban, AlertTriangle } from 'lucide-react'
+import { BellRing, CheckCircle2, Clock3, Ban, AlertTriangle, RefreshCw } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { api } from '@/lib/api-client'
+import { pluralize } from '@/lib/money'
 
 interface ReminderRow {
   id: string
@@ -61,7 +62,7 @@ export default function RemindersPage() {
     return p.toString()
   }, [page, status])
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['owner-reminders', query],
     queryFn: () => api.get<RemindersResponse>(`/api/owner/reminders?${query}`),
   })
@@ -150,7 +151,12 @@ export default function RemindersPage() {
             <EmptyState
               icon={<AlertTriangle className="h-8 w-8" />}
               title="Could not load reminders"
-              description="Please refresh the page and try again."
+              description="The request failed — your reminders are not lost. Try loading them again."
+              action={
+                <Button size="sm" variant="outline" onClick={() => refetch()}>
+                  <RefreshCw className="h-4 w-4" /> Retry
+                </Button>
+              }
             />
           ) : items.length === 0 ? (
             <EmptyState
@@ -209,7 +215,7 @@ export default function RemindersPage() {
               </div>
               <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
                 <span>
-                  {total} entr{total === 1 ? 'y' : 'ies'} · Page {page} of {totalPages}
+                  {pluralize(total, 'entry', 'entries')} · Page {page} of {totalPages}
                 </span>
                 <div className="flex gap-2">
                   <Button

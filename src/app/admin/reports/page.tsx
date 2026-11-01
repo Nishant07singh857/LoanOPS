@@ -21,7 +21,7 @@ import {
 import { StatusBadge, formatStatus } from '@/components/ui/status-badge'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
-import { formatPaiseToINR, formatPaiseToINRShort } from '@/lib/money'
+import { formatPaiseToINR, formatPaiseToINRShort, pluralize } from '@/lib/money'
 import { escapeCsvCell } from '@/lib/csv'
 import { cn } from '@/lib/utils'
 
@@ -107,7 +107,7 @@ export default function ReportsPage() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-    toast.success(`Exported ${items.length} records to CSV`)
+    toast.success(`Exported ${pluralize(items.length, 'record')} to CSV`)
   }
 
   return (

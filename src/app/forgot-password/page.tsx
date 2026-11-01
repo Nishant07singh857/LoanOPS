@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { api, ApiRequestError } from '@/lib/api-client'
+import { LegalFooter } from '@/components/legal/legal-footer'
 
 export default function ForgotPasswordPage() {
   const [identifier, setIdentifier] = React.useState('')
@@ -101,6 +102,7 @@ export default function ForgotPasswordPage() {
             )}
           </CardContent>
         </Card>
+        <LegalFooter compact className="mt-6" />
       </div>
     </div>
   )

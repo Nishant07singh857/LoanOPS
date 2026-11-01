@@ -56,7 +56,9 @@ export default function RootLayout({
             <SmoothScroll>
               {children}
             </SmoothScroll>
-            <Sonner position="top-right" richColors closeButton />
+            {/* Explicit standard duration: report-generation toasts were
+                observed lingering past the timing used elsewhere. */}
+            <Sonner position="top-right" richColors closeButton duration={4000} />
           </QueryProvider>
         </ThemeProvider>
       </body>

@@ -84,7 +84,20 @@ interface DashboardKPIs {
   pendingCashVerification: number
   brokenPtp: number
   ptpDueToday: number
+  activePtps: number
   overdueLoans: number
+}
+
+interface PtpRow {
+  id: string
+  candidateName: string
+  candidateMobile: string
+  loanNumber: string
+  agentName: string
+  promisedAmount: string
+  promiseDate: string
+  status: string
+  notes?: string | null
 }
 
 const reasonLabel: Record<string, string> = {
@@ -153,10 +166,21 @@ export default function CollectionsPage() {
     queryFn: () => api.get<{ items: EscalationRow[]; total: number }>(`/api/owner/escalations?pageSize=100&page=${escPage}`),
   })
 
-  const { data: kpis } = useQuery({
+  const { data: kpis, isLoading: kpisLoading } = useQuery({
     queryKey: ['owner-dashboard'],
     queryFn: () => api.get<DashboardKPIs>('/api/owner/dashboard'),
   })
+
+  const {
+    data: ptpData,
+    isLoading: ptpLoading,
+    isError: ptpError,
+    refetch: refetchPtps,
+  } = useQuery({
+    queryKey: ['owner-ptps'],
+    queryFn: () => api.get<{ items: PtpRow[]; total: number }>('/api/owner/ptps?status=ACTIVE&pageSize=100'),
+  })
+  const activePtps = ptpData?.items ?? []
 
   const cashCollections = cashData?.items ?? []
   const escalations = escData?.items ?? []
@@ -263,15 +287,75 @@ export default function CollectionsPage() {
           <KPICard label="Pending Cash Verify" value={String(kpis?.pendingCashVerification ?? pendingCash.length)} icon={<Clock className="h-5 w-5" />} variant="warning" />
         </StaggerItem>
         <StaggerItem>
-          <KPICard label="Broken PTP" value={String(kpis?.brokenPtp ?? 0)} icon={<XCircle className="h-5 w-5" />} variant="destructive" />
+          <KPICard label="Broken PTP" value={kpisLoading ? '—' : String(kpis?.brokenPtp ?? 0)} icon={<XCircle className="h-5 w-5" />} variant="destructive" href="/admin/collections#ptps" />
         </StaggerItem>
         <StaggerItem>
-          <KPICard label="PTP Due Today" value={String(kpis?.ptpDueToday ?? 0)} icon={<Clock className="h-5 w-5" />} variant="info" />
+          <KPICard label="PTP Due Today" value={kpisLoading ? '—' : String(kpis?.ptpDueToday ?? 0)} icon={<Clock className="h-5 w-5" />} variant="info" href="/admin/collections#ptps" />
         </StaggerItem>
         <StaggerItem>
-          <KPICard label="Overdue Loans" value={String(kpis?.overdueLoans ?? 0)} icon={<AlertTriangle className="h-5 w-5" />} variant="destructive" />
+          <KPICard label="Overdue Loans" value={kpisLoading ? '—' : String(kpis?.overdueLoans ?? 0)} icon={<AlertTriangle className="h-5 w-5" />} variant="destructive" href="/admin/loans?status=OVERDUE" />
         </StaggerItem>
       </StaggerContainer>
+
+      {/* Active PTPs — the list behind the PTP counters above (they were
+          dead counters before: no way to see WHICH promises were due). */}
+      <FadeIn>
+        <Card className="shadow-premium" id="ptps">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2"><Clock className="h-4 w-4" /> Promises to Pay (PTP)</CardTitle>
+            <CardDescription>{ptpLoading ? 'Loading…' : `${activePtps.length} active · ${kpis?.ptpDueToday ?? 0} due today`}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {ptpLoading ? (
+              <div className="space-y-3" role="status" aria-label="Loading PTPs">
+                {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+              </div>
+            ) : ptpError ? (
+              <div className="py-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-destructive">Failed to load PTPs</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Could not fetch promise-to-pay records. Please try again.</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => refetchPtps()} className="min-h-[44px] sm:min-h-8">
+                  Retry
+                </Button>
+              </div>
+            ) : activePtps.length === 0 ? (
+              <EmptyState icon={<Clock className="h-6 w-6" />} title="No active PTPs" description="Promises to pay recorded by agents will appear here." />
+            ) : (
+              <div className="overflow-x-auto table-scroll w-full">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Borrower</TableHead>
+                      <TableHead>Loan</TableHead>
+                      <TableHead>Agent</TableHead>
+                      <TableHead className="text-right">Promised</TableHead>
+                      <TableHead>Promise Date</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {activePtps.map((p) => (
+                      <TableRow key={p.id}>
+                        <TableCell>
+                          <p className="font-medium">{p.candidateName}</p>
+                          <p className="text-xs text-muted-foreground">{p.candidateMobile}</p>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">{p.loanNumber}</TableCell>
+                        <TableCell>{p.agentName}</TableCell>
+                        <TableCell className="text-right tabular-nums font-medium">{formatPaiseToINR(Number(p.promisedAmount))}</TableCell>
+                        <TableCell>{fmtDate(p.promiseDate)}</TableCell>
+                        <TableCell><StatusBadge variant={p.status} /></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </FadeIn>
 
       {/* Agent Unverified Cash in Hand */}
       <FadeIn>

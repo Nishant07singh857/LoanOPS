@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
-import { formatPaiseToINR } from '@/lib/money'
+import { formatPaiseToINR, pluralize } from '@/lib/money'
 import { openWhatsApp } from '@/lib/whatsapp'
 import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
@@ -215,7 +215,7 @@ export default function PaymentsPage() {
                   </div>
                   <div>
                     <CardTitle className="text-base">Payment History</CardTitle>
-                    <CardDescription className="text-xs">{payments.length} payments</CardDescription>
+                    <CardDescription className="text-xs">{pluralize(payments.length, 'payment')}</CardDescription>
                   </div>
                 </div>
                 <Button asChild variant="ghost" size="sm">

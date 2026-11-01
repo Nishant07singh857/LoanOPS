@@ -84,14 +84,33 @@ export default function NotificationsPage() {
 
   const markReadMutation = useMutation({
     mutationFn: (id: string) => api.post('/api/candidate/notifications', { id }),
+    // Optimistic: the row and unread count update on the click itself
+    // (same pattern as the agent/admin notification pages).
+    onMutate: async (id: string) => {
+      await queryClient.cancelQueries({ queryKey: ['candidate-notifications-list'] })
+      const prev = queryClient.getQueryData<{ items: NotificationRow[]; total: number; unreadCount: number }>(['candidate-notifications-list'])
+      queryClient.setQueryData<{ items: NotificationRow[]; total: number; unreadCount: number }>(['candidate-notifications-list'], (old) => {
+        if (!old) return old
+        const wasUnread = old.items.some((n) => n.id === id && !n.isRead)
+        return {
+          ...old,
+          items: old.items.map((n) => (n.id === id ? { ...n, isRead: true } : n)),
+          unreadCount: Math.max(0, (old.unreadCount ?? old.items.filter((n) => !n.isRead).length) - (wasUnread ? 1 : 0)),
+        }
+      })
+      return { prev }
+    },
     onSuccess: () => {
       toast.success('Marked as read')
+    },
+    onError: (_err: unknown, _id: string, context: { prev?: { items: NotificationRow[]; total: number; unreadCount: number } } | undefined) => {
+      if (context?.prev) queryClient.setQueryData(['candidate-notifications-list'], context.prev)
+      toast.error('Could not mark as read', { description: 'Please try again.' })
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['candidate-notifications-list'] })
       queryClient.invalidateQueries({ queryKey: ['candidate-notifications'] })
       queryClient.invalidateQueries({ queryKey: ['candidate-notifications-count'] })
-    },
-    onError: () => {
-      toast.error('Could not mark as read', { description: 'Please try again.' })
     },
   })
 
@@ -124,7 +143,7 @@ export default function NotificationsPage() {
     <div className="space-y-6">
       <SectionHeading
         title="Notifications"
-        description={`${unreadCount} unread · ${items.length} total`}
+        description={isLoading ? 'Loading…' : `${unreadCount} unread · ${items.length} total`}
         icon={<Bell className="h-5 w-5" />}
         action={
           <Button variant="outline" size="sm" onClick={onMarkAllRead} disabled={unreadCount === 0}>

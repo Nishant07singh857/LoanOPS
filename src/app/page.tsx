@@ -166,12 +166,7 @@ function LandingInner() {
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.1 + idx * 0.08, ease: 'easeOut' }}
-              className="group cursor-pointer transition-transform duration-200 sm:hover:-translate-y-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-2xl"
-              role="button"
-              tabIndex={0}
-              aria-label={`Open ${p.title}`}
-              onClick={() => enter(p.role)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); enter(p.role) } }}
+              className="group transition-transform duration-200 sm:hover:-translate-y-1 rounded-2xl"
             >
               <Card className={`relative overflow-hidden rounded-2xl border bg-gradient-to-br ${p.gradient} h-full transition-shadow hover:shadow-glow`}>
                 <CardContent className="p-6">

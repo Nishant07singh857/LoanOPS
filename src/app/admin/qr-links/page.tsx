@@ -27,7 +27,7 @@ import {
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatBpsToPercent, parseDisplayPaise } from '@/lib/money'
-import { generateSchedulePreview, type RepaymentFrequency } from '@/lib/financial-engine'
+import { generateSchedulePreview, frequencyPeriodNoun, type RepaymentFrequency } from '@/lib/financial-engine'
 import { cn } from '@/lib/utils'
 
 interface QrLinkRow {
@@ -215,7 +215,7 @@ export default function QrLinksPage() {
         <Card className="shadow-premium">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">QR Links</CardTitle>
-            <CardDescription>{links.length} total</CardDescription>
+            <CardDescription>{isLoading ? 'Loading…' : `${links.length} total`}</CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -422,7 +422,7 @@ export default function QrLinksPage() {
                 </div>
               </div>
               <div>
-                <Label htmlFor="ratePercent">Interest Rate (% per period)</Label>
+                <Label htmlFor="ratePercent">Interest Rate (% per {frequencyPeriodNoun(preFreq)})</Label>
                 <div className="relative mt-1">
                   <Input id="ratePercent" value={preRatePercent} onChange={(e) => setPreRatePercent(e.target.value)} placeholder="18" className="pr-8 h-11" type="text" inputMode="decimal" />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">%</span>

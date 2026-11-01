@@ -43,7 +43,7 @@ export default function TermsPage() {
               Legal Review &amp; Regulatory Partnership Notice
             </p>
             <p className="text-muted-foreground leading-relaxed">
-              These Terms &amp; Conditions govern the use of the {COMPLIANCE_CONFIG.companyName} platform and offline/online repayment workflows. All credit facilities are subject to a signed Loan Agreement and Key Facts Statement (KFS) issued in compliance with RBI norms ({COMPLIANCE_CONFIG.rbiRegistration}).
+              These Terms &amp; Conditions govern the use of the {COMPLIANCE_CONFIG.companyName} platform and offline/online repayment workflows. All credit facilities are subject to a signed Loan Agreement and Key Facts Statement (KFS) issued in compliance with RBI norms{COMPLIANCE_CONFIG.rbiRegistration ? ` (${COMPLIANCE_CONFIG.rbiRegistration})` : ''}.
             </p>
           </div>
         </div>

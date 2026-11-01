@@ -41,10 +41,12 @@ test.describe('Create Loan Application', () => {
     
     // Choose Interest Type
     await page.getByText('Percentage', { exact: true }).click();
-    await page.getByLabel('Interest Rate (% per period)').fill('2');
+    await page.getByLabel('Interest Rate (% per month)').fill('2');
     
-    // Repayment Frequency
-    await page.getByText('Monthly', { exact: true }).click();
+    // Repayment Frequency (scoped to the radio: the Live Preview's
+    // Frequency row also renders the word "Monthly" now that Monthly is
+    // the default frequency)
+    await page.getByRole('radio', { name: 'Monthly' }).click();
     await page.getByLabel('Tenure in Months').fill('12');
 
     // Submit

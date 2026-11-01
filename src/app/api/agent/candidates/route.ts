@@ -40,7 +40,20 @@ export const GET = apiHandler(async (req: NextRequest) => {
       include: {
         loans: {
           where: { status: 'ACTIVE' },
-          select: { id: true, loanNumber: true, outstandingPrincipal: true, schedule: { where: { status: 'OVERDUE' } } },
+          select: {
+            id: true,
+            loanNumber: true,
+            outstandingPrincipal: true,
+            // All unpaid installments, earliest first: [0] is the next due
+            // (the WhatsApp template flow fills {amount}/{dueDate} from the
+            // borrower's actual record — it previously hard-coded "soon"),
+            // and the OVERDUE subset gives the overdue count below.
+            schedule: {
+              where: { status: { not: 'PAID' } },
+              orderBy: { dueDate: 'asc' },
+              select: { totalDue: true, dueDate: true, status: true },
+            },
+          },
         },
         ptps: { where: { status: 'ACTIVE' }, orderBy: { createdAt: 'desc' }, take: 1 },
         followUps: { orderBy: { contactDate: 'desc' }, take: 1 },
@@ -52,8 +65,9 @@ export const GET = apiHandler(async (req: NextRequest) => {
 
   return success({
     items: items.map((c) => {
-      const overdueInstallments = c.loans.reduce((s, l) => s + l.schedule.length, 0)
+      const overdueInstallments = c.loans.reduce((s, l) => s + l.schedule.filter((i) => i.status === 'OVERDUE').length, 0)
       const totalOutstanding = c.loans.reduce((s, l) => s + l.outstandingPrincipal, 0)
+      const nextDue = c.loans.find((l) => l.schedule.length > 0)?.schedule[0] ?? null
       return {
         id: c.id,
         fullName: c.fullName,
@@ -67,6 +81,8 @@ export const GET = apiHandler(async (req: NextRequest) => {
         outstanding: String(totalOutstanding),
         overdueInstallments,
         activeLoanNumbers: c.loans.map((l) => l.loanNumber),
+        nextDueAmount: nextDue ? String(nextDue.totalDue) : null,
+        nextDueDate: nextDue ? nextDue.dueDate : null,
         activePtp: c.ptps[0] ? {
           id: c.ptps[0].id,
           promisedAmount: String(c.ptps[0].promisedAmount),

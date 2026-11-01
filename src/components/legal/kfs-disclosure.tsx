@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { FileText, Info, ShieldCheck, Clock, Banknote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { formatPaiseToINR } from '@/lib/money'
@@ -47,6 +48,7 @@ export function KfsDisclosure({
   compact = false,
   className,
 }: KfsDisclosureProps) {
+  const pathname = usePathname()
   const principal = toSafePaise(principalPaise)
   const procFee = toSafePaise(processingFeePaise)
   const otherFee = toSafePaise(otherFeesPaise)
@@ -250,11 +252,19 @@ export function KfsDisclosure({
         <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground pt-1">
           <span className="inline-flex items-center gap-1">
             <Info className="h-3.5 w-3.5 text-primary" />
-            Grievance Officer: {COMPLIANCE_CONFIG.grievanceOfficer.name} ({COMPLIANCE_CONFIG.grievanceOfficer.email})
+            Grievance Officer:{' '}
+            {COMPLIANCE_CONFIG.grievanceOfficer.name
+              ? `${COMPLIANCE_CONFIG.grievanceOfficer.name} (${COMPLIANCE_CONFIG.grievanceOfficer.email})`
+              : COMPLIANCE_CONFIG.grievanceOfficer.email}
           </span>
-          <Link href="/kfs" className="text-primary hover:underline font-medium">
-            Full KFS &amp; APR Guide &rarr;
-          </Link>
+          {/* The guide link targets /kfs itself — rendering it on /kfs made
+              it a self-link that opened the same page in place. Hide it
+              there; everywhere else it is a genuine cross-link. */}
+          {pathname !== '/kfs' && (
+            <Link href="/kfs" className="text-primary hover:underline font-medium">
+              Full KFS &amp; APR Guide &rarr;
+            </Link>
+          )}
         </div>
       </CardContent>
     </Card>

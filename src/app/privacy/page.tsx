@@ -44,7 +44,16 @@ export default function PrivacyPolicyPage() {
               Regulatory &amp; Legal Review Notice (DPDP Act 2023 &amp; RBI Digital Lending)
             </p>
             <p className="text-muted-foreground leading-relaxed">
-              This Privacy Policy template is structured for compliance with India&apos;s Digital Personal Data Protection (DPDP) Act, 2023 and RBI Digital Lending Guidelines. Before commercial launch, ensure your company CIN ({COMPLIANCE_CONFIG.cinNumber}), Regulated Entity / NBFC registration ({COMPLIANCE_CONFIG.rbiRegistration}), and Nodal Officer details are configured in environment variables and vetted by qualified Indian legal counsel.
+              This Privacy Policy is structured for compliance with India&apos;s Digital Personal Data Protection (DPDP) Act, 2023 and RBI Digital Lending Guidelines.
+              {(COMPLIANCE_CONFIG.cinNumber || COMPLIANCE_CONFIG.rbiRegistration) && (
+                <>
+                  {' '}
+                  {COMPLIANCE_CONFIG.cinNumber && <>CIN: {COMPLIANCE_CONFIG.cinNumber}. </>}
+                  {COMPLIANCE_CONFIG.rbiRegistration && (
+                    <>Regulated Entity / NBFC registration: {COMPLIANCE_CONFIG.rbiRegistration}.</>
+                  )}
+                </>
+              )}
             </p>
           </div>
         </div>
@@ -213,11 +222,15 @@ export default function PrivacyPolicyPage() {
               For any privacy inquiries, consent withdrawal, or DPDP Act rights requests, contact:
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 text-muted-foreground">
-              <p><strong className="text-foreground">Name:</strong> {COMPLIANCE_CONFIG.grievanceOfficer.name}</p>
+              {COMPLIANCE_CONFIG.grievanceOfficer.name && (
+                <p><strong className="text-foreground">Name:</strong> {COMPLIANCE_CONFIG.grievanceOfficer.name}</p>
+              )}
               <p><strong className="text-foreground">Designation:</strong> {COMPLIANCE_CONFIG.grievanceOfficer.designation}</p>
               <p><strong className="text-foreground">Email:</strong> {COMPLIANCE_CONFIG.grievanceOfficer.email}</p>
               <p><strong className="text-foreground">Phone:</strong> {COMPLIANCE_CONFIG.grievanceOfficer.phone}</p>
-              <p className="sm:col-span-2"><strong className="text-foreground">Address:</strong> {COMPLIANCE_CONFIG.grievanceOfficer.address}</p>
+              {COMPLIANCE_CONFIG.grievanceOfficer.address && (
+                <p className="sm:col-span-2"><strong className="text-foreground">Address:</strong> {COMPLIANCE_CONFIG.grievanceOfficer.address}</p>
+              )}
             </div>
             <p className="text-xs text-muted-foreground pt-2">
               If your privacy grievance is not resolved within {COMPLIANCE_CONFIG.grievanceOfficer.resolutionTimelineDays} days, you have the right to approach the <strong>Data Protection Board of India</strong> established under the DPDP Act, 2023.

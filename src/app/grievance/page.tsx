@@ -74,7 +74,11 @@ export default function GrievancePage() {
           <CardContent className="p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wider">Officer Name</p>
-              <p className="font-semibold text-foreground mt-0.5">{grievanceOfficer.name}</p>
+              {grievanceOfficer.name ? (
+                <p className="font-semibold text-foreground mt-0.5">{grievanceOfficer.name}</p>
+              ) : (
+                <p className="text-sm text-muted-foreground mt-0.5">Reach the officer directly via the contact details alongside.</p>
+              )}
               <p className="text-xs text-muted-foreground mt-0.5">{grievanceOfficer.designation}</p>
             </div>
             <div>
@@ -90,13 +94,15 @@ export default function GrievancePage() {
                 <span className="font-medium">{grievanceOfficer.phone}</span>
               </p>
             </div>
-            <div className="sm:col-span-2 pt-2 border-t border-border/50">
-              <p className="text-xs text-muted-foreground uppercase tracking-wider">Office Address</p>
-              <p className="flex items-start gap-2 mt-1 text-muted-foreground">
-                <MapPin className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                <span>{grievanceOfficer.address}</span>
-              </p>
-            </div>
+            {grievanceOfficer.address && (
+              <div className="sm:col-span-2 pt-2 border-t border-border/50">
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">Office Address</p>
+                <p className="flex items-start gap-2 mt-1 text-muted-foreground">
+                  <MapPin className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                  <span>{grievanceOfficer.address}</span>
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -112,7 +118,9 @@ export default function GrievancePage() {
                 Raise a ticket directly from your <strong>Candidate Portal &rarr; Support</strong> or contact our support desk:
               </p>
               <p className="text-foreground font-medium">Email: {COMPLIANCE_CONFIG.supportEmail}</p>
-              <p className="text-foreground font-medium">Phone: {COMPLIANCE_CONFIG.supportPhone}</p>
+              {COMPLIANCE_CONFIG.supportPhone && (
+                <p className="text-foreground font-medium">Phone: {COMPLIANCE_CONFIG.supportPhone}</p>
+              )}
               <div className="pt-2 flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-300 font-medium">
                 <Clock className="h-3.5 w-3.5" /> Acknowledgement: 48 hrs · Resolution: 7 business days
               </div>

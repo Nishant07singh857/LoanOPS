@@ -43,6 +43,16 @@ function useOwnerNavBadges() {
   }, [kpis, notifData])
 }
 
+// Badge semantics: each badge counts a specific queue, named here so the
+// sidebar can label it (title/aria) — the Applications badge in particular
+// counts PENDING applications only, not all applications.
+const BADGE_LABELS: Record<string, string> = {
+  '/admin/loans': 'Active loans',
+  '/admin/applications': 'Pending applications',
+  '/admin/collections': 'Cash collections pending verification',
+  '/admin/loans?status=PENDING_DISBURSEMENT': 'Loans ready for disbursement',
+}
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { badges, notifCount } = useOwnerNavBadges()
 
@@ -51,7 +61,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       ...g,
       items: g.items.map((it) => {
         if (it.href in badges && badges[it.href] > 0) {
-          return { ...it, badge: badges[it.href] }
+          return { ...it, badge: badges[it.href], badgeLabel: BADGE_LABELS[it.href] }
         }
         // Strip static mock badges so the sidebar reflects reality
         if (it.href in badges) return { ...it, badge: undefined }

@@ -28,6 +28,10 @@ function LoginInner() {
     nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : null
   const redirect = nextRedirect || explicitRedirect || defaultRedirect
   const { user, loading, login, loginCandidate } = useSession()
+  // Set by the API client's central session handling when a panel call
+  // fails with an expired/changed session — explains why the user is here
+  // instead of leaving them at a bare login form.
+  const sessionExpired = params.get('expired') === '1'
 
   const [identifier, setIdentifier] = React.useState('')
   const [password, setPassword] = React.useState('')
@@ -153,6 +157,11 @@ function LoginInner() {
               <h1 className="text-2xl font-bold tracking-tight">Sign in</h1>
               <p className="text-sm text-muted-foreground mt-1.5">Enter your email or mobile number to continue.</p>
 
+              {sessionExpired && !user && (
+                <div role="status" className="mt-5 rounded-xl bg-info/10 border border-info/25 text-info text-sm px-3 py-2">
+                  Session expired — please sign in again.
+                </div>
+              )}
               <form onSubmit={submit} className="mt-5 space-y-4" aria-describedby={error ? 'login-error' : undefined} noValidate>
                 <div className="space-y-1.5">
                   <Label htmlFor="identifier">Email or Mobile Number</Label>

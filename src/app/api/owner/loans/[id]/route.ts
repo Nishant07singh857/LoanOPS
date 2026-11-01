@@ -14,7 +14,15 @@ export const GET = apiHandler(async (req: NextRequest, { params }: { params: Pro
   const loan = await ctx.db.loan.findFirst({
     where: { id, organizationId: ctx.user.organizationId },
     include: {
-      candidate: true,
+      // The loan detail page renders candidate.assignedAgent — with a bare
+      // `candidate: true` the relation was never loaded and the Overview
+      // showed "—" for the agent even when one was assigned (seed finding
+      // H.3). Load the agent profile + user name explicitly.
+      candidate: {
+        include: {
+          assignedAgent: { include: { user: { select: { id: true, name: true } } } },
+        },
+      },
       application: true,
       schedule: { orderBy: { installmentNumber: 'asc' } },
       payments: { orderBy: { createdAt: 'desc' } },
@@ -31,6 +39,11 @@ export const GET = apiHandler(async (req: NextRequest, { params }: { params: Pro
   const maskedCandidate = loan.candidate
     ? {
         ...loan.candidate,
+        // Flatten the AgentProfile -> User relation into the shape the
+        // detail page renders ({ id, name }).
+        assignedAgent: loan.candidate.assignedAgent
+          ? { id: loan.candidate.assignedAgent.id, name: loan.candidate.assignedAgent.user.name }
+          : null,
         aadhaarMasked: loan.candidate.aadhaarMasked
           ? maskAadhaar(decryptPIIForMask(loan.candidate.aadhaarMasked))
           : loan.application?.kycAadhaar

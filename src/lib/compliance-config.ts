@@ -51,27 +51,24 @@ export const REQUIRED_CONSENTS: ConsentDefinition[] = [
   },
 ]
 
-const defaultAddress =
-  process.env.NEXT_PUBLIC_COMPANY_ADDRESS ||
-  '[COMPANY ADDRESS — SET NEXT_PUBLIC_COMPANY_ADDRESS]'
+// Unconfigured legal values are null — NEVER bracketed placeholder text.
+// A live audit found raw "[COMPANY NAME — SET NEXT_PUBLIC_COMPANY_NAME]" /
+// "[CIN PLACEHOLDER …]" strings rendering on the public homepage, login,
+// signup and every legal page (including page titles). Consumers must OMIT
+// a line entirely when its value is null; when an env value IS set it is
+// rendered exactly as provided. The company name falls back to the neutral
+// product brand "LoanOps" (branding, not a legal claim).
+const defaultAddress = process.env.NEXT_PUBLIC_COMPANY_ADDRESS || null
 
 export const COMPLIANCE_CONFIG = {
-  companyName:
-    process.env.NEXT_PUBLIC_COMPANY_NAME ||
-    '[COMPANY NAME — SET NEXT_PUBLIC_COMPANY_NAME]',
-  cinNumber:
-    process.env.NEXT_PUBLIC_COMPANY_CIN ||
-    '[CIN PLACEHOLDER — SET NEXT_PUBLIC_COMPANY_CIN]',
-  rbiRegistration:
-    process.env.NEXT_PUBLIC_RBI_REG_NUMBER ||
-    '[REGULATED ENTITY / NBFC LICENCE PLACEHOLDER — SET NEXT_PUBLIC_RBI_REG_NUMBER]',
+  companyName: process.env.NEXT_PUBLIC_COMPANY_NAME || 'LoanOps',
+  cinNumber: process.env.NEXT_PUBLIC_COMPANY_CIN || null,
+  rbiRegistration: process.env.NEXT_PUBLIC_RBI_REG_NUMBER || null,
   registeredAddress: defaultAddress,
   supportEmail: process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@loanops.in',
-  supportPhone: process.env.NEXT_PUBLIC_SUPPORT_PHONE || '[SUPPORT PHONE — SET NEXT_PUBLIC_SUPPORT_PHONE]',
+  supportPhone: process.env.NEXT_PUBLIC_SUPPORT_PHONE || null,
   grievanceOfficer: {
-    name:
-      process.env.NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME ||
-      '[Designated Grievance Officer — Configure in Env]',
+    name: process.env.NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME || null,
     email:
       process.env.NEXT_PUBLIC_GRIEVANCE_OFFICER_EMAIL || 'grievance@loanops.in',
     phone:
