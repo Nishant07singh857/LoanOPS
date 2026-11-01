@@ -1,4 +1,4 @@
-// Central Rate Limiter & Abuse Protection (Phase 4)
+// Central Rate Limiter & Abuse Protection
 //
 // BACKENDS: when Upstash Redis is configured (see src/lib/server/redis.ts),
 // counters live in Redis (INCR + EXPIRE fixed window) and are shared across

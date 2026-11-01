@@ -1,6 +1,4 @@
-// ============================================================
 // TOTP 2FA (RFC 6238 — Owner/Admin Optional 2FA)
-// ============================================================
 // Code generation/verification plus replay protection. Verification
 // returns the matched time-step so callers can persist the last
 // accepted step on the user (User.totpLastStep) and reject any code

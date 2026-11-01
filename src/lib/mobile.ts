@@ -1,6 +1,4 @@
-// ============================================================
 // INDIAN MOBILE CANONICALIZATION
-// ============================================================
 // Single source of truth for turning any user-typed mobile spelling
 // into the canonical 10-digit Indian mobile (^[6-9]\d{9}$) that is
 // stored on Candidate.mobile and used for every lookup.

@@ -10,9 +10,7 @@ import { logger } from '@/lib/server/logger'
 import { getRedis, type RedisClientLike } from '@/lib/server/redis'
 
 
-// ============================================================
-// STARTUP ENVIRONMENT VALIDATION (Phase 2)
-// ============================================================
+// STARTUP ENVIRONMENT VALIDATION
 
 const TOKEN_HMAC_KEY = process.env.SESSION_SECRET
 if (
@@ -29,9 +27,7 @@ if (
 }
 if (!TOKEN_HMAC_KEY) throw new Error('SESSION_SECRET is not set in environment')
 
-// ============================================================
-// PASSWORD HASHING & PASSWORD POLICY (Phase 2)
-// ============================================================
+// PASSWORD HASHING & PASSWORD POLICY
 
 const SALT_ROUNDS = 12
 // Precomputed bcrypt cost-12 hash used for constant-time dummy verification when account does not exist
@@ -116,9 +112,7 @@ export async function constantTimeDummyVerify(plain: string): Promise<boolean> {
   return false
 }
 
-// ============================================================
-// SESSION TOKENS & IDLE TIMEOUT (Phase 2)
-// ============================================================
+// SESSION TOKENS & IDLE TIMEOUT
 
 const SESSION_COOKIE = 'loanops_session'
 const SESSION_TTL_DAYS = 1 // 24-hour absolute session lifetime
@@ -282,9 +276,7 @@ export async function revokeSession(token: string): Promise<void> {
 
 
 
-// ============================================================
 // COOKIE HELPERS
-// ============================================================
 
 const IS_HTTPS_COOKIE =
   process.env.COOKIE_SECURE === 'true' ||
@@ -317,9 +309,7 @@ export async function getSessionCookie(): Promise<string | undefined> {
   return store.get(SESSION_COOKIE)?.value
 }
 
-// ============================================================
-// PASSWORD RESET TOKENS (Single-use, Hashed, Expiring — Phase 2)
-// ============================================================
+// PASSWORD RESET TOKENS (Single-use, Hashed, Expiring)
 
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000 // 30 minutes
 
@@ -424,11 +414,9 @@ export async function consumePasswordResetToken(
   return { ok: true }
 }
 
-// ============================================================
-// TOTP 2FA (RFC 6238 — Owner/Admin Optional 2FA — Phase 2)
+// TOTP 2FA (RFC 6238 — Owner/Admin Optional 2FA)
 // Implemented in ./totp (step-aware verification + replay
 // protection); re-exported here for existing import sites.
-// ============================================================
 
 export {
   generateTotpSecret,
@@ -440,9 +428,7 @@ export {
   buildTotpOtpAuthUri,
 } from './totp'
 
-// ============================================================
-// AUTH GUARD for API routes (Phase 3)
-// ============================================================
+// AUTH GUARD for API routes
 
 export interface AuthContext {
   user: AuthUser
@@ -486,9 +472,7 @@ export class AuthError extends Error {
   }
 }
 
-// ============================================================
-// LOGIN RATE LIMITING & PROGRESSIVE DELAY (Phase 2 & 4)
-// ============================================================
+// LOGIN RATE LIMITING & PROGRESSIVE DELAY
 //
 // Counters live in Redis when configured (hash at `loginlock:<key>` with
 // the same {count, lockedUntil} shape as the in-memory record; failures
@@ -650,9 +634,7 @@ export function getClientIp(req: NextRequest | Request): string {
   return '127.0.0.1'
 }
 
-// ============================================================
-// APPEND-ONLY AUDIT LOG (Phase 6)
-// ============================================================
+// APPEND-ONLY AUDIT LOG
 
 export async function audit(
   ctx: AuthContext | { user: AuthUser },

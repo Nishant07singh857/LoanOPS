@@ -1,6 +1,4 @@
-// ============================================================
 // SHARED LOAN-TERMS VALIDATION
-// ============================================================
 // One validator for every path that writes loan terms: the public
 // apply endpoint, owner/agent application creation, application
 // approval (final terms re-checked before a loan exists), and QR

@@ -1,5 +1,5 @@
 // POST /api/owner/loans/[id]/disburse
-// Hardened for Phase 7:
+// The handler enforces:
 // - Row-level locking (`SELECT ... FOR UPDATE`) + atomic status guard (`PENDING_DISBURSEMENT` -> `ACTIVE`)
 // - Unique constraint on Disbursement([loanId, status]) prevents concurrent double-disbursement race conditions
 

@@ -34,9 +34,7 @@ const OVERDUE_THRESHOLDS: Array<{ days: number; stage: ReminderStageCode }> = [
   { days: 1, stage: 'OVERDUE_1' },
 ]
 
-// ---------------------------------------------------------------
 // Calendar-day math in a timezone
-// ---------------------------------------------------------------
 
 const dayParts = new Intl.DateTimeFormat('en-US', {
   timeZone: REMINDER_TIMEZONE,
@@ -91,9 +89,7 @@ export function stageForDueDate(dueDate: Date, now: Date): ReminderStageCode | n
   return stageForDayDiff(daysUntilDue(dueDate, now))
 }
 
-// ---------------------------------------------------------------
 // PTP suppression
-// ---------------------------------------------------------------
 
 export interface PtpLike {
   status: string
@@ -112,9 +108,7 @@ export function isPtpCovered(ptps: PtpLike[], now: Date): boolean {
   )
 }
 
-// ---------------------------------------------------------------
 // Messages (wording stays in src/lib/whatsapp.ts templates)
-// ---------------------------------------------------------------
 
 export function firstName(fullName: string): string {
   return (fullName || '').trim().split(/\s+/)[0] || 'there'

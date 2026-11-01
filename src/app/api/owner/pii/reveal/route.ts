@@ -1,5 +1,5 @@
 // POST /api/owner/pii/reveal — audited PII reveal endpoint (Owner only)
-// Hardened for Phase 4 & 6:
+// The handler enforces:
 // - Strict rate limit (pii_reveal: 10/min per IP+Owner)
 // - Optional reason recorded in append-only AuditLog (never logs decrypted PII values)
 

@@ -1,4 +1,4 @@
-// GET /api/files/[fileKey] — Authorized Private File Endpoint (Phase 6)
+// GET /api/files/[fileKey] — Authorized Private File Endpoint
 // Serves files stored outside public/ in `.storage/uploads` only after
 // verifying a short-lived HMAC signature OR authenticated RBAC + ownership.
 

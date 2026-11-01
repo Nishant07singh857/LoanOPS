@@ -5,9 +5,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// ============================================================
 // KYC & BANK MASKING HELPERS
-// ============================================================
 
 export function maskAadhaar(aadhaar: string | null | undefined): string {
   if (!aadhaar) return '—'
@@ -42,18 +40,14 @@ export function maskBankAccount(account: string | null | undefined): string {
   return `XXXX-XXXX-${cleaned.slice(-4)}`
 }
 
-// ============================================================
 // INPUT VALIDATION PATTERNS (INDIAN KYC & BANKING)
-// ============================================================
 
 export const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/
 export const AADHAAR_REGEX = /^\d{12}$/
 export const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/
 export const BANK_ACCOUNT_REGEX = /^[A-Z0-9]{8,20}$/i
 
-// ============================================================
 // XSS / INJECTION SANITIZATION HELPERS
-// ============================================================
 
 export function sanitizeText(input: string | null | undefined): string {
   if (input === null || input === undefined) return ''
