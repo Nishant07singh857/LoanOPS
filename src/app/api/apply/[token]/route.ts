@@ -25,7 +25,6 @@ export const GET = apiHandler(async (req: NextRequest, { params }: { params: Pro
   if (link.expiresAt && link.expiresAt < new Date()) return badRequest('This link has expired', 410)
   if (link.isUsed) return badRequest('This link has already been used', 410)
 
-  // Get the latest active agreement for the org
   const agreement = await db.agreementTemplate.findFirst({
     where: { organizationId: link.organizationId, isActive: true },
     orderBy: { effectiveDate: 'desc' },

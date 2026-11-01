@@ -11,7 +11,7 @@ let cachedKey: Buffer | null = null
 let warnedAboutFallbackKey = false
 
 /**
- * Write-side guard for encryptPII (G4-1): persisting PII encrypted with
+ * Write-side guard for encryptPII: persisting PII encrypted with
  * fallback key material (SESSION_SECRET, or worse the in-source
  * DEFAULT_DEV_SECRET) must never happen silently — anyone who can read
  * the source code can decrypt such data.

@@ -18,7 +18,7 @@ import { enforceRateLimit } from '@/lib/server/rate-limit'
 // decryptPII throws on non-enc values in production, which made this
 // audited reveal 500 for exactly the records owners need to inspect.
 // Resolution is therefore format-aware, but it must NEVER echo raw
-// ciphertext to the owner's screen (G4-2): a non-enc value is returned
+// ciphertext to the owner's screen: a non-enc value is returned
 // as-is (masked or legacy display value); an enc:v1 value is returned
 // only when strict decryptPII succeeds. When an enc:v1 value cannot be
 // decrypted (bad/rotated key or corrupt row), the failure is logged

@@ -1,4 +1,4 @@
-// Server-side startup environment validation (Task 1.1)
+// Server-side startup environment validation.
 // In production, the process crashes immediately if any critical variable is missing or weak.
 // In development, warnings are printed but defaults are tolerated.
 

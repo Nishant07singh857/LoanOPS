@@ -14,7 +14,6 @@ export const GET = apiHandler(async (req: NextRequest) => {
     orderBy: { createdAt: 'desc' },
     take: 100,
   })
-  // Fetch run numbers for any exceptions that have a runId
   const runIds = Array.from(new Set(exceptions.map((e) => e.runId).filter(Boolean) as string[]))
   const runs = runIds.length > 0
     ? await db.reconciliationRun.findMany({ where: { id: { in: runIds } }, select: { id: true, runNumber: true } })
