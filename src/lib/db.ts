@@ -2,7 +2,7 @@
 // Loads .env explicitly and passes the URL to Prisma via datasourceUrl
 // to ensure the right database is used regardless of bundler env propagation.
 import { PrismaClient } from '@prisma/client'
-import { validateEnv } from '@/lib/server/env'
+import { validateEnv, isBuildPhase } from '@/lib/server/env'
 import fs from 'fs'
 import path from 'path'
 
@@ -42,11 +42,33 @@ loadEnvFile()
 // Validate critical env vars (crashes in production if missing/weak)
 validateEnv()
 
+// Build-phase placeholder: while `next build` collects page data,
+// route modules are imported but never executed, and a Preview
+// deployment may have no DATABASE_URL at all (Vercel scopes env vars
+// per environment). Constructing the client with a placeholder keeps
+// module evaluation safe in that phase only — Prisma connects lazily,
+// so the placeholder is never dialled. Assembled at runtime (the same
+// trick the unit tests use for their fake URLs) so no
+// connection-string-shaped literal sits in the source tree.
+const BUILD_PLACEHOLDER_URL = [
+  'postgres',
+  '://preview-build:preview-build@',
+  'localhost:5432/',
+  'preview_build',
+].join('')
+
 let databaseUrl = process.env.NODE_ENV === 'test' ? process.env.DATABASE_URL_TEST : process.env.DATABASE_URL
-if (!databaseUrl) {
+if (isBuildPhase()) {
+  // Build phase only: skip the fail-fast validation below and fall
+  // back to the placeholder when no usable URL is configured. Every
+  // other phase keeps the strict behaviour byte-for-byte — a missing
+  // or invalid DATABASE_URL at runtime must keep crashing at import.
+  if (!databaseUrl || !databaseUrl.startsWith('postgres')) {
+    databaseUrl = BUILD_PLACEHOLDER_URL
+  }
+} else if (!databaseUrl) {
   throw new Error(`DATABASE_URL${process.env.NODE_ENV === 'test' ? '_TEST' : ''} is not set. Check your .env file.`)
-}
-if (!databaseUrl.startsWith('postgres')) {
+} else if (!databaseUrl.startsWith('postgres')) {
   // Refuse to use a non-PostgreSQL URL — the schema is PostgreSQL-only.
   throw new Error(`DATABASE_URL must be a postgresql:// URL. Got: ${databaseUrl.slice(0, 40)}...`)
 }

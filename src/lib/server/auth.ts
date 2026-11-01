@@ -9,14 +9,23 @@ import { NextRequest } from 'next/server'
 import { logger } from '@/lib/server/logger'
 import { getRedis, type RedisClientLike } from '@/lib/server/redis'
 import { validatePasswordPolicy } from '@/lib/server/password-policy'
+import { isBuildPhase } from '@/lib/server/env'
 export { validatePasswordPolicy, type PasswordPolicyResult } from '@/lib/server/password-policy'
 
 
 // STARTUP ENVIRONMENT VALIDATION
 
 const TOKEN_HMAC_KEY = process.env.SESSION_SECRET
+// Both guards below are skipped in the build phase only: `next build`
+// imports this module to collect page data but never executes a
+// handler, and a Preview build may legitimately have no secrets
+// configured. The key is only read inside functions at request time,
+// so an absent key during build is harmless — and the moment the
+// built app actually boots (any non-build phase), both guards fire
+// exactly as before.
 if (
   process.env.NODE_ENV === 'production' &&
+  !isBuildPhase() &&
   (!TOKEN_HMAC_KEY ||
     TOKEN_HMAC_KEY.length < 32 ||
     TOKEN_HMAC_KEY.includes('change-me') ||
@@ -27,7 +36,7 @@ if (
     'FATAL: In production, SESSION_SECRET (min 32 chars, non-default) and DATABASE_URL must be configured.'
   )
 }
-if (!TOKEN_HMAC_KEY) throw new Error('SESSION_SECRET is not set in environment')
+if (!TOKEN_HMAC_KEY && !isBuildPhase()) throw new Error('SESSION_SECRET is not set in environment')
 
 // PASSWORD HASHING & PASSWORD POLICY
 
