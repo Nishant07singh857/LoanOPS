@@ -52,16 +52,28 @@ const REDACTED = '[redacted]'
 // also exactly 12 digits, and the phone label is the accurate one.
 // Conversely a bare 10-digit mobile cannot match inside a longer
 // digit run (no word boundary), so a 12-digit Aadhaar is never sliced.
+// PAN and IFSC match case-insensitively: both are frequently typed in
+// lowercase even though the issued forms are uppercase. The bare-91
+// mobile shapes sit with the +91 ones for the same labelling reason.
+// The final digit-run rule has no upper bound: no app identifier is a
+// bare digit run (business IDs are prefixed and hyphenated), and a
+// 19+ digit run is at least as likely to be an account number as a
+// 9–18 digit one.
 const PII_PATTERNS: Array<[RegExp, string]> = [
   [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[redacted-email]'],
-  [/\b[A-Z]{5}[0-9]{4}[A-Z]\b/g, '[redacted-pan]'],
+  [/\b[A-Z]{5}[0-9]{4}[A-Z]\b/gi, '[redacted-pan]'],
   [/\b\d{4}[\s-]\d{4}[\s-]\d{4}\b/g, '[redacted-aadhaar]'],
+  // Malformed Aadhaar grouping (4-8 instead of 4-4-4) — still 12
+  // digits with the separator after the first group.
+  [/\b\d{4}[\s-]\d{8}\b/g, '[redacted-aadhaar]'],
   [/\+91[\s-]?\d{5}[\s-]?\d{5}\b/g, '[redacted-mobile]'],
   [/\+91[\s-]?\d{10}\b/g, '[redacted-mobile]'],
+  [/\b91[\s-]?\d{5}[\s-]?\d{5}\b/g, '[redacted-mobile]'],
+  [/\b91[\s-]?\d{10}\b/g, '[redacted-mobile]'],
   [/\b[6-9]\d{9}\b/g, '[redacted-mobile]'],
   [/\b\d{12}\b/g, '[redacted-aadhaar]'],
-  [/\b[A-Z]{4}0[A-Z0-9]{6}\b/g, '[redacted-ifsc]'],
-  [/\b\d{9,18}\b/g, '[redacted-number]'],
+  [/\b[A-Z]{4}0[A-Z0-9]{6}\b/gi, '[redacted-ifsc]'],
+  [/\b\d{9,}\b/g, '[redacted-number]'],
 ]
 
 /** Pattern-scrub a single string. Exported for unit tests. */

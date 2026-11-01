@@ -8,7 +8,7 @@ import { COMPLIANCE_CONFIG } from '@/lib/compliance-config'
 import { LegalFooter } from '@/components/legal/legal-footer'
 
 export const metadata = {
-  title: `Privacy Policy (DPDP Act 2023) | ${COMPLIANCE_CONFIG.companyName}`,
+  title: { absolute: `Privacy Policy (DPDP Act 2023) | ${COMPLIANCE_CONFIG.companyName}` },
   description: 'Digital Personal Data Protection Act, 2023 (India) & RBI Digital Lending Privacy Policy.',
 }
 

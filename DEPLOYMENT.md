@@ -102,6 +102,11 @@ need no schedule. An organization can opt out of all reminder traffic with
 `Organization.remindersEnabled = false`; delivery history is visible to the
 owner under **Operations → Reminders** (`/admin/reminders`).
 
+Optional heartbeat monitoring: set `HEARTBEAT_MARK_OVERDUE_URL` and/or
+`HEARTBEAT_REMINDERS_URL` to a monitor's ping URL (healthchecks.io, Better
+Stack) and each runner pings it after a successful run; a failed ping never
+fails the job, and unset means no ping.
+
 ---
 
 ## 7. Monitoring & Alerting Recommendations

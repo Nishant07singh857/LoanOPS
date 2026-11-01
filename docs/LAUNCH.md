@@ -61,7 +61,11 @@ includes a public status page).
    healthchecks.io): create one heartbeat for `send-reminders` and
    one for `mark-overdue`. A heartbeat alerts you when a job *fails
    to run at all* — the failure nobody notices for weeks. (The jobs
-   must also be scheduled — see the deployment checklist.)
+   must also be scheduled — see the deployment checklist.) Then put
+   each heartbeat's ping URL in the cron environment as
+   `HEARTBEAT_REMINDERS_URL` / `HEARTBEAT_MARK_OVERDUE_URL` — both
+   runners ping theirs after a successful run, and a failed ping
+   never fails the job.
 
 ## 5. Database backups
 
