@@ -439,6 +439,33 @@ test('stripImageMetadata removes PNG text/metadata chunks and keeps image chunks
   assert.ok(stripImageMetadata(corrupt, 'image/png').equals(corrupt))
 })
 
+// 17b. PNG trailing data after IEND (red-team round 3, P4): the stored
+//      file is rebuilt from parsed chunks only, so anything parked
+//      after IEND — a whole tEXt chunk or raw bytes — is dropped.
+test('stripImageMetadata drops everything after the PNG IEND chunk', () => {
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4)
+    len.writeUInt32BE(data.length, 0)
+    return Buffer.concat([len, Buffer.from(type, 'ascii'), data, Buffer.alloc(4)])
+  }
+  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  const ihdr = chunk('IHDR', Buffer.alloc(13, 1))
+  const idat = chunk('IDAT', Buffer.from([0x78, 0x9c, 0x01, 0x02, 0x03]))
+  const iend = chunk('IEND', Buffer.alloc(0))
+  const cleanPng = Buffer.concat([signature, ihdr, idat, iend])
+  const postIendText = chunk('tEXt', Buffer.from('Comment\x00smuggled-after-iend', 'latin1'))
+  const rawTail = Buffer.from('raw-trailing-junk')
+  const dirty = Buffer.concat([cleanPng, postIendText, rawTail])
+
+  const stripped = stripImageMetadata(dirty, 'image/png')
+  assert.ok(stripped.equals(cleanPng))
+  assert.ok(!stripped.includes(Buffer.from('smuggled-after-iend')))
+
+  // No IEND at all -> not a complete PNG -> returned untouched.
+  const truncated = Buffer.concat([signature, ihdr, idat])
+  assert.ok(stripImageMetadata(truncated, 'image/png').equals(truncated))
+})
+
 // 18. genNumber format + uniqueness (hardening: CSPRNG-backed random segment)
 test('genNumber produces prefixed, upper-case, unique identifiers', () => {
   const seen = new Set<string>()

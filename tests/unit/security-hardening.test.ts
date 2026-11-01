@@ -5,7 +5,15 @@ import {
   MIN_PRINCIPAL_PAISE,
   MAX_PRINCIPAL_PAISE,
   MAX_INTEREST_RATE_BPS,
+  MAX_FEE_PAISE,
+  MAX_INT32_PAISE,
 } from '../../src/lib/loan-terms'
+import { validatePasswordPolicy } from '../../src/lib/server/auth'
+import {
+  isUniqueConstraintError,
+  isValueRangeError,
+  isConcurrencyConflictError,
+} from '../../src/lib/server/api'
 import {
   candidateCarriesPii,
   candidateRequiresClaimCode,
@@ -80,12 +88,16 @@ test('canonicalizeMobile rejects non-mobiles', () => {
 const ZERO_COUNTS = { applications: 0, loans: 0, kycDocuments: 0, payments: 0 }
 const SHELL: CandidatePiiFields = {
   dob: null,
+  email: null,
   address: null,
+  occupation: null,
+  bankName: null,
   bankAccount: null,
   bankIfsc: null,
   upiId: null,
   employer: null,
   monthlyIncome: null,
+  existingObligations: null,
   aadhaarHash: null,
   aadhaarMasked: null,
   panMasked: null,
@@ -106,6 +118,12 @@ test('any staff-entered PII field makes the lead claim-code protected', () => {
     ['employer', { ...SHELL, employer: 'Acme Pvt Ltd' }],
     ['monthlyIncome', { ...SHELL, monthlyIncome: 4_500_000 }],
     ['monthlyIncome zero', { ...SHELL, monthlyIncome: 0 }],
+    // Round 3 (P2): the last four staff-entered fields join the list.
+    ['email', { ...SHELL, email: 'meena.private@example.com' }],
+    ['occupation', { ...SHELL, occupation: 'Farmer' }],
+    ['bankName', { ...SHELL, bankName: 'HDFC Bank' }],
+    ['existingObligations', { ...SHELL, existingObligations: 120_000 }],
+    ['existingObligations zero', { ...SHELL, existingObligations: 0 }],
     ['aadhaarHash', { ...SHELL, aadhaarHash: 'deadbeef' }],
     ['aadhaarMasked', { ...SHELL, aadhaarMasked: 'XXXX-XXXX-1234' }],
     ['panMasked', { ...SHELL, panMasked: 'ABXXX1234F' }],
@@ -209,6 +227,108 @@ test('codes outside the ±1 step window do not match', () => {
   assert.equal(matchTotpStep(secret, staleCode), null)
   assert.equal(matchTotpStep(secret, '12345'), null) // not 6 digits
   assert.equal(matchTotpStep(secret, ''), null)
+})
+
+// ============================================================
+// 5. Fee ceilings + computed-total ceiling (red-team round 3, P3)
+// ============================================================
+
+test('terms validator caps each fee figure at the single-figure ceiling', () => {
+  assert.equal(validateLoanTerms({ processingFeePaise: String(MAX_FEE_PAISE) }).ok, true)
+  assert.equal(validateLoanTerms({ processingFeePaise: String(MAX_FEE_PAISE + 1) }).ok, false)
+  assert.equal(validateLoanTerms({ otherFeesPaise: '99999999999999999999' }).ok, false)
+  assert.equal(validateLoanTerms({ fixedInterestPaise: '99999999999999999999' }).ok, false)
+  assert.equal(validateLoanTerms({ processingFeePaise: '75000' }).ok, true)
+  assert.equal(validateLoanTerms({ processingFeePaise: '-5' }).ok, false)
+  assert.equal(validateLoanTerms({ otherFeesPaise: null }).ok, true) // absent = unchecked
+})
+
+test('terms validator rejects a computed total one paise over Int32', () => {
+  assert.equal(validateLoanTerms({ totalRepayablePaise: BigInt(MAX_INT32_PAISE) }).ok, true)
+  assert.equal(validateLoanTerms({ totalRepayablePaise: BigInt(MAX_INT32_PAISE) + BigInt(1) }).ok, false)
+  assert.equal(validateLoanTerms({ totalRepayablePaise: BigInt(8925000) }).ok, true)
+})
+
+// ============================================================
+// 6. Breached-password variants (red-team round 3, P5)
+// ============================================================
+
+test('password policy rejects mutated variants of breached bases', () => {
+  const rejected = [
+    'Password123!', // the round-3 case: top-corpus password, was accepted
+    'password@123', // separator tail instead of digits
+    'Qwerty@2026', // listed base + year tail
+    'P@ssword123', // leetspeak inside the base
+    'p@ssw0rd2026!', // leetspeak + digit/symbol tail
+    'W3lcome@2026', // leet digit inside the base
+    'Admin12345!', // listed base + symbol tail
+    'xPassword99', // notorious base with a short prefix pad
+  ]
+  for (const pw of rejected) {
+    assert.equal(validatePasswordPolicy(pw).ok, false, pw)
+  }
+})
+
+test('password policy still accepts strong passphrases', () => {
+  assert.equal(validatePasswordPolicy('Monsoon!Tiger7Bridge').ok, true)
+  assert.equal(validatePasswordPolicy('Correct-Horse-Battery-9').ok, true)
+  // Contains a common word but is not dominated by it (long passphrase).
+  assert.equal(validatePasswordPolicy('PasswordHorseBattery9!Long').ok, true)
+})
+
+// ============================================================
+// 7. Prisma error shapes (red-team round 3, P1/P3)
+// ============================================================
+
+test('unique-constraint recognition covers the commit-time wrapped shape', () => {
+  assert.equal(isUniqueConstraintError({ code: 'P2002' }), true)
+  assert.equal(
+    isUniqueConstraintError({
+      name: 'PrismaClientUnknownRequestError',
+      message:
+        'Invalid `prisma.candidate.create()` invocation: Unique constraint failed on the fields: (`organizationId`, `mobile`)',
+    }),
+    true
+  )
+  assert.equal(
+    isUniqueConstraintError({
+      message: 'duplicate key value violates unique constraint "User_email_key"',
+    }),
+    true
+  )
+  assert.equal(isUniqueConstraintError({ code: 'P2025', message: 'Record not found' }), false)
+  assert.equal(isUniqueConstraintError(new Error('connection refused')), false)
+  assert.equal(isUniqueConstraintError(null), false)
+})
+
+test('value-range recognition only matches the driver wording for un-storable values', () => {
+  assert.equal(
+    isValueRangeError({
+      name: 'PrismaClientUnknownRequestError',
+      message: 'Error in connector: integer out of range',
+    }),
+    true
+  )
+  assert.equal(isValueRangeError(new Error('connect ECONNREFUSED 127.0.0.1:5432')), false)
+  assert.equal(isValueRangeError({ code: 'P2002', message: 'Unique constraint failed' }), false)
+  assert.equal(isValueRangeError(null), false)
+})
+
+test('concurrency-conflict recognition covers deadlocks and write conflicts only', () => {
+  // The round-3 race loser's actual shape: an unknown-request error
+  // whose cause chain names the Postgres deadlock.
+  assert.equal(
+    isConcurrencyConflictError({
+      name: 'PrismaClientUnknownRequestError',
+      message: 'Error occurred during query execution: deadlock detected',
+    }),
+    true
+  )
+  assert.equal(isConcurrencyConflictError({ code: 'P2034' }), true)
+  // Genuine faults and other client errors must NOT be reclassified.
+  assert.equal(isConcurrencyConflictError(new Error('connect ECONNREFUSED 127.0.0.1:5432')), false)
+  assert.equal(isConcurrencyConflictError({ code: 'P2025', message: 'Record not found' }), false)
+  assert.equal(isConcurrencyConflictError(null), false)
 })
 
 // ============================================================
