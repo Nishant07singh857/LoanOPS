@@ -26,18 +26,6 @@ export type ReminderStageCode =
 
 export type ReminderChannelCode = 'PORTAL' | 'WHATSAPP'
 
-/** Stages in firing order (RECEIPT is event-driven, not date-driven). */
-export const REMINDER_STAGES: ReminderStageCode[] = [
-  'DUE_SOON_3',
-  'DUE_SOON_1',
-  'DUE_TODAY',
-  'OVERDUE_1',
-  'OVERDUE_3',
-  'OVERDUE_7',
-  'OVERDUE_15',
-  'OVERDUE_30',
-]
-
 const OVERDUE_THRESHOLDS: Array<{ days: number; stage: ReminderStageCode }> = [
   { days: 30, stage: 'OVERDUE_30' },
   { days: 15, stage: 'OVERDUE_15' },

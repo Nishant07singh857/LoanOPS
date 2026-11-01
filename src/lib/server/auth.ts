@@ -280,12 +280,7 @@ export async function revokeSession(token: string): Promise<void> {
   }
 }
 
-export async function revokeAllUserSessions(userId: string): Promise<void> {
-  await db.session.updateMany({
-    where: { userId, revokedAt: null },
-    data: { revokedAt: new Date() },
-  })
-}
+
 
 // ============================================================
 // COOKIE HELPERS
@@ -488,12 +483,6 @@ export class AuthError extends Error {
   constructor(message: string, statusCode: number = 401) {
     super(message)
     this.statusCode = statusCode
-  }
-}
-
-export function assertTenant(organizationId: string, user: AuthUser): void {
-  if (user.organizationId !== organizationId) {
-    throw new AuthError('Forbidden: tenant isolation violated', 403)
   }
 }
 

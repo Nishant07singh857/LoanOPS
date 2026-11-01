@@ -50,7 +50,6 @@ export const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/
 export const AADHAAR_REGEX = /^\d{12}$/
 export const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/
 export const BANK_ACCOUNT_REGEX = /^[A-Z0-9]{8,20}$/i
-export const MOBILE_REGEX = /^[6-9]\d{9}$/
 
 // ============================================================
 // XSS / INJECTION SANITIZATION HELPERS

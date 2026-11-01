@@ -82,62 +82,6 @@ export function sanitizeJsonPayload<T>(value: T, depth = 0, maxDepth = 12): T {
 }
 
 /**
- * Validates raw request body size and parses + sanitizes JSON safely.
- */
-export async function parseAndValidateJsonBody(
-  req: Request,
-  options: { maxBytes?: number; maxDepth?: number } = {}
-): Promise<{ ok: true; data: any } | { ok: false; status: number; message: string }> {
-  const maxBytes = options.maxBytes ?? 6 * 1024 * 1024 // 6 MB default (allows 5MB base64 receipt photo)
-  const maxDepth = options.maxDepth ?? 12
-
-  const contentLength = req.headers.get('content-length')
-  if (contentLength && Number(contentLength) > maxBytes) {
-    return {
-      ok: false,
-      status: 413,
-      message: `Request body exceeds maximum allowed size (${Math.round(maxBytes / 1024)} KB)`,
-    }
-  }
-
-  let rawText: string
-  try {
-    rawText = await req.text()
-  } catch {
-    return { ok: false, status: 400, message: 'Failed to read request body' }
-  }
-
-  if (Buffer.byteLength(rawText, 'utf8') > maxBytes) {
-    return {
-      ok: false,
-      status: 413,
-      message: `Request body exceeds maximum allowed size (${Math.round(maxBytes / 1024)} KB)`,
-    }
-  }
-
-  if (!rawText.trim()) {
-    return { ok: false, status: 400, message: 'Request body cannot be empty' }
-  }
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(rawText)
-  } catch {
-    return { ok: false, status: 400, message: 'Invalid JSON body' }
-  }
-
-  try {
-    const sanitized = sanitizeJsonPayload(parsed, 0, maxDepth)
-    return { ok: true, data: sanitized }
-  } catch (err: any) {
-    if (String(err?.message).includes('PAYLOAD_DEPTH_EXCEEDED')) {
-      return { ok: false, status: 400, message: 'JSON nesting depth exceeds maximum allowed limit' }
-    }
-    return { ok: false, status: 400, message: 'Invalid request payload' }
-  }
-}
-
-/**
  * Validates internal redirect paths to prevent Open Redirect vulnerabilities.
  */
 export function validateSafeRedirect(target: string | null | undefined, fallback = '/'): string {
@@ -273,13 +217,6 @@ function getFileSigningSecret(): string {
   }
   // Development/test only.
   return 'dev-file-signing-secret'
-}
-
-export function signPrivateFileUrl(fileKey: string, ttlSeconds = 900): string {
-  const exp = Math.floor(Date.now() / 1000) + ttlSeconds
-  const payload = `${fileKey}:${exp}`
-  const sig = createHmac('sha256', getFileSigningSecret()).update(payload).digest('hex')
-  return `/api/files/${encodeURIComponent(fileKey)}?exp=${exp}&sig=${sig}`
 }
 
 export function verifyPrivateFileSignature(fileKey: string, expStr: string, sig: string): boolean {

@@ -71,7 +71,3 @@ export function canonicalizeMobile(input: unknown): string | null {
 
   return CANONICAL_MOBILE_REGEX.test(digits) ? digits : null
 }
-
-export function isCanonicalMobile(value: string): boolean {
-  return CANONICAL_MOBILE_REGEX.test(value)
-}
