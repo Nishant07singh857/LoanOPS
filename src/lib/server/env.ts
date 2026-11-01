@@ -40,13 +40,18 @@ const baseEnvSchema = z.object({
   COOKIE_SECURE: z.string().optional(),
 
   // --- Optional Redis (Upstash REST) ---
-  // Accelerator only (rate-limit counters + dashboard cache). Both vars
-  // are OPTIONAL: absence is valid and the app fails open to in-memory /
-  // direct-DB behavior. No format is enforced here on purpose — a
-  // malformed value must not crash boot; src/lib/server/redis.ts treats
-  // an unusable client as "no Redis".
+  // Accelerator only (rate-limit counters + dashboard cache). All four
+  // vars are OPTIONAL: absence is valid and the app fails open to
+  // in-memory / direct-DB behavior. No format is enforced here on
+  // purpose — a malformed value must not crash boot;
+  // src/lib/server/redis.ts treats an unusable client as "no Redis".
+  // The KV_* pair is the alias the Vercel Marketplace Upstash
+  // integration injects (legacy Vercel KV names); redis.ts resolves
+  // UPSTASH_* first and falls back to these.
   UPSTASH_REDIS_REST_URL: z.string().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+  KV_REST_API_URL: z.string().optional(),
+  KV_REST_API_TOKEN: z.string().optional(),
 })
 
 const envSchema = baseEnvSchema.superRefine((env, ctx) => {

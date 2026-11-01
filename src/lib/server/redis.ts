@@ -1,8 +1,13 @@
 // Optional Upstash Redis client — single shared access point.
 //
 // Redis is an ACCELERATOR, never a dependency:
-// - The client is created lazily on first use and is `null` unless BOTH
-//   UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are set.
+// - The client is created lazily on first use and is `null` unless a REST
+//   URL and token resolve from the environment. Two naming schemes are
+//   supported: the direct Upstash names (UPSTASH_REDIS_REST_URL /
+//   UPSTASH_REDIS_REST_TOKEN, e.g. copied from the Upstash console) and
+//   the Vercel-KV names (KV_REST_API_URL / KV_REST_API_TOKEN) that the
+//   Vercel Marketplace Upstash integration injects into the project.
+//   UPSTASH_* wins when both schemes are present.
 // - Every call site must fail open: when Redis is absent or any command
 //   errors, callers fall back to the non-Redis behavior (in-memory rate
 //   limiting, direct DB queries). Local dev and CI run with no Redis
@@ -27,15 +32,31 @@ export interface RedisClientLike {
   ttl(key: string): Promise<number>
   hgetall(key: string): Promise<Record<string, string> | null>
   hset(key: string, values: Record<string, string | number>): Promise<unknown>
+  hincrby(key: string, field: string, increment: number): Promise<number>
   del(key: string): Promise<unknown>
 }
 
 // `undefined` = not resolved yet, `null` = resolved to "no Redis".
 let resolvedClient: RedisClientLike | null | undefined
 
-/** True when both Upstash env vars are present (does not construct a client). */
+/**
+ * REST URL resolution: UPSTASH_REDIS_REST_URL (direct) first, then the
+ * Vercel Marketplace alias KV_REST_API_URL. Empty strings count as unset
+ * (the shipped .env.example uses "" placeholders), so an empty direct
+ * value never shadows a working alias.
+ */
+function resolveRedisUrl(): string | undefined {
+  return process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || undefined
+}
+
+/** REST token resolution: same precedence as the URL (see above). */
+function resolveRedisToken(): string | undefined {
+  return process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || undefined
+}
+
+/** True when a Redis URL + token resolve from either naming scheme. */
 export function isRedisConfigured(): boolean {
-  return Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+  return Boolean(resolveRedisUrl() && resolveRedisToken())
 }
 
 /**
@@ -45,8 +66,8 @@ export function isRedisConfigured(): boolean {
 export function getRedis(): RedisClientLike | null {
   if (resolvedClient !== undefined) return resolvedClient
 
-  const url = process.env.UPSTASH_REDIS_REST_URL
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN
+  const url = resolveRedisUrl()
+  const token = resolveRedisToken()
   if (!url || !token) {
     resolvedClient = null
     return resolvedClient

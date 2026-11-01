@@ -117,17 +117,29 @@ owner under **Operations → Reminders** (`/admin/reminders`).
 ## 8. Optional Redis (Upstash)
 
 Redis is an **accelerator only — the application runs identically without it**.
-Set both variables to enable it. The recommended setup for the Vercel-hosted
-deployment: in the Vercel dashboard for the `loanops` project, add the
-**Upstash** integration from the Vercel Marketplace (Storage / Marketplace) —
-it creates a free Upstash database and adds both variables to the project
-automatically. Redeploy once afterwards so the new env vars take effect.
-(Equivalently, create a database in the Upstash console and copy the REST
-URL and token shown there into the project's env vars manually.)
+A URL + token pair enables it, under either of two naming schemes:
+
+- **Direct Upstash names** — `UPSTASH_REDIS_REST_URL` /
+  `UPSTASH_REDIS_REST_TOKEN`, e.g. copied from the Upstash console.
+- **Vercel Marketplace alias names** — the **Upstash** integration from the
+  Vercel Marketplace (Storage / Marketplace) creates a free Upstash database
+  and injects the same credentials into the project under the legacy Vercel
+  KV names `KV_REST_API_URL` / `KV_REST_API_TOKEN`. This is the recommended
+  setup for the Vercel-hosted `loanops` project; redeploy once afterwards
+  so the new env vars take effect.
+
+`src/lib/server/redis.ts` resolves UPSTASH_* first and falls back to the
+KV_* aliases when the direct names are unset; if both schemes are present,
+UPSTASH_* wins. (Equivalently to the integration, create a database in the
+Upstash console and copy the REST URL and token shown there into the
+project's env vars manually under the UPSTASH_* names.)
 
 ```bash
 UPSTASH_REDIS_REST_URL=""    # REST endpoint of the Upstash database
 UPSTASH_REDIS_REST_TOKEN=""  # REST token (read-write)
+# — or, injected automatically by the Vercel Marketplace integration —
+KV_REST_API_URL=""           # alias of UPSTASH_REDIS_REST_URL
+KV_REST_API_TOKEN=""         # alias of UPSTASH_REDIS_REST_TOKEN
 ```
 
 What it powers when configured:

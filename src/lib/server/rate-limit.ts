@@ -146,7 +146,19 @@ async function checkRateLimitRedis(
     if (ttl < 0) {
       // Key exists without an expiry (e.g. the EXPIRE above raced a
       // failure): re-arm it so the block is bounded by the window.
-      await redis.expire(redisKey, windowSeconds)
+      // Best-effort ONLY (tester note N1): the block verdict is already
+      // established by the Redis count, so a failing re-arm must not
+      // throw here and discard the verdict into the lagging in-memory
+      // limiter. Assume the full window for Retry-After when it fails.
+      try {
+        await redis.expire(redisKey, windowSeconds)
+      } catch (err) {
+        logger.warn('Redis rate limit expiry re-arm failed; block stands on count alone', {
+          scope,
+          bucket: normalizedKey,
+          error: err,
+        })
+      }
       ttl = windowSeconds
     }
     const retryAfterSeconds = Math.max(1, ttl)
