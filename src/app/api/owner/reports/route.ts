@@ -236,7 +236,10 @@ export const GET = apiHandler(async (req: NextRequest) => {
     })
   }
 
-  if (type === 'ptps') {
+  // 'ptps' and its alias 'ptp' share one query and item shape; the alias
+  // additionally carries fulfilled / broken / active counts. Both shapes
+  // are pinned by tests/reports-ptp.spec.ts.
+  if (type === 'ptps' || type === 'ptp') {
     const ptps = await db.ptp.findMany({
       where: {
         agent: { organizationId: orgId },
@@ -264,41 +267,13 @@ export const GET = apiHandler(async (req: NextRequest) => {
       })),
       total: ptps.length,
       totalPromised: String(ptps.reduce((s, p) => s + p.promisedAmount, 0)),
-    })
-  }
-
-  if (type === 'ptp') {
-    // alias of ptps
-    const ptps = await db.ptp.findMany({
-      where: {
-        agent: { organizationId: orgId },
-        ...(status ? { status: status as any } : {}),
-        ...dateFilter('promiseDate'),
-        ...(agent ? { agentId: agent } : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        candidate: { select: { fullName: true, mobile: true } },
-        loan: { select: { loanNumber: true } },
-      },
-    })
-    return success({
-      type,
-      items: ptps.map((p) => ({
-        id: p.id,
-        promisedAmount: String(p.promisedAmount),
-        promiseDate: p.promiseDate,
-        status: p.status,
-        notes: p.notes,
-        candidateName: p.candidate.fullName,
-        loanNumber: p.loan.loanNumber,
-        createdAt: p.createdAt,
-      })),
-      total: ptps.length,
-      totalPromised: String(ptps.reduce((s, p) => s + p.promisedAmount, 0)),
-      fulfilled: ptps.filter((p) => p.status === 'FULFILLED').length,
-      broken: ptps.filter((p) => p.status === 'BROKEN').length,
-      active: ptps.filter((p) => p.status === 'ACTIVE').length,
+      ...(type === 'ptp'
+        ? {
+            fulfilled: ptps.filter((p) => p.status === 'FULFILLED').length,
+            broken: ptps.filter((p) => p.status === 'BROKEN').length,
+            active: ptps.filter((p) => p.status === 'ACTIVE').length,
+          }
+        : {}),
     })
   }
 
