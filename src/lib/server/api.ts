@@ -70,6 +70,50 @@ export class HttpError extends Error {
   }
 }
 
+// PRISMA ERROR SHAPES (red-team round 3, P1/P3)
+//
+// A unique-constraint violation does not always arrive as the coded
+// P2002: inside an interactive transaction the loser of an insert
+// race can surface at commit time as a PrismaClientUnknownRequestError
+// whose message still names the failed constraint ("Unique constraint
+// failed on the fields: ..."). Both shapes are the same client-visible
+// fact — the resource already exists — so both map to 409. Before
+// this, the apply-vs-signup race loser got a 500.
+export function isUniqueConstraintError(err: any): boolean {
+  if (!err) return false
+  if (err?.code === 'P2002') return true
+  const msg = String(err?.message || '')
+  return /unique constraint failed|duplicate key value violates unique constraint/i.test(msg)
+}
+
+// Postgres rejects out-of-range integers and over-long values with
+// driver-level errors that carry no Prisma P-code. When the message
+// names that cause, the fault is the client's input (a value that can
+// never fit the column), not the server — map it to 422 instead of
+// the generic 500 the bare Prisma-name branch below would produce.
+// Genuine server faults (connections, timeouts, engine errors) do
+// not match these phrases and still surface as 500.
+export function isValueRangeError(err: any): boolean {
+  if (!err) return false
+  const msg = String(err?.message || '')
+  return /out of range|value too long for type|invalid input syntax/i.test(msg)
+}
+
+// A concurrency loser is not a server fault either: a Postgres
+// deadlock (40P01 — Prisma surfaces it as an unknown-request error
+// whose message names the deadlock) or a transaction write conflict
+// (P2034) means another writer won the same rows first and this
+// transaction was rolled back in full, leaving no partial state. On
+// this app's user-input write paths that is a conflict — map to 409.
+// (Round-3 P1: before the apply/signup write orders were aligned,
+// the race loser deadlocked and surfaced as exactly this shape.)
+export function isConcurrencyConflictError(err: any): boolean {
+  if (!err) return false
+  if (err?.code === 'P2034') return true
+  const msg = String(err?.message || '')
+  return /deadlock/i.test(msg)
+}
+
 const MAX_REQUEST_BODY_BYTES = 6 * 1024 * 1024 // 6 MB max (supports <= 5 MB base64 receipt upload)
 const MAX_JSON_DEPTH = 12
 
@@ -143,6 +187,30 @@ export function apiHandler<T extends (...args: any[]) => Promise<NextResponse>>(
         }
       }
 
+      // Path-param hygiene (red-team round 3, P3): an id carrying NUL
+      // or other control characters can never match a record, but
+      // Postgres rejects such bytes inside a text parameter, which
+      // surfaced as a generic 500 on the detail routes. Reject up
+      // front with a plain 404 — identical to any other unknown id.
+      const routeCtx = args[1] as { params?: unknown } | undefined
+      if (routeCtx && routeCtx.params && typeof (routeCtx.params as any).then === 'function') {
+        const resolvedParams = await (routeCtx.params as Promise<Record<string, unknown>>).catch(
+          () => null
+        )
+        if (resolvedParams && typeof resolvedParams === 'object') {
+          const values = Object.values(resolvedParams).flatMap((v) =>
+            Array.isArray(v) ? v : [v]
+          )
+          if (
+            values.some(
+              (v) => typeof v === 'string' && /[\x00-\x1F\x7F]/.test(v)
+            )
+          ) {
+            return notFound('Resource not found')
+          }
+        }
+      }
+
       return await fn(...args)
     } catch (err: any) {
       if (err?.statusCode) {
@@ -160,7 +228,12 @@ export function apiHandler<T extends (...args: any[]) => Promise<NextResponse>>(
           }))
         )
       }
-      if (err?.code === 'P2002') {
+      if (isUniqueConstraintError(err)) {
+        return conflict('Resource already exists')
+      }
+      // A deadlock / write-conflict loser was rolled back cleanly;
+      // a concurrent writer won — that is a conflict, not a 500.
+      if (isConcurrencyConflictError(err)) {
         return conflict('Resource already exists')
       }
       if (err?.code === 'P2025') {
@@ -168,6 +241,16 @@ export function apiHandler<T extends (...args: any[]) => Promise<NextResponse>>(
       }
       if (err?.code === 'P2003' || err?.code === 'P2014') {
         return badRequest('Invalid reference or related record not found')
+      }
+      // A value that can never fit its column is a client error
+      // (422), not a server fault — but only when the driver message
+      // names that exact cause (see isValueRangeError).
+      if (
+        (err?.name?.includes('Prisma') ||
+          (typeof err?.code === 'string' && /^P\d{4}$/.test(err.code))) &&
+        isValueRangeError(err)
+      ) {
+        return unprocessable('One or more values are out of the supported range')
       }
       if (typeof err?.code === 'string' && /^P\d{4}$/.test(err.code)) {
         logger.error('[PRISMA ERROR]', { code: err.code })
