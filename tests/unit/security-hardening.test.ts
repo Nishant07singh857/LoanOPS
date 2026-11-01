@@ -8,12 +8,12 @@ import {
   MAX_FEE_PAISE,
   MAX_INT32_PAISE,
 } from '../../src/lib/loan-terms'
-import { validatePasswordPolicy } from '../../src/lib/server/auth'
+import { validatePasswordPolicy } from '../../src/lib/server/password-policy'
 import {
   isUniqueConstraintError,
   isValueRangeError,
   isConcurrencyConflictError,
-} from '../../src/lib/server/api'
+} from '../../src/lib/server/prisma-errors'
 import {
   candidateCarriesPii,
   candidateRequiresClaimCode,
