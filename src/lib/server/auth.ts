@@ -502,7 +502,8 @@ export function assertTenant(organizationId: string, user: AuthUser): void {
 // ============================================================
 //
 // Counters live in Redis when configured (hash at `loginlock:<key>` with
-// the same {count, lockedUntil} shape as the in-memory record), so the
+// the same {count, lockedUntil} shape as the in-memory record; failures
+// are counted with an atomic HINCRBY), so the
 // lockout is shared across instances. Without Redis — or on any Redis
 // error — they fail open to the original in-memory Map below. Threshold
 // (5 failures) and lockout duration (15 minutes) are identical on both
@@ -600,22 +601,19 @@ export async function recordLoginFailure(key: string): Promise<void> {
   if (redis) {
     try {
       const now = Date.now()
-      const rec = (await readLoginLockRecord(redis, key)) ?? { count: 0, lockedUntil: 0 }
-      rec.count += 1
-      if (rec.count >= MAX_ATTEMPTS) {
-        rec.lockedUntil = now + LOCKOUT_MS
-        rec.count = 0
-        await redis.hset(loginLockKey(key), {
-          count: rec.count,
-          lockedUntil: rec.lockedUntil,
-        })
-        await redis.expire(loginLockKey(key), Math.ceil(LOCKOUT_MS / 1000))
+      const redisKey = loginLockKey(key)
+      // Atomic increment (tester note N2): HINCRBY counts every failure
+      // even under perfect concurrency, where the previous
+      // read-modify-write (hgetall -> mutate -> hset) could interleave
+      // and lose increments. Semantics are unchanged: reaching
+      // MAX_ATTEMPTS sets the lock and resets the counter; a success
+      // clears the key (clearLoginFailures).
+      const count = await redis.hincrby(redisKey, 'count', 1)
+      if (count >= MAX_ATTEMPTS) {
+        await redis.hset(redisKey, { count: 0, lockedUntil: now + LOCKOUT_MS })
+        await redis.expire(redisKey, Math.ceil(LOCKOUT_MS / 1000))
       } else {
-        await redis.hset(loginLockKey(key), {
-          count: rec.count,
-          lockedUntil: rec.lockedUntil,
-        })
-        await redis.expire(loginLockKey(key), UNLOCKED_COUNTER_TTL_SECONDS)
+        await redis.expire(redisKey, UNLOCKED_COUNTER_TTL_SECONDS)
       }
       return
     } catch (err) {
