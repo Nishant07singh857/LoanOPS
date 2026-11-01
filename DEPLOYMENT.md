@@ -117,8 +117,13 @@ owner under **Operations → Reminders** (`/admin/reminders`).
 ## 8. Optional Redis (Upstash)
 
 Redis is an **accelerator only — the application runs identically without it**.
-Set both variables to enable it (values come from the Upstash console for
-your database; the REST URL and token are shown there):
+Set both variables to enable it. The recommended setup for the Vercel-hosted
+deployment: in the Vercel dashboard for the `loanops` project, add the
+**Upstash** integration from the Vercel Marketplace (Storage / Marketplace) —
+it creates a free Upstash database and adds both variables to the project
+automatically. Redeploy once afterwards so the new env vars take effect.
+(Equivalently, create a database in the Upstash console and copy the REST
+URL and token shown there into the project's env vars manually.)
 
 ```bash
 UPSTASH_REDIS_REST_URL=""    # REST endpoint of the Upstash database
