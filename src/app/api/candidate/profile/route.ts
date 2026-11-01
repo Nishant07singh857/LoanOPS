@@ -80,7 +80,13 @@ export const GET = apiHandler(async (req: NextRequest) => {
 const updateProfileSchema = z.object({
   fullName: z.string().min(2).max(100).optional(),
   email: z.string().email().max(200).optional().nullable(),
-  dob: z.string().min(1).max(40).optional().nullable(),
+  dob: z
+    .string()
+    .min(1)
+    .max(40)
+    .refine((v) => !Number.isNaN(Date.parse(v)), { message: 'Invalid dob' })
+    .optional()
+    .nullable(),
   address: z.string().max(1000).optional().nullable(),
   occupation: z.string().max(200).optional().nullable(),
   employer: z.string().max(200).optional().nullable(),

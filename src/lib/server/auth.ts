@@ -8,6 +8,8 @@ import { db } from '@/lib/db'
 import { NextRequest } from 'next/server'
 import { logger } from '@/lib/server/logger'
 import { getRedis, type RedisClientLike } from '@/lib/server/redis'
+import { validatePasswordPolicy } from '@/lib/server/password-policy'
+export { validatePasswordPolicy, type PasswordPolicyResult } from '@/lib/server/password-policy'
 
 
 // STARTUP ENVIRONMENT VALIDATION
@@ -33,67 +35,8 @@ const SALT_ROUNDS = 12
 // Precomputed bcrypt cost-12 hash used for constant-time dummy verification when account does not exist
 const DUMMY_BCRYPT_HASH = '$2a$12$R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW'
 
-const BREACHED_OR_COMMON_PASSWORDS = new Set([
-  'password123',
-  'password1234',
-  'password@123',
-  '1234567890',
-  '12345678901',
-  'qwerty12345',
-  'qwertyuiop',
-  'admin12345',
-  'admin@12345',
-  'welcome123',
-  'welcome@123',
-  'letmein123',
-  'india12345',
-  'india@12345',
-  'loanops123',
-  'sterling123',
-  'iloveyou123',
-  'monkey12345',
-  'abc1234567',
-])
-
-export interface PasswordPolicyResult {
-  ok: boolean
-  error?: string
-}
-
-export function validatePasswordPolicy(
-  plain: string,
-  context?: { email?: string | null; name?: string | null; mobile?: string | null }
-): PasswordPolicyResult {
-  if (!plain || typeof plain !== 'string') {
-    return { ok: false, error: 'Password is required' }
-  }
-  if (plain.length < 10) {
-    return { ok: false, error: 'Password must be at least 10 characters long' }
-  }
-  if (plain.length > 128) {
-    return { ok: false, error: 'Password must not exceed 128 characters' }
-  }
-  const lower = plain.toLowerCase()
-  if (BREACHED_OR_COMMON_PASSWORDS.has(lower)) {
-    return {
-      ok: false,
-      error: 'This password appears in known breached/common password lists. Please choose a stronger password.',
-    }
-  }
-  if (!/[A-Z]/.test(plain) || !/[a-z]/.test(plain) || !/[0-9]/.test(plain)) {
-    return {
-      ok: false,
-      error: 'Password must include at least one uppercase letter, one lowercase letter, and one digit.',
-    }
-  }
-  if (context?.email) {
-    const localPart = context.email.split('@')[0]?.toLowerCase()
-    if (localPart && localPart.length >= 4 && lower.includes(localPart)) {
-      return { ok: false, error: 'Password must not contain your email username' }
-    }
-  }
-  return { ok: true }
-}
+// Password policy (breached set + variant rejection) lives in
+// password-policy.ts and is re-exported above.
 
 export async function hashPassword(plain: string): Promise<string> {
   return bcrypt.hash(plain, SALT_ROUNDS)

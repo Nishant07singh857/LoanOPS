@@ -6,7 +6,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { requireOwner, audit, getClientIp } from '@/lib/server/auth'
-import { apiHandler, success, badRequest, notFound, conflict, validate, genNumber } from '@/lib/server/api'
+import { apiHandler, success, badRequest, notFound, conflict, validate, genNumber, isUniqueConstraintError } from '@/lib/server/api'
 import { postLedger, ACCOUNTS } from '@/lib/server/ledger'
 
 const schema = z
@@ -89,6 +89,12 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
         await postLedger(
           {
             organizationId: ctx.user.organizationId,
+            // Carry the loan linkage like every other posting
+            // (payments, corrections, refunds all do): per-loan
+            // ledger queries previously missed disbursements, which
+            // were only findable via the DISB- reference string
+            // (red-team round 3, Info).
+            loanId: loan.id,
             type: 'DISBURSEMENT',
             debitAccount: ACCOUNTS.LOANS_RECEIVABLE,
             creditAccount: creditAcc,
@@ -132,7 +138,7 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
   } catch (err: any) {
     const msg: string = err?.message || ''
     if (msg.startsWith('NOT_FOUND:')) return notFound(msg.replace(/^NOT_FOUND:\s*/, ''))
-    if (msg.startsWith('CONFLICT:') || err?.code === 'P2002') {
+    if (msg.startsWith('CONFLICT:') || isUniqueConstraintError(err)) {
       return conflict(msg.replace(/^CONFLICT:\s*/, '') || 'Loan is already disbursed')
     }
     if (msg.startsWith('BAD_REQUEST:')) return badRequest(msg.replace(/^BAD_REQUEST:\s*/, ''))

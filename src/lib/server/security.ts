@@ -179,14 +179,20 @@ export function stripImageMetadata(buf: Buffer, mime: AllowedUploadMime): Buffer
   }
   if (mime === 'image/png') {
     // Walk PNG chunks and drop the text/metadata carriers (tEXt, zTXt,
-    // iTXt, eXIf). Every other chunk is copied verbatim; any structural
-    // surprise returns the original buffer rather than corrupting the
-    // image (same fail-safe as the JPEG path above).
+    // iTXt, eXIf). The output is REBUILT from the parsed chunks only:
+    // everything after the IEND chunk is dropped with them (red-team
+    // round 3, P4 — a tEXt parked after IEND previously survived
+    // because the walk stopped at IEND and the tail was copied
+    // through). Structural surprises BEFORE IEND still return the
+    // original buffer rather than corrupting the image (same
+    // fail-safe as the JPEG path above); a buffer with no IEND at
+    // all is not a complete PNG and is likewise returned untouched.
     const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
     if (buf.length < 8 || !buf.subarray(0, 8).equals(PNG_SIGNATURE)) return buf
     const DROP_TYPES = new Set(['tEXt', 'zTXt', 'iTXt', 'eXIf'])
     const chunks: Buffer[] = [buf.subarray(0, 8)]
     let offset = 8
+    let sawIend = false
     while (offset + 8 <= buf.length) {
       const dataLen = buf.readUInt32BE(offset)
       const type = buf.subarray(offset + 4, offset + 8).toString('ascii')
@@ -196,9 +202,12 @@ export function stripImageMetadata(buf: Buffer, mime: AllowedUploadMime): Buffer
         chunks.push(buf.subarray(offset, chunkEnd))
       }
       offset = chunkEnd
-      if (type === 'IEND') break
+      if (type === 'IEND') {
+        sawIend = true
+        break
+      }
     }
-    if (offset !== buf.length) return buf
+    if (!sawIend) return buf
     return Buffer.concat(chunks)
   }
   return buf
@@ -318,6 +327,22 @@ export async function validateAndStoreDataUrlUpload(
     mime: detectedMime,
     size: cleanBuf.length,
   }
+}
+
+/**
+ * Removes a file previously stored by validateAndStoreDataUrlUpload.
+ * Used on failure paths where the upload was stored but the business
+ * operation that was supposed to reference it did not complete
+ * (red-team round 3, Info — orphaned uploads). Best-effort: a missing
+ * file or a ref that does not resolve inside the storage root is a
+ * no-op, never an error.
+ */
+export async function deleteStoredUpload(storedRef: string | null | undefined): Promise<void> {
+  if (!storedRef || !storedRef.startsWith('/api/files/')) return
+  const fileKey = storedRef.slice('/api/files/'.length).split('?')[0]
+  const resolved = resolvePrivateStoragePath(fileKey)
+  if (!resolved) return
+  await fs.unlink(resolved).catch(() => {})
 }
 
 export function resolvePrivateStoragePath(fileKey: string): string | null {

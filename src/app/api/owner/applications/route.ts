@@ -2,7 +2,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { requireOwner, audit } from '@/lib/server/auth'
-import { apiHandler, success, validate, paginate, paginationSchema, unprocessable, fail } from '@/lib/server/api'
+import { apiHandler, success, validate, paginate, paginationSchema, unprocessable, fail, isUniqueConstraintError } from '@/lib/server/api'
 import { canonicalizeMobile } from '@/lib/mobile'
 import { validateLoanTerms, MAX_INSTALLMENTS } from '@/lib/loan-terms'
 
@@ -109,11 +109,15 @@ export const POST = apiHandler(async (req: NextRequest) => {
 
   // Shared terms ceilings (red-team round 2, N3): no rate above 100%,
   // no zero / overflowing principal — violations are 422, never 500.
+  // Round 3 (P3) adds the fee fields, which were still unbounded here.
   const termsCheck = validateLoanTerms({
     principalPaise: input.principalAmount,
     interestType: input.interestType,
     interestRateBps: input.interestRate ?? null,
     installments: input.installments,
+    fixedInterestPaise: input.fixedInterest ?? null,
+    processingFeePaise: input.processingFee ?? null,
+    otherFeesPaise: input.otherFees ?? null,
   })
   if (!termsCheck.ok) return unprocessable(termsCheck.error)
 
@@ -147,7 +151,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
       } catch (err: any) {
         // Unique (organizationId, mobile) fired on a concurrent
         // create — report the collision with the winning record.
-        if (err?.code === 'P2002') {
+        if (isUniqueConstraintError(err)) {
           const winner = await ctx.db.candidate.findFirst({
             where: { mobile, organizationId: ctx.user.organizationId },
           })
@@ -179,6 +183,10 @@ export const POST = apiHandler(async (req: NextRequest) => {
     processingFeePaise: BigInt(input.processingFee || 0),
     otherFeesPaise: BigInt(input.otherFees || 0),
   })
+
+  // Computed total must fit the Int32 paise column (red-team round 3, P3).
+  const totalCheck = validateLoanTerms({ totalRepayablePaise: schedule.totalRepayable })
+  if (!totalCheck.ok) return unprocessable(totalCheck.error)
 
   const app = await ctx.db.application.create({
     data: {

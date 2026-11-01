@@ -70,6 +70,21 @@ export class HttpError extends Error {
   }
 }
 
+// Prisma error-shape classifiers live in a leaf module (no imports)
+// so unit tests can exercise them without loading this stack; they
+// are re-exported here for the route handlers that import them from
+// api. See prisma-errors.ts for the mapping rationale (round 3 P1/P3).
+import {
+  isUniqueConstraintError,
+  isValueRangeError,
+  isConcurrencyConflictError,
+} from '@/lib/server/prisma-errors'
+export {
+  isUniqueConstraintError,
+  isValueRangeError,
+  isConcurrencyConflictError,
+} from '@/lib/server/prisma-errors'
+
 const MAX_REQUEST_BODY_BYTES = 6 * 1024 * 1024 // 6 MB max (supports <= 5 MB base64 receipt upload)
 const MAX_JSON_DEPTH = 12
 
@@ -143,6 +158,30 @@ export function apiHandler<T extends (...args: any[]) => Promise<NextResponse>>(
         }
       }
 
+      // Path-param hygiene (red-team round 3, P3): an id carrying NUL
+      // or other control characters can never match a record, but
+      // Postgres rejects such bytes inside a text parameter, which
+      // surfaced as a generic 500 on the detail routes. Reject up
+      // front with a plain 404 — identical to any other unknown id.
+      const routeCtx = args[1] as { params?: unknown } | undefined
+      if (routeCtx && routeCtx.params && typeof (routeCtx.params as any).then === 'function') {
+        const resolvedParams = await (routeCtx.params as Promise<Record<string, unknown>>).catch(
+          () => null
+        )
+        if (resolvedParams && typeof resolvedParams === 'object') {
+          const values = Object.values(resolvedParams).flatMap((v) =>
+            Array.isArray(v) ? v : [v]
+          )
+          if (
+            values.some(
+              (v) => typeof v === 'string' && /[\x00-\x1F\x7F]/.test(v)
+            )
+          ) {
+            return notFound('Resource not found')
+          }
+        }
+      }
+
       return await fn(...args)
     } catch (err: any) {
       if (err?.statusCode) {
@@ -160,7 +199,12 @@ export function apiHandler<T extends (...args: any[]) => Promise<NextResponse>>(
           }))
         )
       }
-      if (err?.code === 'P2002') {
+      if (isUniqueConstraintError(err)) {
+        return conflict('Resource already exists')
+      }
+      // A deadlock / write-conflict loser was rolled back cleanly;
+      // a concurrent writer won — that is a conflict, not a 500.
+      if (isConcurrencyConflictError(err)) {
         return conflict('Resource already exists')
       }
       if (err?.code === 'P2025') {
@@ -168,6 +212,16 @@ export function apiHandler<T extends (...args: any[]) => Promise<NextResponse>>(
       }
       if (err?.code === 'P2003' || err?.code === 'P2014') {
         return badRequest('Invalid reference or related record not found')
+      }
+      // A value that can never fit its column is a client error
+      // (422), not a server fault — but only when the driver message
+      // names that exact cause (see isValueRangeError).
+      if (
+        (err?.name?.includes('Prisma') ||
+          (typeof err?.code === 'string' && /^P\d{4}$/.test(err.code))) &&
+        isValueRangeError(err)
+      ) {
+        return unprocessable('One or more values are out of the supported range')
       }
       if (typeof err?.code === 'string' && /^P\d{4}$/.test(err.code)) {
         logger.error('[PRISMA ERROR]', { code: err.code })

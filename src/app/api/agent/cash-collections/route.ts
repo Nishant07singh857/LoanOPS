@@ -109,7 +109,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
 })
 
 import { enforceRateLimit } from '@/lib/server/rate-limit'
-import { validateAndStoreDataUrlUpload } from '@/lib/server/security'
+import { validateAndStoreDataUrlUpload, deleteStoredUpload } from '@/lib/server/security'
 
 const schema = z.object({
   candidateId: z.string().min(1),
@@ -140,6 +140,14 @@ export const POST = apiHandler(async (req: NextRequest) => {
   if (amountPaise <= BigInt(0)) return badRequest('Amount must be positive')
 
   let validatedProofUrl: string | null = null
+  // Set only when THIS request actually wrote a new file (the helper
+  // returns mime/size for a fresh store, and a bare ref when the
+  // caller passed an already-stored /api/files/ reference through).
+  // A fresh file whose collection then fails would sit on disk
+  // orphaned — referenced by no record — so the catch below removes
+  // it (red-team round 3, Info). A passed-through reference is never
+  // deleted: it may belong to an existing record.
+  let freshProofRef: string | null = null
   if (data.proofUrl) {
     const uploadCheck = await validateAndStoreDataUrlUpload(data.proofUrl, {
       maxBytes: 5 * 1024 * 1024,
@@ -149,6 +157,9 @@ export const POST = apiHandler(async (req: NextRequest) => {
       return badRequest(uploadCheck.error)
     }
     validatedProofUrl = uploadCheck.storedRef
+    if (uploadCheck.mime) {
+      freshProofRef = uploadCheck.storedRef
+    }
   }
 
   const headerIdempotencyKey =
@@ -175,6 +186,11 @@ export const POST = apiHandler(async (req: NextRequest) => {
 
     return created(result)
   } catch (err: any) {
+    // The collection failed after the proof file was stored — remove
+    // the now-orphaned file before reporting the failure.
+    if (freshProofRef) {
+      await deleteStoredUpload(freshProofRef)
+    }
     const msg: string = err?.message || ''
     if (msg.startsWith('FORBIDDEN:')) {
       return forbidden(msg.replace(/^FORBIDDEN:\s*/, ''))

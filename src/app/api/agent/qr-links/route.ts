@@ -79,11 +79,16 @@ export const POST = apiHandler(async (req: NextRequest) => {
   // Preset terms obey the same ceilings as every other write path —
   // this route previously had NO interest-rate maximum, so an agent
   // could mint a link preset to 10,000% (red-team round 2, N5).
+  // Round 3 (P3) adds the preset fee fields (Int32 columns on the
+  // link; unbounded digit strings 500'd here).
   const termsCheck = validateLoanTerms({
     principalPaise: input.prePrincipal ?? null,
     interestType: input.preInterestType,
     interestRateBps: input.preInterestRate ?? null,
     installments: input.preInstallments ?? null,
+    fixedInterestPaise: input.preFixedInterest ?? null,
+    processingFeePaise: input.processingFee ?? null,
+    otherFeesPaise: input.otherFees ?? null,
   })
   if (!termsCheck.ok) return unprocessable(termsCheck.error)
 
