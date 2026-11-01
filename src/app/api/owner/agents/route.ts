@@ -1,10 +1,9 @@
 // GET /api/owner/agents — list agents + compute performance from real tasks/PTP/collections
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { requireOwner } from '@/lib/server/auth'
+import { requireOwner, hashPassword, validatePasswordPolicy } from '@/lib/server/auth'
 import { z } from 'zod'
-import bcrypt from 'bcryptjs'
-import { apiHandler, success, validate } from '@/lib/server/api'
+import { apiHandler, success, badRequest, validate } from '@/lib/server/api'
 export const GET = apiHandler(async (req: NextRequest) => {
   const ctx = await requireOwner()
   const orgId = ctx.user.organizationId
@@ -74,7 +73,16 @@ export const POST = apiHandler(async (req: NextRequest) => {
   const body = await req.json().catch(() => ({}))
   const input = validate(createAgentSchema, body)
 
-  const passwordHash = await bcrypt.hash(input.password, 12)
+  // Initial passwords set by the owner must meet the same shared policy
+  // as every other account-creation path (signup, apply, password reset):
+  // length + complexity + breached/common-password rejection.
+  const policy = validatePasswordPolicy(input.password, {
+    email: input.email,
+    name: input.name,
+  })
+  if (!policy.ok) return badRequest(policy.error || 'Password does not meet security policy')
+
+  const passwordHash = await hashPassword(input.password)
 
   const newAgent = await db.$transaction(async (tx) => {
     const user = await tx.user.create({

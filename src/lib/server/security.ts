@@ -233,6 +233,30 @@ export function stripImageMetadata(buf: Buffer, mime: AllowedUploadMime): Buffer
     }
     return Buffer.concat(chunks)
   }
+  if (mime === 'image/png') {
+    // Walk PNG chunks and drop the text/metadata carriers (tEXt, zTXt,
+    // iTXt, eXIf). Every other chunk is copied verbatim; any structural
+    // surprise returns the original buffer rather than corrupting the
+    // image (same fail-safe as the JPEG path above).
+    const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    if (buf.length < 8 || !buf.subarray(0, 8).equals(PNG_SIGNATURE)) return buf
+    const DROP_TYPES = new Set(['tEXt', 'zTXt', 'iTXt', 'eXIf'])
+    const chunks: Buffer[] = [buf.subarray(0, 8)]
+    let offset = 8
+    while (offset + 8 <= buf.length) {
+      const dataLen = buf.readUInt32BE(offset)
+      const type = buf.subarray(offset + 4, offset + 8).toString('ascii')
+      const chunkEnd = offset + 8 + dataLen + 4 // header + data + CRC
+      if (dataLen > buf.length || chunkEnd > buf.length) return buf
+      if (!DROP_TYPES.has(type)) {
+        chunks.push(buf.subarray(offset, chunkEnd))
+      }
+      offset = chunkEnd
+      if (type === 'IEND') break
+    }
+    if (offset !== buf.length) return buf
+    return Buffer.concat(chunks)
+  }
   return buf
 }
 
