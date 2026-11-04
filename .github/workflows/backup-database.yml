@@ -54,9 +54,11 @@ jobs:
           # variables into the container — a plain shell variable leaves
           # pg_dump with an empty connection string (socket fallback).
           export DB_URL="${BACKUP_DATABASE_URL:-$PROD_DATABASE_URL}"
-          # postgres:17 client — pg_dump must be >= the server version
-          # (Neon runs newer majors than the CI database image).
-          docker run --rm -e DB_URL postgres:17-alpine \
+          # The client image major must be >= the Neon server major
+          # (currently 18) — pg_dump refuses to dump a newer server.
+          # If Neon is upgraded to a newer major, bump this image in
+          # the same change.
+          docker run --rm -e DB_URL postgres:18-alpine \
             sh -c 'pg_dump --no-owner --no-privileges "$DB_URL"' \
             | gzip > "$file"
           # Sanity gate: a failed or empty pg_dump must never be
