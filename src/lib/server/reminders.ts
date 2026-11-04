@@ -24,6 +24,19 @@
 // Re-claims are a single conditional UPDATE (… WHERE status = <expected>)
 // so two racing runners can never both win the same row.
 //
+// QUEUED is the transient claim state: a row is QUEUED only between
+// claim and settle — with ONE exception. On the WhatsApp channel with
+// no API configured, delivery means creating a staff task and the row
+// then stays QUEUED for good ("a human still sends it"). A QUEUED row
+// anywhere else that is still QUEUED long after it was claimed means
+// the runner died mid-delivery. Each run therefore opens with a sweep
+// (sweepStaleQueuedClaims) that transitions such rows to FAILED in
+// place, so the normal claim path re-claims them under the FAILED
+// rules above — attempt cap included. The sweep never touches the
+// WhatsApp staff-task QUEUED rows: their state is indistinguishable
+// from a crash between claim and task creation, and guessing wrong
+// would duplicate a staff task for every delivered reminder.
+//
 // Kill switch: Organization.remindersEnabled = false short-circuits both
 // the scheduled runner and the receipt path for that org.
 
@@ -54,6 +67,7 @@ export interface ReminderRunSummary {
   failed: number
   alreadyLogged: number
   noStage: number
+  swept: number
 }
 
 interface ClaimInput {
@@ -70,6 +84,63 @@ interface ClaimInput {
 
 /** Total delivery attempts a FAILED claim gets before it stays terminal. */
 const MAX_DELIVERY_ATTEMPTS = 3
+
+/**
+ * How long a claim may sit in QUEUED before a run treats it as the
+ * residue of a runner that died mid-delivery. One delivery is a single
+ * API call and/or two DB writes — seconds, never minutes — and the
+ * runner is a daily batch, so 30 minutes is far beyond any legitimate
+ * in-flight delivery while a concurrent runner's fresh claims (seconds
+ * old) stay untouchable.
+ */
+const STALE_QUEUED_AFTER_MS = 30 * 60 * 1000
+
+const STALE_QUEUED_ERROR =
+  'Claimed for delivery but never settled (runner interrupted); swept for retry'
+
+/**
+ * Transitions stale QUEUED claims to FAILED so this run's normal claim
+ * path re-claims (and re-delivers) them under the FAILED rules. Scope:
+ *   - PORTAL rows always (QUEUED is only ever transient there);
+ *   - WHATSAPP rows only while the Meta API is configured (QUEUED is
+ *     likewise transient then — an API send settles SENT/FAILED). With
+ *     no API configured, WhatsApp QUEUED is the terminal staff-task
+ *     state and is deliberately left alone (see header).
+ * The UPDATE re-checks status and age in its WHERE, so a row a live
+ * runner settles or re-claims in the meantime is never touched, and
+ * two runners sweeping at once cannot both move the same row. Rows are
+ * updated in place — never duplicated — so the unique claim keys and
+ * the FAILED attempt cap keep their exact PR #7 meaning. Receipt
+ * (paymentId) rows are swept too: they are not re-driven by this
+ * runner, but as FAILED they become re-claimable by a verify retry
+ * instead of being stuck forever.
+ * Dry runs count the rows that would be swept and write nothing.
+ */
+async function sweepStaleQueuedClaims(args: {
+  organizationIds: string[]
+  now: Date
+  dryRun: boolean
+}): Promise<number> {
+  if (args.organizationIds.length === 0) return 0
+  const cutoff = new Date(args.now.getTime() - STALE_QUEUED_AFTER_MS)
+  const channels: ReminderChannelCode[] = isWhatsAppApiConfigured()
+    ? ['PORTAL', 'WHATSAPP']
+    : ['PORTAL']
+  const where = {
+    organizationId: { in: args.organizationIds },
+    status: 'QUEUED' as const,
+    channel: { in: channels },
+    updatedAt: { lt: cutoff },
+  }
+  if (args.dryRun) {
+    return db.reminderLog.count({ where })
+  }
+  const swept = await db.reminderLog.updateMany({
+    where,
+    data: { status: 'FAILED', error: STALE_QUEUED_ERROR },
+  })
+  return swept.count
+}
 
 async function findClaimRow(data: ClaimInput) {
   return db.reminderLog.findFirst({
@@ -238,6 +309,7 @@ export async function runReminders(
     failed: 0,
     alreadyLogged: 0,
     noStage: 0,
+    swept: 0,
   }
 
   const orgs = await db.organization.findMany({
@@ -248,6 +320,17 @@ export async function runReminders(
     select: { id: true, name: true },
   })
   summary.organizations = orgs.length
+
+  // Recover claims a previous runner left unsettled (crash between
+  // claim and settle) before evaluating today's stages, so the rows
+  // flow through this run's normal claim path. Scoped to the same
+  // organizations this run serves — the kill switch covers the sweep
+  // too.
+  summary.swept = await sweepStaleQueuedClaims({
+    organizationIds: orgs.map((o) => o.id),
+    now,
+    dryRun,
+  })
 
   for (const org of orgs) {
     // Unpaid / partially-paid installments on ACTIVE loans only.

@@ -10,17 +10,30 @@ export interface WhatsAppContext {
   orgName?: string
 }
 
-const ORG = 'Sterling Lending'
+// Neutral fallback when the caller has no organisation name to pass —
+// the same convention as the org/legal config (compliance-config
+// defaults the company name to 'LoanOps'). An organisation's real name
+// is DATA (callers pass the session's organizationName as ctx.orgName),
+// never a constant baked into the message builder: the demo org's name
+// used to sit here, so every tenant's drafts introduced that org.
+const FALLBACK_ORG_NAME = 'LoanOps'
 
 export function buildWhatsAppMessage(template: string, ctx: WhatsAppContext): string {
+  // The display name comes from the caller's variables: orgName fills
+  // the {orgName} slot and ownerName the {ownerName} slot, and each
+  // stands in for the other before the neutral fallback is reached —
+  // a name the caller DID provide must never be overridden by the
+  // constant just because the template used the other slot.
+  const orgName = ctx.orgName || ctx.ownerName || FALLBACK_ORG_NAME
+  const ownerName = ctx.ownerName || ctx.orgName || FALLBACK_ORG_NAME
   const replacements: Record<string, string> = {
     '{candidateName}': ctx.candidateName || '',
     '{loanNumber}': ctx.loanNumber || '',
     '{amount}': ctx.amount || '',
     '{dueDate}': ctx.dueDate || '',
     '{agentName}': ctx.agentName || '',
-    '{ownerName}': ctx.ownerName || 'Sterling Lending',
-    '{orgName}': ctx.orgName || ORG,
+    '{ownerName}': ownerName,
+    '{orgName}': orgName,
   }
   let msg = template
   for (const [k, v] of Object.entries(replacements)) {

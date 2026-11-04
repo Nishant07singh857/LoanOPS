@@ -116,6 +116,7 @@ export default function CandidateHomePage() {
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.CANDIDATE_TO_AGENT, {
       candidateName,
       loanNumber: loan?.loanNumber ?? '',
+      orgName: user?.organizationName,
     })
     openWhatsApp(agentPhone, msg)
     toast.success('WhatsApp draft opened', { description: 'Your agent will respond shortly.' })

@@ -24,7 +24,12 @@ export const GET = apiHandler(async (req: NextRequest) => {
   // `status` into a different model's enum column, so an out-of-enum value
   // must be rejected here (422) instead of reaching Prisma and 500ing.
   // The mapping follows the branches as written:
-  // - loans / portfolio / overdue / disbursement -> Loan.status (LoanStatus).
+  // - loans / portfolio -> the DERIVED loan status the rows display
+  //   (deriveLoanStatus below): the stored LoanStatus values plus
+  //   'OVERDUE', which derivation produces for an ACTIVE loan whose next
+  //   unpaid installment is past due. Filtering matches what the user
+  //   sees — never the raw stored column.
+  // - overdue / disbursement -> Loan.status (LoanStatus).
   //   Note: the disbursement and overdue branches apply `status` to the
   //   related loan, not to Disbursement.status / Installment.status.
   // - payments / collections -> Payment.status (PaymentStatus)
@@ -34,8 +39,8 @@ export const GET = apiHandler(async (req: NextRequest) => {
   // Types that never read `status` (agent_performance, reconciliation) have
   // no entry, so their behaviour is unchanged.
   const STATUS_ALLOWLIST: Record<string, readonly string[]> = {
-    loans: ['PENDING_DISBURSEMENT', 'ACTIVE', 'CLOSED', 'DEFAULTED', 'WRITTEN_OFF'],
-    portfolio: ['PENDING_DISBURSEMENT', 'ACTIVE', 'CLOSED', 'DEFAULTED', 'WRITTEN_OFF'],
+    loans: ['PENDING_DISBURSEMENT', 'ACTIVE', 'CLOSED', 'DEFAULTED', 'WRITTEN_OFF', 'OVERDUE'],
+    portfolio: ['PENDING_DISBURSEMENT', 'ACTIVE', 'CLOSED', 'DEFAULTED', 'WRITTEN_OFF', 'OVERDUE'],
     overdue: ['PENDING_DISBURSEMENT', 'ACTIVE', 'CLOSED', 'DEFAULTED', 'WRITTEN_OFF'],
     disbursement: ['PENDING_DISBURSEMENT', 'ACTIVE', 'CLOSED', 'DEFAULTED', 'WRITTEN_OFF'],
     payments: ['INITIATED', 'PENDING_VERIFICATION', 'VERIFIED', 'ALLOCATED', 'FAILED', 'REJECTED'],
@@ -101,11 +106,23 @@ export const GET = apiHandler(async (req: NextRequest) => {
     select: { dueDate: true, status: true },
   }
 
+  // The loans / portfolio branches filter on the same derived status
+  // they display. Derivation only ever remaps ACTIVE loans (to
+  // OVERDUE), so the DB pre-filter for a requested derived status is:
+  // OVERDUE -> stored ACTIVE; any other value -> itself. The exact
+  // match then happens in memory against deriveLoanStatus, which keeps
+  // totals and counts consistent with the rows actually returned.
+  const storedStatusForDerived = (s: string) => (s === 'OVERDUE' ? 'ACTIVE' : s)
+  const matchesDerivedStatus = (l: {
+    status: string
+    schedule?: Array<{ dueDate: Date; status: string }>
+  }) => !status || deriveLoanStatus(l) === status
+
   if (type === 'loans') {
-    const loans = await db.loan.findMany({
+    const fetched = await db.loan.findMany({
       where: {
         organizationId: orgId,
-        ...(status ? { status: status as any } : {}),
+        ...(status ? { status: storedStatusForDerived(status) as any } : {}),
         ...businessDateFilter('disbursedAt', 'createdAt'),
         ...(agent ? { candidate: { assignedAgentId: agent } } : {}),
       },
@@ -118,6 +135,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
         _count: { select: { payments: true } },
       },
     })
+    const loans = fetched.filter(matchesDerivedStatus)
     return success({
       type,
       items: loans.map((l) => ({
@@ -288,7 +306,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
       db.loan.findMany({
         where: {
           organizationId: orgId,
-          ...(status ? { status: status as any } : {}),
+          ...(status ? { status: storedStatusForDerived(status) as any } : {}),
           ...businessDateFilter('disbursedAt', 'createdAt'),
           ...(agent ? { candidate: { assignedAgentId: agent } } : {}),
         },
@@ -303,13 +321,14 @@ export const GET = apiHandler(async (req: NextRequest) => {
       db.payment.aggregate({ where: { organizationId: orgId, status: 'ALLOCATED' }, _sum: { amount: true } }),
       db.loan.aggregate({ where: { organizationId: orgId, status: 'ACTIVE' }, _sum: { outstandingPrincipal: true, outstandingInterest: true, outstandingFees: true } }),
     ])
+    const visible = loans.filter(matchesDerivedStatus)
     return success({
       type,
       summary: {
-        totalLoans: loans.length,
-        activeLoans: loans.filter((l) => l.status === 'ACTIVE').length,
-        closedLoans: loans.filter((l) => l.status === 'CLOSED').length,
-        defaultedLoans: loans.filter((l) => l.status === 'DEFAULTED').length,
+        totalLoans: visible.length,
+        activeLoans: visible.filter((l) => deriveLoanStatus(l) === 'ACTIVE').length,
+        closedLoans: visible.filter((l) => deriveLoanStatus(l) === 'CLOSED').length,
+        defaultedLoans: visible.filter((l) => deriveLoanStatus(l) === 'DEFAULTED').length,
         totalDisbursed: String(totalDisbursedAgg._sum.principalAmount || 0),
         totalCollected: String(totalCollectedAgg._sum.amount || 0),
         outstandingPrincipal: String(outstandingAgg._sum.outstandingPrincipal || 0),
@@ -319,7 +338,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
           ? Math.round((((totalCollectedAgg._sum.amount || 0) / (totalDisbursedAgg._sum.principalAmount || 0)) * 1000)) / 10
           : 0,
       },
-      items: loans.map((l) => ({
+      items: visible.map((l) => ({
         id: l.id,
         loanNumber: l.loanNumber,
         candidateName: l.candidate.fullName,

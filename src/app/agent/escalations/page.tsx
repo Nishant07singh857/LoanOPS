@@ -155,6 +155,7 @@ export default function AgentEscalationsPage() {
       candidateName: e.candidate.fullName,
       loanNumber: e.loan.loanNumber,
       agentName: user?.name ?? 'Agent',
+      orgName: user?.organizationName,
     })
     openWhatsApp(e.candidate.mobile, msg)
     toast.success('WhatsApp draft opened', { description: 'Press Send in WhatsApp to deliver the message.' })

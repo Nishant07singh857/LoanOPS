@@ -29,8 +29,13 @@ export const created = <T>(data: T) => success(data, 201)
 export const fail = (code: string, message: string, status: number = 400, details?: unknown) =>
   NextResponse.json({ error: { code, message, details } } as ApiError, { status })
 
-export const badRequest = (msg = 'Bad Request', details?: unknown) =>
-  fail('BAD_REQUEST', msg, 400, details)
+// Callers may pass an explicit HTTP status (e.g. 410 for a revoked /
+// expired / already-used QR-apply link, whose callers always intended
+// Gone); the default stays 400. Before this parameter existed, a
+// status passed as the second argument silently landed in `details`
+// and the response went out as 400.
+export const badRequest = (msg = 'Bad Request', status = 400, details?: unknown) =>
+  fail('BAD_REQUEST', msg, status, details)
 
 export const unauthorized = (msg = 'Unauthorized') => fail('UNAUTHORIZED', msg, 401)
 export const forbidden = (msg = 'Forbidden') => fail('FORBIDDEN', msg, 403)
@@ -303,26 +308,9 @@ export function serializePaise(paise: number): string {
 }
 
 // ID & NUMBER GENERATORS
-
-let counter = 0
-export function genNumber(prefix: string): string {
-  counter += 1
-  const ts = Date.now().toString(36)
-  // Random segment from the CSPRNG (via genToken), never the non-crypto built-in PRNG:
-  // these numbers identify payments, applications and tickets, and a
-  // predictable generator would make them enumerable in sequence.
-  const rand = parseInt(genToken(2), 16).toString(36)
-  return `${prefix}-${ts}${rand}${counter.toString(36)}`.toUpperCase()
-}
-
-export function genToken(bytes: number = 32): string {
-  const arr = new Uint8Array(bytes)
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(arr)
-  } else {
-    throw new Error('Secure cryptographic functions are not available in this environment')
-  }
-  return Array.from(arr)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-}
+//
+// The implementations live in the leaf module numbers.ts (no imports)
+// so the seed and unit tests can use them without loading this stack;
+// they are re-exported here because route handlers import them from
+// api. See numbers.ts for the generator rationale.
+export { genNumber, genToken } from '@/lib/server/numbers'

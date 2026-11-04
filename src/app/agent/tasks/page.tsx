@@ -29,6 +29,7 @@ import { api } from '@/lib/api-client'
 import { generateCashIdempotencyKey, postCashCollectionWithIdempotency } from '@/lib/idempotency'
 import { formatPaiseToINR } from '@/lib/money'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
+import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
 type ChipKey = 'ALL' | 'TODAY' | 'TOMORROW' | 'OVERDUE' | 'URGENT' | 'HIGH' | 'MEDIUM'
@@ -91,6 +92,7 @@ function isOverdue(d: Date) {
 
 export default function AgentTasksPage() {
   const queryClient = useQueryClient()
+  const { user } = useSession()
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [status, setStatus] = React.useState<StatusKey>('ALL')
   const [sort, setSort] = React.useState<SortKey>('PRIORITY')
@@ -147,6 +149,7 @@ export default function AgentTasksPage() {
       loanNumber: t.loan?.loanNumber ?? '',
       amount: t.amount ? (Number(t.amount) / 100).toLocaleString('en-IN') : '0',
       dueDate: new Date(t.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+      orgName: user?.organizationName,
     })
     openWhatsApp(t.candidate.mobile, msg)
     toast.success('WhatsApp draft opened', { description: `Press Send in WhatsApp to deliver the reminder to ${t.candidate.fullName}.` })

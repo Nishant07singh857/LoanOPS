@@ -31,6 +31,7 @@ import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatBpsToPercent } from '@/lib/money'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
+import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
 interface LoanDetail {
@@ -176,6 +177,7 @@ export default function LoanDetailPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
   const queryClient = useQueryClient()
+  const { user } = useSession()
 
   const { data: loan, isLoading, isError, refetch } = useQuery({
     queryKey: ['owner-loan', params.id],
@@ -318,6 +320,7 @@ export default function LoanDetailPage() {
       loanNumber: loan.loanNumber,
       amount: (Number(loan.installmentAmount) / 100).toLocaleString('en-IN'),
       dueDate: nextDue ? fmtDate(nextDue.dueDate) : 'soon',
+      orgName: user?.organizationName,
     })
     openWhatsApp(loan.candidate.mobile, msg)
     toast.success('WhatsApp draft opened', { description: `Press Send in WhatsApp to deliver the reminder to ${loan.candidate.fullName}.` })

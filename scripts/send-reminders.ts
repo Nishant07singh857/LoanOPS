@@ -25,7 +25,8 @@ async function main() {
   console.log(
     `[send-reminders] orgs=${summary.organizations} installments=${summary.installmentsEvaluated} ` +
       `sent=${summary.sent} queued=${summary.queued} skippedPtp=${summary.skippedPtp} ` +
-      `failed=${summary.failed} alreadyLogged=${summary.alreadyLogged} noStage=${summary.noStage}${mode}`
+      `failed=${summary.failed} alreadyLogged=${summary.alreadyLogged} noStage=${summary.noStage} ` +
+      `swept=${summary.swept}${mode}`
   )
   // Success ping for the cron heartbeat monitor (docs/LAUNCH.md §4).
   // Skipped on dry runs — a preview is not a scheduled execution.

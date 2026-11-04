@@ -20,7 +20,11 @@ import {
   buildReceiptMessage,
   firstName,
 } from '../../src/lib/reminders'
-import { buildWhatsAppLink } from '../../src/lib/whatsapp'
+import {
+  buildWhatsAppLink,
+  buildWhatsAppMessage,
+  WHATSAPP_TEMPLATES,
+} from '../../src/lib/whatsapp'
 import {
   isWhatsAppApiConfigured,
   sendWhatsAppText,
@@ -149,6 +153,43 @@ test('buildReceiptMessage carries formatted amount and receipt number', () => {
   assert.ok(built.portalBody.includes('RCPT-9'), built.portalBody)
   assert.ok(built.whatsappText.includes('Acme Finance'), built.whatsappText)
   assert.ok(built.whatsappText.includes('Hello Priya,'), built.whatsappText)
+})
+
+test('buildWhatsAppMessage uses the caller org name, never a baked-in one', () => {
+  const withOrg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.PAYMENT_REMINDER, {
+    candidateName: 'Priya Sharma',
+    loanNumber: 'LON-1',
+    amount: '6,250.50',
+    dueDate: '6 Nov 2026',
+    orgName: 'Acme Finance',
+  })
+  assert.ok(withOrg.includes('from Acme Finance'), withOrg)
+  assert.ok(!withOrg.includes('Sterling'), withOrg)
+
+  // No org in scope: the neutral product fallback, not a specific
+  // organisation's name (the demo org's name used to be hard-coded).
+  const withoutOrg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.PAYMENT_REMINDER, {
+    candidateName: 'Priya Sharma',
+    loanNumber: 'LON-1',
+    amount: '6,250.50',
+    dueDate: '6 Nov 2026',
+  })
+  assert.ok(withoutOrg.includes('from LoanOps'), withoutOrg)
+  assert.ok(!withoutOrg.includes('Sterling'), withoutOrg)
+
+  // A provided orgName fills BOTH name slots: a template worded with
+  // {ownerName} must still render the provided org name, never the
+  // neutral constant.
+  const ownerSlot = buildWhatsAppMessage('Reminder from {ownerName} ({orgName})', {
+    orgName: 'Acme Finance',
+  })
+  assert.equal(ownerSlot, 'Reminder from Acme Finance (Acme Finance)')
+
+  // Symmetrically, a lone ownerName stands in for the org slot.
+  const orgSlot = buildWhatsAppMessage('Reminder from {orgName}', {
+    ownerName: 'Acme Finance',
+  })
+  assert.equal(orgSlot, 'Reminder from Acme Finance')
 })
 
 test('buildWhatsAppLink builds an encoded wa.me draft URL', () => {
@@ -853,6 +894,267 @@ test('DB: concurrent runs over a just-expired PTP deliver exactly once', async (
     const byChannel = new Map(logs.map((l) => [l.channel, l.status]))
     assert.equal(byChannel.get('PORTAL'), 'SENT')
     assert.equal(byChannel.get('WHATSAPP'), 'QUEUED')
+  } finally {
+    await cleanupClaimFixture(raw, orgId)
+    await raw.$disconnect()
+  }
+})
+
+// ============================================================
+// 7. DB integration — stale-QUEUED sweep: a claim whose runner died
+//    between claim and settle is recovered by the next run, while a
+//    fresh claim (possibly owned by a live runner) and the terminal
+//    WhatsApp staff-task QUEUED state are never touched.
+//    (Same DATABASE_URL_TEST gating as sections 5–6.)
+// ============================================================
+
+async function insertClaimRow(
+  raw: PrismaClient,
+  args: {
+    orgId: string
+    candidateId: string
+    loanId: string
+    installmentId: string
+    channel: 'PORTAL' | 'WHATSAPP'
+    attempts?: number
+    ageMs: number // updatedAt is backdated this far behind NOW
+  }
+) {
+  const row = await raw.reminderLog.create({
+    data: {
+      organizationId: args.orgId,
+      candidateId: args.candidateId,
+      loanId: args.loanId,
+      installmentId: args.installmentId,
+      stage: 'OVERDUE_1',
+      channel: args.channel,
+      status: 'QUEUED',
+      message: 'seeded claim (test)',
+      attempts: args.attempts ?? 1,
+    },
+  })
+  // Prisma @updatedAt cannot be set through the client; backdate with
+  // SQL so the row looks exactly like one a crashed runner left behind.
+  const backdated = new Date(NOW.getTime() - args.ageMs)
+  await raw.$executeRaw`UPDATE "ReminderLog" SET "updatedAt" = ${backdated} WHERE id = ${row.id}`
+  return row.id
+}
+
+const TWO_HOURS_MS = 2 * 60 * 60 * 1000
+
+test('DB: stale QUEUED portal claim is swept and delivered on the next run', async () => {
+  if (!HAS_DB) {
+    console.log('  (skipped — DATABASE_URL_TEST not set)')
+    return
+  }
+  delete process.env.WHATSAPP_API_TOKEN
+  delete process.env.WHATSAPP_PHONE_NUMBER_ID
+
+  const raw = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_TEST })
+  const suffix = Math.random().toString(36).slice(2, 8)
+  let orgId = ''
+  try {
+    const fx = await buildClaimFixture(raw, suffix)
+    orgId = fx.orgId
+    const loanId = await fx.mkLoan(`LON-SW-${suffix}-A`)
+    const instId = await fx.mkInstallment(loanId, '2026-11-04') // OVERDUE_1 at NOW
+    const rowId = await insertClaimRow(raw, {
+      orgId,
+      candidateId: fx.candidateId,
+      loanId,
+      installmentId: instId,
+      channel: 'PORTAL',
+      ageMs: TWO_HOURS_MS,
+    })
+
+    const { runReminders } = await import('../../src/lib/server/reminders')
+
+    // Dry run first: the sweep is counted, nothing is written.
+    const s0 = await runReminders({ organizationId: orgId, now: NOW, dryRun: true })
+    assert.equal(s0.swept, 1, JSON.stringify(s0))
+    let row = await raw.reminderLog.findUnique({ where: { id: rowId } })
+    assert.equal(row?.status, 'QUEUED')
+    assert.equal(await raw.notification.count({ where: { candidateId: fx.candidateId } }), 0)
+
+    // Real run: swept to FAILED, re-claimed and delivered in place.
+    const s1 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(s1.swept, 1, JSON.stringify(s1))
+    assert.equal(s1.sent, 1, JSON.stringify(s1)) // the recovered portal delivery
+    assert.equal(s1.queued, 1, JSON.stringify(s1)) // whatsapp fresh claim -> staff task
+    row = await raw.reminderLog.findUnique({ where: { id: rowId } })
+    assert.equal(row?.status, 'SENT')
+    assert.equal(row?.attempts, 2) // the crashed attempt + the recovered one
+    assert.equal(row?.error, null)
+    assert.equal(await raw.notification.count({ where: { candidateId: fx.candidateId } }), 1)
+    assert.equal(await raw.collectionTask.count({ where: { organizationId: orgId } }), 1)
+    assert.equal(
+      await raw.reminderLog.count({ where: { organizationId: orgId } }),
+      2,
+      'recovered in place, never duplicated'
+    )
+  } finally {
+    await cleanupClaimFixture(raw, orgId)
+    await raw.$disconnect()
+  }
+})
+
+test('DB: fresh QUEUED claims are left untouched (a live runner may own them)', async () => {
+  if (!HAS_DB) {
+    console.log('  (skipped — DATABASE_URL_TEST not set)')
+    return
+  }
+  delete process.env.WHATSAPP_API_TOKEN
+  delete process.env.WHATSAPP_PHONE_NUMBER_ID
+
+  const raw = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_TEST })
+  const suffix = Math.random().toString(36).slice(2, 8)
+  let orgId = ''
+  try {
+    const fx = await buildClaimFixture(raw, suffix)
+    orgId = fx.orgId
+    const loanId = await fx.mkLoan(`LON-SW-${suffix}-F`)
+    const instId = await fx.mkInstallment(loanId, '2026-11-04')
+    const portalId = await insertClaimRow(raw, {
+      orgId,
+      candidateId: fx.candidateId,
+      loanId,
+      installmentId: instId,
+      channel: 'PORTAL',
+      ageMs: 0, // claimed just now — another runner may be mid-delivery
+    })
+    const waId = await insertClaimRow(raw, {
+      orgId,
+      candidateId: fx.candidateId,
+      loanId,
+      installmentId: instId,
+      channel: 'WHATSAPP',
+      ageMs: 0,
+    })
+
+    const { runReminders } = await import('../../src/lib/server/reminders')
+    const s = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(s.swept, 0, JSON.stringify(s))
+    assert.equal(s.sent, 0, JSON.stringify(s))
+    assert.equal(s.queued, 0, JSON.stringify(s))
+    assert.equal(s.alreadyLogged, 2, JSON.stringify(s))
+    assert.equal(await raw.notification.count({ where: { candidateId: fx.candidateId } }), 0)
+    assert.equal(await raw.collectionTask.count({ where: { organizationId: orgId } }), 0)
+    assert.equal((await raw.reminderLog.findUnique({ where: { id: portalId } }))?.status, 'QUEUED')
+    assert.equal((await raw.reminderLog.findUnique({ where: { id: waId } }))?.status, 'QUEUED')
+  } finally {
+    await cleanupClaimFixture(raw, orgId)
+    await raw.$disconnect()
+  }
+})
+
+test('DB: stale QUEUED WhatsApp claim is swept only when the API is configured', async () => {
+  if (!HAS_DB) {
+    console.log('  (skipped — DATABASE_URL_TEST not set)')
+    return
+  }
+  const raw = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_TEST })
+  const suffix = Math.random().toString(36).slice(2, 8)
+  let orgId = ''
+  let fetchCalls = 0
+  try {
+    const fx = await buildClaimFixture(raw, suffix)
+    orgId = fx.orgId
+    const { runReminders } = await import('../../src/lib/server/reminders')
+
+    // --- No API configured: WhatsApp QUEUED is the terminal staff-task
+    // state. A stale-looking row must NOT be swept — re-delivering it
+    // would duplicate the staff task a human may already be working.
+    delete process.env.WHATSAPP_API_TOKEN
+    delete process.env.WHATSAPP_PHONE_NUMBER_ID
+    const loanA = await fx.mkLoan(`LON-SW-${suffix}-WA`)
+    const instA = await fx.mkInstallment(loanA, '2026-11-04')
+    const waRowId = await insertClaimRow(raw, {
+      orgId,
+      candidateId: fx.candidateId,
+      loanId: loanA,
+      installmentId: instA,
+      channel: 'WHATSAPP',
+      ageMs: TWO_HOURS_MS,
+    })
+    const s1 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(s1.swept, 0, JSON.stringify(s1))
+    assert.equal(s1.sent, 1, JSON.stringify(s1)) // portal channel, freshly claimed
+    assert.equal((await raw.reminderLog.findUnique({ where: { id: waRowId } }))?.status, 'QUEUED')
+    assert.equal(await raw.collectionTask.count({ where: { organizationId: orgId } }), 0)
+
+    // --- API configured: QUEUED is transient again — a stale row is a
+    // crashed send and is retried through the FAILED re-claim path.
+    process.env.WHATSAPP_API_TOKEN = 'test-token-value'
+    process.env.WHATSAPP_PHONE_NUMBER_ID = '1234567890'
+    stubFetch(async () => {
+      fetchCalls++
+      return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.test' }] }) }
+    })
+    const loanB = await fx.mkLoan(`LON-SW-${suffix}-WB`)
+    const instB = await fx.mkInstallment(loanB, '2026-11-04')
+    const waRowBId = await insertClaimRow(raw, {
+      orgId,
+      candidateId: fx.candidateId,
+      loanId: loanB,
+      installmentId: instB,
+      channel: 'WHATSAPP',
+      ageMs: TWO_HOURS_MS,
+    })
+    // Loan A's task-state row was written by the previous run on the
+    // real clock; refresh it to NOW so only the genuinely stale row is
+    // in scope (in production both share one clock).
+    await raw.$executeRaw`UPDATE "ReminderLog" SET "updatedAt" = ${NOW} WHERE id = ${waRowId}`
+
+    const s2 = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(s2.swept, 1, JSON.stringify(s2))
+    assert.equal((await raw.reminderLog.findUnique({ where: { id: waRowBId } }))?.status, 'SENT')
+    assert.equal(fetchCalls, 1)
+    assert.equal((await raw.reminderLog.findUnique({ where: { id: waRowId } }))?.status, 'QUEUED')
+  } finally {
+    globalThis.fetch = savedFetch
+    restoreEnv()
+    await cleanupClaimFixture(raw, orgId)
+    await raw.$disconnect()
+  }
+})
+
+test('DB: a swept claim still honours the FAILED attempt cap', async () => {
+  if (!HAS_DB) {
+    console.log('  (skipped — DATABASE_URL_TEST not set)')
+    return
+  }
+  delete process.env.WHATSAPP_API_TOKEN
+  delete process.env.WHATSAPP_PHONE_NUMBER_ID
+
+  const raw = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_TEST })
+  const suffix = Math.random().toString(36).slice(2, 8)
+  let orgId = ''
+  try {
+    const fx = await buildClaimFixture(raw, suffix)
+    orgId = fx.orgId
+    const loanId = await fx.mkLoan(`LON-SW-${suffix}-C`)
+    const instId = await fx.mkInstallment(loanId, '2026-11-04')
+    // Claimed three times already and the last runner died holding it:
+    // the sweep may surface it, but the cap must keep it undelivered.
+    const rowId = await insertClaimRow(raw, {
+      orgId,
+      candidateId: fx.candidateId,
+      loanId,
+      installmentId: instId,
+      channel: 'PORTAL',
+      attempts: 3,
+      ageMs: TWO_HOURS_MS,
+    })
+
+    const { runReminders } = await import('../../src/lib/server/reminders')
+    const s = await runReminders({ organizationId: orgId, now: NOW })
+    assert.equal(s.swept, 1, JSON.stringify(s))
+    assert.equal(s.sent, 0, JSON.stringify(s))
+    const row = await raw.reminderLog.findUnique({ where: { id: rowId } })
+    assert.equal(row?.status, 'FAILED')
+    assert.equal(row?.attempts, 3)
+    assert.ok((row?.error ?? '').includes('swept for retry'), row?.error ?? '')
+    assert.equal(await raw.notification.count({ where: { candidateId: fx.candidateId } }), 0)
   } finally {
     await cleanupClaimFixture(raw, orgId)
     await raw.$disconnect()

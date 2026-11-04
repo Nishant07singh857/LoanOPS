@@ -29,6 +29,7 @@ import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR } from '@/lib/money'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
+import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
 type ChipKey = 'ALL' | 'ACTIVE' | 'FULFILLED' | 'BROKEN' | 'CANCELLED'
@@ -75,6 +76,7 @@ function isToday(d: Date) {
 
 export default function AgentPtpPage() {
   const queryClient = useQueryClient()
+  const { user } = useSession()
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [newOpen, setNewOpen] = React.useState(false)
   const [page, setPage] = React.useState(1)
@@ -124,6 +126,7 @@ export default function AgentPtpPage() {
       loanNumber: p.loan.loanNumber,
       amount: (Number(p.promisedAmount) / 100).toLocaleString('en-IN'),
       dueDate: fmtDate(p.promiseDate),
+      orgName: user?.organizationName,
     })
     openWhatsApp(p.candidate.mobile, msg)
     toast.success('WhatsApp draft opened', { description: `Press Send in WhatsApp to deliver the reminder to ${p.candidate.fullName}.` })
