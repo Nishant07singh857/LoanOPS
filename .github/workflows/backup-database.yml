@@ -5,10 +5,13 @@ name: Backup production database (weekly)
 # backup strategy for a ledger). Runs weekly and on manual dispatch.
 #
 # The dump connection comes from the BACKUP_DATABASE_URL repository
-# secret. Until that secret exists the job SKIPS CLEANLY with a
-# notice — it never fails and never invents a connection. No
-# credential literal appears in this file; the secret is only ever
-# referenced, and passed to pg_dump through the environment.
+# secret when it exists, and falls back to the existing
+# PROD_DATABASE_URL secret when it does not — so weekly backups run
+# even before a dedicated backup secret is added. Only when BOTH are
+# missing does the job SKIP CLEANLY with a notice — it never fails
+# and never invents a connection. No credential literal appears in
+# this file; secrets are only ever referenced, and passed to pg_dump
+# through the environment.
 on:
   workflow_dispatch:
   schedule:
@@ -23,25 +26,33 @@ jobs:
         id: check
         env:
           BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
-          if [ -z "${BACKUP_DATABASE_URL}" ]; then
-            echo "::notice::BACKUP_DATABASE_URL secret is not set — skipping database backup. Add it under Settings → Secrets and variables → Actions to enable weekly backups."
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-          else
+          if [ -n "${BACKUP_DATABASE_URL}" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "${PROD_DATABASE_URL}" ]; then
+            echo "::notice::BACKUP_DATABASE_URL secret is not set — falling back to the PROD_DATABASE_URL secret for this backup."
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Neither BACKUP_DATABASE_URL nor PROD_DATABASE_URL secret is set — skipping database backup. Add one under Settings → Secrets and variables → Actions to enable weekly backups."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Dump production database
         if: steps.check.outputs.configured == 'true'
         env:
           BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
           stamp="$(date -u +%Y%m%d-%H%M%S)"
           echo "stamp=${stamp}" >> "$GITHUB_ENV"
+          # Resolve the dump source: dedicated backup secret wins, the
+          # production secret is the fallback (same order as the check).
+          DB_URL="${BACKUP_DATABASE_URL:-$PROD_DATABASE_URL}"
           # postgres:17 client — pg_dump must be >= the server version
           # (Neon runs newer majors than the CI database image).
-          docker run --rm -e BACKUP_DATABASE_URL postgres:17-alpine \
-            sh -c 'pg_dump --no-owner --no-privileges "$BACKUP_DATABASE_URL"' \
+          docker run --rm -e DB_URL postgres:17-alpine \
+            sh -c 'pg_dump --no-owner --no-privileges "$DB_URL"' \
             | gzip > "loanops-backup-${stamp}.sql.gz"
           ls -lh loanops-backup-*.sql.gz
 

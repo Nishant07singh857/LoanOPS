@@ -1,0 +1,57 @@
+name: Ops scripts (manual — DRY RUN by default)
+
+# Manual runner for one-time production data scripts. MANUAL DISPATCH
+# ONLY — nothing here is scheduled, and the default mode is DRY RUN:
+# the script reports what it WOULD change and writes nothing. A live
+# (writing) run happens only when the dispatcher explicitly unchecks
+# dry_run. Treat this like a production data tool, because it is one.
+#
+# Currently wired scripts:
+#   encrypt-bank-accounts → scripts/encrypt-plaintext-bank-accounts.ts
+#     Encrypts any legacy plaintext bank account numbers in place.
+#     Idempotent: rows that are already encrypted are skipped.
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: 'Which ops script to run'
+        type: choice
+        options:
+          - encrypt-bank-accounts
+        default: encrypt-bank-accounts
+      dry_run:
+        description: 'Dry run — report only, write NOTHING (uncheck only for a deliberate live run)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: production-ops-scripts
+  cancel-in-progress: false
+
+jobs:
+  ops-script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Encrypt plaintext bank accounts
+        if: inputs.script == 'encrypt-bank-accounts'
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.PROD_DATABASE_URL }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          PII_ENCRYPTION_KEY: ${{ secrets.PII_ENCRYPTION_KEY }}
+          AADHAAR_HASH_PEPPER: ${{ secrets.AADHAAR_HASH_PEPPER }}
+          NEXT_PUBLIC_APP_URL: https://loanops.vercel.app
+        run: |
+          if [ "${{ inputs.dry_run }}" = "false" ]; then
+            echo "LIVE RUN — dry_run explicitly unchecked: changes WILL be written to the production database."
+            npx tsx scripts/encrypt-plaintext-bank-accounts.ts
+          else
+            echo "DRY RUN (default) — nothing will be written."
+            npx tsx scripts/encrypt-plaintext-bank-accounts.ts --dry-run
+          fi

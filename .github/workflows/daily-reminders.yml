@@ -1,0 +1,79 @@
+name: Daily overdue sweep + auto reminders (production)
+
+# Production scheduling for the two standalone runners (DEPLOYMENT.md §6).
+# The live site runs on Vercel, which has no cron host for repo scripts,
+# so GitHub Actions runs them instead — same runners, same order, and the
+# same repository secrets the seed workflow already uses. No new secret
+# is required.
+#
+# Order matters: mark-overdue flips past-due installments to OVERDUE
+# first; send-reminders then evaluates reminder stages against the fresh
+# statuses. Both runners are idempotent (mark-overdue only flips past-due
+# unpaid installments; ReminderLog has a unique claim constraint), and
+# the concurrency guard below keeps runs from ever overlapping.
+#
+# Schedule: 03:45 UTC = 09:15 IST daily — after the overdue sweep,
+# before the working day.
+#
+# Manual dispatch defaults to dry_run = true (safe first look at the
+# logs). In dry-run mode send-reminders gets its --dry-run flag;
+# mark-overdue has NO dry-run mode (it takes no arguments at all), so
+# the step is SKIPPED on a dry run rather than run live. Scheduled runs
+# carry no inputs and always run live.
+#
+# Heartbeat URLs (HEARTBEAT_MARK_OVERDUE_URL / HEARTBEAT_REMINDERS_URL)
+# are deliberately left unset: the ping helper is a no-op without them.
+# Set them as repository secrets/variables later if a heartbeat monitor
+# is adopted; never hardcode a URL here.
+on:
+  schedule:
+    - cron: '45 3 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run only — log what would happen, change nothing (mark-overdue is skipped: it has no dry-run mode)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: production-daily-ops
+  cancel-in-progress: false
+
+jobs:
+  daily-ops:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Mark overdue installments (skipped on dry runs — no dry-run mode exists)
+        if: ${{ !inputs.dry_run }}
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.PROD_DATABASE_URL }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          PII_ENCRYPTION_KEY: ${{ secrets.PII_ENCRYPTION_KEY }}
+          AADHAAR_HASH_PEPPER: ${{ secrets.AADHAAR_HASH_PEPPER }}
+          NEXT_PUBLIC_APP_URL: https://loanops.vercel.app
+        run: npx tsx scripts/mark-overdue.ts
+      - name: Send auto reminders
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.PROD_DATABASE_URL }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          PII_ENCRYPTION_KEY: ${{ secrets.PII_ENCRYPTION_KEY }}
+          AADHAAR_HASH_PEPPER: ${{ secrets.AADHAAR_HASH_PEPPER }}
+          # NOT the localhost value the seed workflow uses: reminders.ts
+          # builds borrower portal links from NEXT_PUBLIC_APP_URL, so it
+          # must be the live domain or reminder links point nowhere.
+          NEXT_PUBLIC_APP_URL: https://loanops.vercel.app
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "DRY RUN — send-reminders --dry-run (nothing will be written or sent)"
+            npx tsx scripts/send-reminders.ts --dry-run
+          else
+            npx tsx scripts/send-reminders.ts
+          fi
