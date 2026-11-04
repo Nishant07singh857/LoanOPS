@@ -31,7 +31,7 @@ import {
   stripImageMetadata,
 } from '../../src/lib/server/security'
 import { escapeCsvCell, neutralizeCsvFormula } from '../../src/lib/csv'
-import { genNumber } from '../../src/lib/server/api'
+import { genNumber, badRequest } from '../../src/lib/server/api'
 
 interface TestCase {
   name: string
@@ -475,6 +475,34 @@ test('genNumber produces prefixed, upper-case, unique identifiers', () => {
     assert.ok(!seen.has(n), `duplicate genNumber output: ${n}`)
     seen.add(n)
   }
+})
+
+// 19. badRequest status pass-through: the second argument is an HTTP
+// status, not response details. The QR-apply route passes 410 for
+// revoked / expired / used links; before the fix that 410 silently
+// landed in the body's `details` field and the response went out 400.
+test('badRequest defaults to 400 and honours an explicit status', async () => {
+  const def = badRequest('Invalid JSON')
+  assert.equal(def.status, 400)
+  const defBody = await def.json()
+  assert.equal(defBody.error.code, 'BAD_REQUEST')
+  assert.equal(defBody.error.message, 'Invalid JSON')
+  assert.equal(defBody.error.details, undefined)
+
+  const gone = badRequest('This link has expired', 410)
+  assert.equal(gone.status, 410)
+  const goneBody = await gone.json()
+  assert.equal(goneBody.error.code, 'BAD_REQUEST')
+  assert.equal(goneBody.error.message, 'This link has expired')
+  assert.equal(goneBody.error.details, undefined, 'the status must not leak into details')
+
+  const other = badRequest('Out of range', 422)
+  assert.equal(other.status, 422)
+
+  const withDetails = badRequest('Validation failed', 400, { field: 'amount' })
+  assert.equal(withDetails.status, 400)
+  const detailsBody = await withDetails.json()
+  assert.deepEqual(detailsBody.error.details, { field: 'amount' })
 })
 
 async function runTests() {
