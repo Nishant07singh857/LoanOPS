@@ -4,7 +4,9 @@
 //
 // Seed story (scripts/seed.ts): candidate-001 (Priya Sharma) is assigned
 // to agent Arjun (agent@loanops.in) and has application APP-2024-1024
-// plus support ticket SUP-2024-128; candidate-002 (Rahul Verma) is also
+// plus a support ticket in the app-generated SUP-… format (the seed
+// uses the same genNumber generator as the support routes, so the
+// number differs per fresh seed); candidate-002 (Rahul Verma) is also
 // Arjun's and holds loan LON-2024-0892 with a 12-installment schedule and
 // an ACTIVE PTP. Agent Sneha (agent2@loanops.in) owns candidate-003 only,
 // so candidate-001 must be denied to her with the agent guard's 403.
@@ -85,7 +87,13 @@ test.describe('Candidate detail APIs (owner + agent)', () => {
     expect(Array.isArray(d.recentPayments)).toBe(true)
     expect(Array.isArray(d.ptps)).toBe(true)
     expect(Array.isArray(d.supportTickets)).toBe(true)
-    expect(d.supportTickets.map((t: any) => t.ticketNumber)).toContain('SUP-2024-128')
+    expect(d.supportTickets.length).toBeGreaterThanOrEqual(1)
+    for (const t of d.supportTickets) {
+      // Canonical app-generated format (genNumber('SUP')); the retired
+      // hard-coded seed shape was 'SUP-2024-128' (SUP-<year>-<seq>).
+      expect(t.ticketNumber).toMatch(/^SUP-[A-Z0-9]+$/)
+      expect(t.ticketNumber).not.toMatch(/^SUP-\d{4}-\d+$/)
+    }
     expect(Array.isArray(d.reminders)).toBe(true)
     expect(d.counts.supportTickets).toBeGreaterThanOrEqual(1)
   })
@@ -116,7 +124,11 @@ test.describe('Candidate detail APIs (owner + agent)', () => {
     expect(Array.isArray(d.applications)).toBe(true)
     expect(d.applications.map((a: any) => a.applicationNumber)).toContain('APP-2024-1024')
     expect(Array.isArray(d.supportTickets)).toBe(true)
-    expect(d.supportTickets.map((t: any) => t.ticketNumber)).toContain('SUP-2024-128')
+    expect(d.supportTickets.length).toBeGreaterThanOrEqual(1)
+    for (const t of d.supportTickets) {
+      expect(t.ticketNumber).toMatch(/^SUP-[A-Z0-9]+$/)
+      expect(t.ticketNumber).not.toMatch(/^SUP-\d{4}-\d+$/)
+    }
     expect(Array.isArray(d.reminders)).toBe(true)
     expect(JSON.stringify(d)).not.toContain('234567897892')
   })
@@ -147,6 +159,13 @@ test.describe('Candidate detail APIs (owner + agent)', () => {
     await page.getByRole('button', { name: 'Sign in' }).click()
     await page.waitForURL('**/admin**')
 
+    // The seeded ticket number is generated per fresh seed — read the
+    // actual value from the API instead of hard-coding it.
+    const detailRes = await ownerCtx.get('/api/owner/candidates/candidate-001')
+    expect(detailRes.status()).toBe(200)
+    const ticketNumber = (await detailRes.json()).data.supportTickets[0].ticketNumber
+    expect(ticketNumber).toMatch(/^SUP-[A-Z0-9]+$/)
+
     await page.goto('/admin/candidates')
     const viewLink = page.getByRole('link', { name: /View Priya Sharma details/i })
     await expect(viewLink).toBeVisible()
@@ -154,7 +173,7 @@ test.describe('Candidate detail APIs (owner + agent)', () => {
     await page.waitForURL('**/admin/candidates/candidate-001')
     await expect(page.getByRole('heading', { name: 'Priya Sharma' })).toBeVisible()
     await page.getByRole('tab', { name: 'Support & Activity' }).click()
-    await expect(page.getByText('SUP-2024-128')).toBeVisible()
+    await expect(page.getByText(ticketNumber)).toBeVisible()
     await ctx.close()
   })
 })

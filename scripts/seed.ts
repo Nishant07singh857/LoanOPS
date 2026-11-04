@@ -13,6 +13,7 @@ import { PrismaClient, UserRole, InterestType, RepaymentFrequency, ApplicationSt
 import { randomBytes } from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import { encryptPII } from '../src/lib/server/crypto'
+import { genNumber } from '../src/lib/server/numbers'
 import { generateSchedule } from '../src/lib/server/financial'
 import { postLedger, ACCOUNTS } from '../src/lib/server/ledger'
 import { maskAadhaar, maskPan } from '../src/lib/utils'
@@ -863,7 +864,11 @@ By accepting this Agreement, the Borrower confirms that all information provided
         id: 'sup-001',
         organizationId: org.id,
         candidateId: candidate1.id,
-        ticketNumber: 'SUP-2024-128',
+        // Canonical ticket format is the app-generated one (genNumber,
+        // as in the support routes) — the seed used to hard-code a
+        // one-off 'SUP-2024-128' shape no real ticket ever has. The row
+        // id stays fixed ('sup-001') so re-seeds skip it as before.
+        ticketNumber: genNumber('SUP'),
         category: 'Application Status',
         subject: 'When will my application be reviewed?',
         description: 'I submitted my application 2 hours ago. Please let me know the status.',
