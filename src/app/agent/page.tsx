@@ -135,6 +135,7 @@ export default function AgentDashboardPage() {
       loanNumber,
       amount: (Number(amountPaise) / 100).toLocaleString('en-IN'),
       dueDate,
+      orgName: user?.organizationName,
     })
     openWhatsApp(mobile, msg)
     toast.success('WhatsApp draft opened', { description: `Press Send in WhatsApp to deliver the reminder to ${name}.` })

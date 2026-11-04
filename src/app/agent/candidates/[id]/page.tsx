@@ -35,6 +35,7 @@ import { api } from '@/lib/api-client'
 import { generateCashIdempotencyKey, postCashCollectionWithIdempotency } from '@/lib/idempotency'
 import { formatPaiseToINR, formatPaiseToINRShort, pluralize } from '@/lib/money'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
+import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
 interface CandidateDetail {
@@ -160,6 +161,7 @@ export default function AgentCandidateDetailPage() {
   const params = useParams<{ id: string }>()
   const candidateId = params.id
   const queryClient = useQueryClient()
+  const { user } = useSession()
 
   const [collectOpen, setCollectOpen] = React.useState(false)
   const [presetInstallment, setPresetInstallment] = React.useState<number | null>(null)
@@ -225,6 +227,7 @@ export default function AgentCandidateDetailPage() {
       loanNumber: loan?.loanNumber ?? '',
       amount: loan ? (totalOutstandingPaise / 100).toLocaleString('en-IN') : '0',
       dueDate: loan ? fmtDate(nextInstallmentRow?.dueDate ?? loan.firstDueDate) : '',
+      orgName: user?.organizationName,
     })
     openWhatsApp(c.mobile, msg)
     toast.success('WhatsApp draft opened')

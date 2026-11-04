@@ -85,7 +85,10 @@ export default function PrintableReceiptPage() {
     enabled: Boolean(id),
   })
 
-  const orgName = r?.organization?.name || 'Sterling Lending'
+  // The receipt API returns the real organisation name; the fallback
+  // is the neutral product name (the compliance-config convention),
+  // never a specific organisation's name.
+  const orgName = r?.organization?.name || 'LoanOps'
   const receiptNumber = r?.receiptNumber || r?.paymentNumber || '—'
   const paymentNumber = r?.paymentNumber || '—'
   const verificationStatus = r?.verificationStatus || (r?.verifiedAt ? 'VERIFIED' : 'PENDING_VERIFICATION')

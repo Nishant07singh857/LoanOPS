@@ -20,6 +20,7 @@ import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINRShort } from '@/lib/money'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
+import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
 type ChipKey = 'ALL' | 'OVERDUE' | 'HAS_PTP' | 'RISK'
@@ -56,6 +57,7 @@ function fmtDateShort(d?: string | null) {
 function AgentCandidatesPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { user } = useSession()
   const [chip, setChip] = React.useState<ChipKey>('ALL')
   const [search, setSearch] = React.useState(() => searchParams.get('q') ?? '')
   const [page, setPage] = React.useState(1)
@@ -90,6 +92,7 @@ function AgentCandidatesPageInner() {
       loanNumber: c.activeLoanNumbers[0] ?? '',
       amount: (Number(c.outstanding) / 100).toLocaleString('en-IN'),
       dueDate: fmtDateShort(c.nextFollowUp),
+      orgName: user?.organizationName,
     })
     openWhatsApp(c.mobile, msg)
     toast.success('WhatsApp draft opened', { description: `Press Send in WhatsApp to deliver the reminder to ${c.fullName}.` })

@@ -106,6 +106,7 @@ export default function LoanDetailPage() {
     const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.CANDIDATE_TO_AGENT, {
       candidateName,
       loanNumber: loan?.loanNumber ?? '',
+      orgName: user?.organizationName,
     })
     openWhatsApp(agentPhone, msg)
     toast.success('WhatsApp draft opened', { description: 'Your agent will respond shortly.' })
@@ -316,6 +317,7 @@ export default function LoanDetailPage() {
                 const msg = buildWhatsAppMessage(WHATSAPP_TEMPLATES.CANDIDATE_TO_AGENT, {
                   candidateName,
                   loanNumber: loan?.loanNumber ?? '',
+                  orgName: user?.organizationName,
                 }) + '\n\nI would like to request an EMI restructure (e.g. switch to Monthly).'
                 openWhatsApp(agentPhone, msg)
                 toast.success('Restructure request opened in WhatsApp')
