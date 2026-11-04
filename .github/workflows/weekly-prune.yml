@@ -1,0 +1,63 @@
+name: Prune operational logs (weekly)
+
+# Weekly pruning of append-only operational logs (AuditLog,
+# Notification, ReminderLog, processed WebhookEvent, dead sessions
+# and password-reset tokens) so the Neon Free database (~0.5 GB cap)
+# stays near ₹0 across the 1–2 year free run. Financial and business
+# records are NEVER touched — the classification is
+# MODEL_CLASSIFICATION in src/lib/prune-logs.ts, and ReminderLog rows
+# are pruned only when the reminder engine can never act on them
+# again.
+#
+# All connection details and secrets come from the same GitHub
+# repository secrets as the other ops workflows — never commit them.
+# Retention: LOG_RETENTION_DAYS is left unset on schedule, so the
+# script applies its default of 90 days (minimum 7; below-floor
+# values make the run fail rather than prune).
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "true = count what WOULD be deleted, delete nothing"
+        type: boolean
+        default: true
+      retention_days:
+        description: "Retention window in days (empty = default 90; minimum 7)"
+        type: string
+        default: ""
+  schedule:
+    # Sundays 04:00 IST = Saturdays 22:30 UTC — the quietest window
+    # of the week for the borrower base.
+    - cron: '30 22 * * 6'
+
+concurrency:
+  group: weekly-prune
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Prune operational logs
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.PROD_DATABASE_URL }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          PII_ENCRYPTION_KEY: ${{ secrets.PII_ENCRYPTION_KEY }}
+          AADHAAR_HASH_PEPPER: ${{ secrets.AADHAAR_HASH_PEPPER }}
+          NEXT_PUBLIC_APP_URL: https://loanops.vercel.app
+          # Empty (scheduled runs, or a blank dispatch input) → the
+          # script's 90-day default applies.
+          LOG_RETENTION_DAYS: ${{ inputs.retention_days }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="--dry-run"
+          fi
+          npx tsx scripts/prune-logs.ts $ARGS
