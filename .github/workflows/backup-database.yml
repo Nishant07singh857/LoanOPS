@@ -44,16 +44,39 @@ jobs:
           BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
+          set -eo pipefail
           stamp="$(date -u +%Y%m%d-%H%M%S)"
           echo "stamp=${stamp}" >> "$GITHUB_ENV"
+          file="loanops-backup-${stamp}.sql.gz"
           # Resolve the dump source: dedicated backup secret wins, the
           # production secret is the fallback (same order as the check).
-          DB_URL="${BACKUP_DATABASE_URL:-$PROD_DATABASE_URL}"
+          # EXPORT it: `docker run -e DB_URL` copies only exported host
+          # variables into the container — a plain shell variable leaves
+          # pg_dump with an empty connection string (socket fallback).
+          export DB_URL="${BACKUP_DATABASE_URL:-$PROD_DATABASE_URL}"
           # postgres:17 client — pg_dump must be >= the server version
           # (Neon runs newer majors than the CI database image).
           docker run --rm -e DB_URL postgres:17-alpine \
             sh -c 'pg_dump --no-owner --no-privileges "$DB_URL"' \
-            | gzip > "loanops-backup-${stamp}.sql.gz"
+            | gzip > "$file"
+          # Sanity gate: a failed or empty pg_dump must never be
+          # uploaded as a "backup". pipefail above already fails the
+          # step when pg_dump errors; this gate also catches a
+          # successful-but-empty dump. Floor: an empty gzip stream is
+          # ~20 bytes, while this schema's DDL alone compresses to
+          # several KB — 1024 bytes sits safely between the two.
+          gzip -t "$file"
+          size="$(stat -c%s "$file")"
+          tables="$(zcat "$file" | grep -c 'CREATE TABLE' || true)"
+          echo "Backup sanity: ${size} bytes, ${tables} CREATE TABLE statements."
+          if [ "$size" -lt 1024 ]; then
+            echo "::error::Backup file is only ${size} bytes — refusing to upload an empty or near-empty dump."
+            exit 1
+          fi
+          if [ "$tables" -eq 0 ]; then
+            echo "::error::Backup contains no CREATE TABLE statements — refusing to upload a dump without schema."
+            exit 1
+          fi
           ls -lh loanops-backup-*.sql.gz
 
       - name: Upload backup artifact
