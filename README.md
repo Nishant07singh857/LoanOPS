@@ -116,7 +116,6 @@ Set `DOMAIN` to the public hostname and run Caddy with the committed `Caddyfile`
 ## Repo hygiene rules
 
 - Never commit: `.env*` (except `.env.example`), databases (`*.db`, `*.sqlite*`), run output (`result.json`, `audit-raw-proofs.txt`, `audit-output/`, `test-results/`, logs). These are gitignored and dockerignored — keep it that way.
-- Audit output goes to `audit-output/` via `scripts/run-audit.mjs`, not the repo root.
 - `package-lock.json` is committed and is the source of truth for installs: always use `npm ci`, regenerate the lockfile in the same PR as any `package.json` dependency change, and never hand-edit it.
 - One change set = code + Prisma schema + its migration, together.
 - No demo credentials, sample passwords, or "temporary" secrets in source, tests, seeds, or docs — test credentials come from environment variables in CI only.
