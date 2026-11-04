@@ -19,14 +19,21 @@ export interface WhatsAppContext {
 const FALLBACK_ORG_NAME = 'LoanOps'
 
 export function buildWhatsAppMessage(template: string, ctx: WhatsAppContext): string {
+  // The display name comes from the caller's variables: orgName fills
+  // the {orgName} slot and ownerName the {ownerName} slot, and each
+  // stands in for the other before the neutral fallback is reached —
+  // a name the caller DID provide must never be overridden by the
+  // constant just because the template used the other slot.
+  const orgName = ctx.orgName || ctx.ownerName || FALLBACK_ORG_NAME
+  const ownerName = ctx.ownerName || ctx.orgName || FALLBACK_ORG_NAME
   const replacements: Record<string, string> = {
     '{candidateName}': ctx.candidateName || '',
     '{loanNumber}': ctx.loanNumber || '',
     '{amount}': ctx.amount || '',
     '{dueDate}': ctx.dueDate || '',
     '{agentName}': ctx.agentName || '',
-    '{ownerName}': ctx.ownerName || FALLBACK_ORG_NAME,
-    '{orgName}': ctx.orgName || FALLBACK_ORG_NAME,
+    '{ownerName}': ownerName,
+    '{orgName}': orgName,
   }
   let msg = template
   for (const [k, v] of Object.entries(replacements)) {

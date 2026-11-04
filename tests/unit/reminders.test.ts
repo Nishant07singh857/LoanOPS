@@ -176,6 +176,20 @@ test('buildWhatsAppMessage uses the caller org name, never a baked-in one', () =
   })
   assert.ok(withoutOrg.includes('from LoanOps'), withoutOrg)
   assert.ok(!withoutOrg.includes('Sterling'), withoutOrg)
+
+  // A provided orgName fills BOTH name slots: a template worded with
+  // {ownerName} must still render the provided org name, never the
+  // neutral constant.
+  const ownerSlot = buildWhatsAppMessage('Reminder from {ownerName} ({orgName})', {
+    orgName: 'Acme Finance',
+  })
+  assert.equal(ownerSlot, 'Reminder from Acme Finance (Acme Finance)')
+
+  // Symmetrically, a lone ownerName stands in for the org slot.
+  const orgSlot = buildWhatsAppMessage('Reminder from {orgName}', {
+    ownerName: 'Acme Finance',
+  })
+  assert.equal(orgSlot, 'Reminder from Acme Finance')
 })
 
 test('buildWhatsAppLink builds an encoded wa.me draft URL', () => {
