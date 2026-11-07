@@ -20,8 +20,14 @@ const KARTHIK_MOBILE = '9820922448'
 const ATTACKER_PASSWORD = 'AttackerOwn#555'
 const ATTACKER_EMAIL = 'impostor@example.com'
 
+// Shared by the apply and signup calls below: both endpoints require
+// their mandatory consents present + granted (D1 consent-evidence
+// contract), so the fixture carries the union of both mandatory sets.
 const CONSENTS = [
   { consentType: 'DATA_PROCESSING', granted: true, policyVersion: '2026.1' },
+  { consentType: 'TERMS_PRIVACY', granted: true, policyVersion: '2026.1' },
+  { consentType: 'KYC_AADHAAR', granted: true, policyVersion: '2026.1' },
+  { consentType: 'CREDIT_CHECK', granted: true, policyVersion: '2026.1' },
   { consentType: 'KFS_DISCLOSURE', granted: true, policyVersion: '2026.1' },
 ]
 

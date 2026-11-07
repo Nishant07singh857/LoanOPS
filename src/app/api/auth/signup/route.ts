@@ -2,7 +2,8 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { apiHandler, success, badRequest, validate } from '@/lib/server/api'
+import { apiHandler, success, badRequest, unprocessable, validate } from '@/lib/server/api'
+import { SIGNUP_REQUIRED_CONSENTS, missingRequiredConsents } from '@/lib/consents'
 import {
   hashPassword,
   validatePasswordPolicy,
@@ -31,7 +32,12 @@ const signupSchema = z
     fullName: z.string().trim().min(2).max(200),
     mobile: z.string().trim().min(10).max(20),
     password: z.string().min(10, 'Password must be at least 10 characters').max(128),
-    consents: z.array(consentItemSchema).optional(),
+    // DPDP consent evidence must be explicit: the consents array is
+    // required (a missing/empty array is a 422 via schema validation),
+    // and the mandatory pair is verified present + granted in the
+    // handler below. Records are written for exactly what is submitted
+    // — a grant is never invented (A-to-Z QA, defect D1).
+    consents: z.array(consentItemSchema).min(1, 'Explicit DPDP consents are required'),
     // Required when the mobile already belongs to a candidate that has a
     // sensitive footprint (applications / loans / KYC / payments, or any
     // staff-entered PII on the record), or when the same mobile exists in
@@ -63,6 +69,21 @@ export const POST = apiHandler(async (req: NextRequest) => {
     return badRequest('Invalid JSON')
   }
   const input = validate(signupSchema, body)
+
+  // Mandatory-consent gate, before any account/record is created: the
+  // request must itself carry DATA_PROCESSING and TERMS_PRIVACY granted.
+  // The signup UI always submits them granted (its submit button is
+  // blocked until both checkboxes are ticked), so this only rejects
+  // callers who never granted them — previously such a request still
+  // produced an account plus two fabricated granted=true records.
+  const missingConsents = missingRequiredConsents(input.consents, SIGNUP_REQUIRED_CONSENTS)
+  if (missingConsents.length > 0) {
+    return unprocessable(
+      'Explicit consent to data processing and the terms & privacy policy is required to create an account',
+      { missing: missingConsents }
+    )
+  }
+
   const safeName = sanitizeText(input.fullName)
 
   // Canonical form only: Devanagari/Arabic/fullwidth digit spellings
@@ -224,16 +245,10 @@ export const POST = apiHandler(async (req: NextRequest) => {
         data: { userId: user.id },
       })
 
-      // Record explicit DPDP Act 2023 consents
-      const consentEntries =
-        input.consents && input.consents.length > 0
-          ? input.consents
-          : [
-              { consentType: 'DATA_PROCESSING', granted: true, policyVersion: '2026.1' },
-              { consentType: 'TERMS_PRIVACY', granted: true, policyVersion: '2026.1' },
-            ]
-
-      for (const c of consentEntries) {
+      // Record the explicit DPDP Act 2023 consents exactly as submitted
+      // — the mandatory pair was verified present + granted above, and
+      // no consent entry is ever synthesized here (A-to-Z QA, D1).
+      for (const c of input.consents) {
         await tx.consentRecord.create({
           data: {
             organizationId: targetOrgId,
