@@ -33,9 +33,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Confirm deliberate dispatch
+        env:
+          CONFIRM_INPUT: ${{ inputs.confirm }}
         run: |
-          if [ "${{ inputs.confirm }}" != "MIGRATE" ]; then
-            echo "::error::Refusing to run — the confirm input must be exactly MIGRATE (got: '${{ inputs.confirm }}'). Nothing was changed."
+          if [ "$CONFIRM_INPUT" != "MIGRATE" ]; then
+            echo "::error::Refusing to run — the confirm input must be exactly MIGRATE. Nothing was changed."
             exit 1
           fi
           echo "Confirmed: applying pending migrations to the production database. No seed will run."
