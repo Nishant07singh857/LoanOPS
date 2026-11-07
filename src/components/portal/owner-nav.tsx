@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Landmark, FileText, Wallet, Users,
   Banknote, Receipt, BookOpen, Scale, Undo2, FilePen,
   BarChart3, LineChart, UserCog, ScrollText, FileSignature,
-  QrCode, LifeBuoy, UserPlus, BellRing,
+  QrCode, LifeBuoy, UserPlus, BellRing, Inbox,
 } from 'lucide-react'
 import type { PortalNavGroup } from './layout'
 
@@ -41,6 +41,7 @@ export const OWNER_NAV: PortalNavGroup[] = [
       { href: '/admin/reports', label: 'Reports', icon: <BarChart3 className="h-4 w-4" /> },
       { href: '/admin/reminders', label: 'Reminders', icon: <BellRing className="h-4 w-4" /> },
       { href: '/admin/agents', label: 'Agents', icon: <UserCog className="h-4 w-4" /> },
+      { href: '/admin/enquiries', label: 'Enquiries', icon: <Inbox className="h-4 w-4" /> },
     ],
   },
   {
