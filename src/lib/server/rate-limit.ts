@@ -35,6 +35,7 @@ export type RateLimitScope =
   | 'cash_collection'
   | 'data_request'
   | 'public_api'
+  | 'enquiry_submit'
   | 'api_global'
 
 export interface RateLimitPolicy {
@@ -55,6 +56,7 @@ export const RATE_LIMIT_POLICIES: Record<RateLimitScope, RateLimitPolicy> = {
   data_request: { maxRequests: 5, windowMs: 60 * 60 * 1000 }, // 5 DSR requests per hour
   api_global: { maxRequests: 300, windowMs: 60 * 1000 }, // 300 API calls per minute per IP
   public_api: { maxRequests: 50, windowMs: 15 * 60 * 1000 }, // 50 requests per 15 min
+  enquiry_submit: { maxRequests: 5, windowMs: 15 * 60 * 1000 }, // 5 homepage enquiries per 15 min per IP — a lead form needs no more
 }
 
 interface BucketRecord {

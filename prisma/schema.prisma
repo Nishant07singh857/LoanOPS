@@ -882,6 +882,7 @@ enum NotificationType {
   COLLECTION_REMINDER
   AI_INSIGHT
   RECONCILIATION_EXCEPTION
+  ENQUIRY
 }
 
 model Notification {
@@ -993,6 +994,36 @@ model SupportTicket {
 
   @@index([organizationId])
   @@index([candidateId])
+}
+
+// ============================================================
+// WEBSITE ENQUIRIES (public homepage lead form)
+// ============================================================
+// Platform-level sales leads submitted through the public
+// homepage enquiry form — deliberately NOT org-scoped: they are
+// enquiries about LoanOPS itself from prospective customers,
+// read by owner users in /admin/enquiries. Business records:
+// NEVER pruned (see MODEL_CLASSIFICATION in src/lib/prune-logs.ts).
+
+enum EnquiryStatus {
+  NEW
+  CONTACTED
+  CLOSED
+}
+
+model Enquiry {
+  id           String        @id @default(cuid())
+  name         String
+  mobile       String // canonical 10-digit Indian mobile (src/lib/mobile.ts)
+  email        String?
+  businessName String
+  message      String
+  status       EnquiryStatus @default(NEW)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
 }
 
 // ============================================================
