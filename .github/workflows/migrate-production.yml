@@ -1,0 +1,57 @@
+name: Migrate production database (manual)
+
+# MIGRATE-ONLY production schema path. MANUAL DISPATCH ONLY — nothing
+# here is scheduled, and nothing here seeds.
+#
+# Why this exists: the Vercel build (prisma generate + next build) never
+# runs migrations, and seed-production.yml is NOT a safe substitute —
+# its seed step runs in BOTH of its modes, so dispatching it to apply a
+# schema change would also re-seed production. This workflow runs
+# `prisma migrate deploy` and nothing else: no seed, no reset, no data
+# changes beyond the migrations themselves.
+#
+# Fat-finger guard: the dispatcher must type the confirm input exactly
+# as MIGRATE or the job fails before touching anything.
+#
+# After it merges, every PR that adds a Prisma migration must be
+# followed by dispatching this workflow (see DEPLOYMENT.md §2), or the
+# new schema never reaches the production database.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type MIGRATE to confirm applying pending migrations to the PRODUCTION database (no seed, no reset)'
+        type: string
+        required: true
+
+concurrency:
+  group: production-migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm deliberate dispatch
+        run: |
+          if [ "${{ inputs.confirm }}" != "MIGRATE" ]; then
+            echo "::error::Refusing to run — the confirm input must be exactly MIGRATE (got: '${{ inputs.confirm }}'). Nothing was changed."
+            exit 1
+          fi
+          echo "Confirmed: applying pending migrations to the production database. No seed will run."
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Apply pending migrations to production DB (migrate ONLY — no seed)
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: npx prisma migrate deploy
+      - name: Show production migration status
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: npx prisma migrate status

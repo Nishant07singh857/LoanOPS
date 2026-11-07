@@ -29,6 +29,8 @@ npm run build
 NODE_ENV=production node .next/standalone/server.js
 ```
 
+On the hosted setup (Vercel + Neon) the procedure above is not run by the platform: the Vercel build only generates the Prisma client and builds the app, so a merged PR that adds a Prisma migration changes nothing in production until the **Migrate production database (manual)** workflow (`.github/workflows/migrate-production.yml`) is dispatched with its `confirm` input set to `MIGRATE`. That workflow runs `prisma migrate deploy` only — no seed, no reset — and prints `prisma migrate status` so the run log proves what was applied; schema PRs therefore require dispatching it after merge. `seed-production.yml` remains only for the initial seed or an owner-approved reseed, because it runs the seed step in both of its modes and must never be used just to apply a migration.
+
 ### Docker Deployment (Non-Root User `nextjs`)
 ```bash
 docker build -t loanops:<git-sha> .
