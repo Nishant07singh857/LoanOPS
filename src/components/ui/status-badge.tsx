@@ -39,6 +39,8 @@ const statusBadgeVariants = cva(
         BROKEN: 'bg-destructive/15 text-destructive border border-destructive/20',
         CANCELLED: 'bg-muted text-muted-foreground border border-border',
         OPEN: 'bg-info/15 text-info border border-info/20',
+        NEW: 'bg-info/15 text-info border border-info/20',
+        CONTACTED: 'bg-warning/15 text-warning border border-warning/20',
         IN_REVIEW: 'bg-warning/15 text-warning border border-warning/20',
         RESOLVED: 'bg-success/15 text-success border border-success/20',
         ASSIGNED: 'bg-info/15 text-info border border-info/20',
