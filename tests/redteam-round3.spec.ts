@@ -29,8 +29,14 @@ const RAHUL_ID = 'candidate-002'
 const RAHUL_LOAN_NUMBER = 'LON-2024-0892'
 
 const SIGNUP_PASSWORD = 'Signup#2026x'
+// Shared by the apply and signup calls below: both endpoints require
+// their mandatory consents present + granted (D1 consent-evidence
+// contract), so the fixture carries the union of both mandatory sets.
 const CONSENTS = [
   { consentType: 'DATA_PROCESSING', granted: true, policyVersion: '2026.1' },
+  { consentType: 'TERMS_PRIVACY', granted: true, policyVersion: '2026.1' },
+  { consentType: 'KYC_AADHAAR', granted: true, policyVersion: '2026.1' },
+  { consentType: 'CREDIT_CHECK', granted: true, policyVersion: '2026.1' },
   { consentType: 'KFS_DISCLOSURE', granted: true, policyVersion: '2026.1' },
 ]
 

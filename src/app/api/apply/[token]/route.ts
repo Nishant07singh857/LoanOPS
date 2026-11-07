@@ -11,6 +11,7 @@ import { maskAadhaar, maskPan, PAN_REGEX } from '@/lib/utils'
 import { canonicalizeMobile } from '@/lib/mobile'
 import { validateLoanTerms, paiseStringWithinCeiling, MAX_PRINCIPAL_PAISE } from '@/lib/loan-terms'
 import { COMPLIANCE_CONFIG } from '@/lib/compliance-config'
+import { APPLY_REQUIRED_CONSENTS, missingRequiredConsents } from '@/lib/consents'
 
 export const dynamic = 'force-dynamic'
 
@@ -176,6 +177,23 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
   const body = await req.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON')
   const input = validate(submitSchema, body)
+
+  // Mandatory-consent gate, before anything is created (and before the
+  // single-use link is consumed): the request must itself carry the
+  // four consents the apply form collects as blocking checkboxes
+  // (DATA_PROCESSING, KYC_AADHAAR, CREDIT_CHECK, KFS_DISCLOSURE), each
+  // granted. The apply UI always submits them granted, so this only
+  // rejects callers who never granted them — previously an omitted
+  // consents array produced four records derived from the lone
+  // agreementAccepted flag, i.e. grants that were never submitted
+  // (A-to-Z QA, defect D1 — same pattern as /api/auth/signup).
+  const missingConsents = missingRequiredConsents(input.consents, APPLY_REQUIRED_CONSENTS)
+  if (missingConsents.length > 0) {
+    return unprocessable(
+      'Explicit DPDP, KYC, credit-check and KFS consents are required to submit an application',
+      { missing: missingConsents }
+    )
+  }
 
   // Canonicalize the mobile ONCE, up front: every spelling of the
   // same number (0 / 91 / 0091 prefixes, spaces, digits typed in
@@ -432,16 +450,10 @@ export const POST = apiHandler(async (req: NextRequest, { params }: { params: Pr
     // Record the applicant's DPDP consents in THIS transaction, linked to
     // the candidate + application just created — no separate (previously
     // unauthenticated) POST /api/consents call is needed for public applies.
-    const consentEntries =
-      input.consents && input.consents.length > 0
-        ? input.consents
-        : [
-            { consentType: 'DATA_PROCESSING', granted: agreementAccepted, policyVersion: COMPLIANCE_CONFIG.policyVersion },
-            { consentType: 'KYC_AADHAAR', granted: agreementAccepted, policyVersion: COMPLIANCE_CONFIG.policyVersion },
-            { consentType: 'CREDIT_CHECK', granted: agreementAccepted, policyVersion: COMPLIANCE_CONFIG.policyVersion },
-            { consentType: 'KFS_DISCLOSURE', granted: agreementAccepted, policyVersion: COMPLIANCE_CONFIG.policyVersion },
-          ]
-    for (const c of consentEntries) {
+    // Exactly the submitted entries are recorded: the mandatory four were
+    // verified present + granted before the transaction, and no consent
+    // entry is ever synthesized here (A-to-Z QA, defect D1).
+    for (const c of input.consents ?? []) {
       await tx.consentRecord.create({
         data: {
           organizationId: link.organizationId,
