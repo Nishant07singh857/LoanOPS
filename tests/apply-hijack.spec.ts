@@ -27,8 +27,13 @@ const ATTACKER_PASSWORD = 'AttackerOwn#555'
 // of exercising the 409 path under test.
 const ATTACKER_EMAIL = 'impostor@example.com'
 
+// The apply endpoint requires its four mandatory consents present +
+// granted (D1 consent-evidence contract) — the same set the apply UI
+// collects as blocking checkboxes.
 const CONSENTS = [
   { consentType: 'DATA_PROCESSING', granted: true, policyVersion: '2026.1' },
+  { consentType: 'KYC_AADHAAR', granted: true, policyVersion: '2026.1' },
+  { consentType: 'CREDIT_CHECK', granted: true, policyVersion: '2026.1' },
   { consentType: 'KFS_DISCLOSURE', granted: true, policyVersion: '2026.1' },
 ]
 

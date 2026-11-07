@@ -187,6 +187,8 @@ test.describe('LoanOps Production E2E, OWASP Self-Attack & Compliance Verificati
         password: borrowerPass,
         consents: [
           { consentType: 'DATA_PROCESSING', granted: true, policyVersion: '2026.1' },
+          { consentType: 'KYC_AADHAAR', granted: true, policyVersion: '2026.1' },
+          { consentType: 'CREDIT_CHECK', granted: true, policyVersion: '2026.1' },
           { consentType: 'KFS_DISCLOSURE', granted: true, policyVersion: '2026.1' },
         ],
       },
