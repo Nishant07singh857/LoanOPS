@@ -1,5 +1,6 @@
 // Homepage + enquiries spec — the public homepage is a product page
-// (no portal entry points anywhere), and the enquiry form is a real
+// (exactly ONE universal Login button, in the header — never separate
+// owner/agent/customer entry points), and the enquiry form is a real
 // lead pipeline: POST /api/enquiries stores a lead + notifies owners,
 // the owner reads and triages leads in /admin/enquiries, and nobody
 // else can reach the owner APIs.
@@ -48,15 +49,17 @@ async function loginCtx(email: string, password: string, xff: string): Promise<A
   return ctx
 }
 
-test.describe('Homepage — product page, no portal entry points', () => {
-  test('homepage HTML has no login links or portal-login text, and renders the enquiry form', async () => {
+test.describe('Homepage — product page, one universal Login button', () => {
+  test('homepage HTML has exactly one login link (the header button), no role-login text, and renders the enquiry form', async () => {
     const ctx = await pwRequest.newContext({ baseURL: BASE_URL })
     const res = await ctx.get('/')
     expect(res.ok()).toBe(true)
     const html = await res.text()
 
-    // No link to the login page anywhere (header, hero, cards, footer).
-    expect(html).not.toContain('href="/login')
+    // Exactly ONE link to the login page: the universal Login button in
+    // the header. No role-specific or parameterised login links anywhere.
+    const loginLinks = html.match(/href="\/login"/g) ?? []
+    expect(loginLinks).toHaveLength(1)
     expect(html).not.toContain('/login?')
     // None of the old portal-login calls to action.
     for (const label of ['Owner login', 'Agent login', 'Customer login', 'Candidate login', 'Enter Owner Portal', 'Try Candidate Portal']) {
@@ -64,7 +67,8 @@ test.describe('Homepage — product page, no portal entry points', () => {
     }
 
     // It is a product page: pitch + sections + the enquiry form.
-    expect(html).toContain('Loan management software for lending businesses')
+    expect(html).toContain('daily work of lending')
+    expect(html).toContain('id="day"')
     expect(html).toContain('id="features"')
     expect(html).toContain('id="how-it-works"')
     expect(html).toContain('id="enquire"')
