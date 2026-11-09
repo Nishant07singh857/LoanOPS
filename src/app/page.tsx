@@ -1,22 +1,18 @@
 import type { Metadata } from 'next'
-import {
-  ShieldCheck, ArrowRight, Wallet, HandCoins, BellRing, Users, BarChart3,
-  LifeBuoy, Lock, Workflow, Landmark, UserCog, User, FileCheck2,
-  CalendarClock, ScrollText, Sunrise, MapPin, MoonStar, HeartHandshake,
-} from 'lucide-react'
+import type { ReactNode } from 'react'
+import { ArrowRight, ArrowDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { JsonLd } from '@/components/json-ld'
 import { LegalFooter } from '@/components/legal/legal-footer'
 import { CookieBanner } from '@/components/legal/cookie-banner'
 import { EnquiryForm } from '@/components/enquiry-form'
 import { FadeIn } from '@/components/ui/motion'
 
-// Public product homepage — the company's front door, written for the
-// people who actually lend: owners of small NBFCs, MFIs and lending
-// businesses, their field agents, and their borrowers. It carries
-// exactly ONE entry point: the universal "Login" button in the header.
-// There are deliberately no separate owner/agent/customer login links —
+// Public product homepage — written and set like a document, not a
+// template: the product is shown (a real loan ledger, with figures
+// that add up) before it is described. It carries exactly ONE entry
+// point — the universal "Login" button in the header. There are no
+// separate owner/agent/customer login links anywhere on this page;
 // one login serves everyone, and the account's role decides what opens.
 
 const PAGE_TITLE = 'LoanOps — Loan Management Software for Lending Businesses'
@@ -40,378 +36,491 @@ export const metadata: Metadata = {
   },
 }
 
-const EYEBROW = 'text-xs font-semibold uppercase tracking-[0.16em] text-primary'
+const NAV_LINK =
+  'inline-flex h-9 items-center px-2 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm'
 
-const FEATURES = [
+// Section heading: a mono section number, a hairline, then the title.
+// Used by every numbered section so the page reads as one document.
+function SectionHead({
+  no,
+  title,
+  children,
+}: {
+  no: string
+  title: string
+  children?: ReactNode
+}) {
+  return (
+    <div className="mb-10 sm:mb-12">
+      <div className="flex items-baseline gap-4 border-t-2 border-foreground pt-4">
+        <span className="font-mono text-xs font-medium text-muted-foreground">{no}</span>
+        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h2>
+      </div>
+      {children ? (
+        <p className="mt-4 max-w-[62ch] leading-relaxed text-muted-foreground">{children}</p>
+      ) : null}
+    </div>
+  )
+}
+
+// The demo loan, exactly as the product computes it: ₹75,000 at 18%
+// p.a. flat over 12 months, plus a ₹750 processing fee spread across
+// the instalments. Every EMI is ₹7,437.50 (principal ₹6,250.00 +
+// interest ₹1,125.00 + fee ₹62.50), and the columns total to the
+// principal, the interest, the fee and the ₹89,250.00 repayable.
+const SCHEDULE: Array<{
+  n: number
+  due: string
+  principal: string
+  interest: string
+  fee: string
+  emi: string
+  status: 'Paid' | 'Due' | 'Upcoming'
+}> = [
+  { n: 1, due: '5 Sep 2026', principal: '6,250.00', interest: '1,125.00', fee: '62.50', emi: '7,437.50', status: 'Paid' },
+  { n: 2, due: '5 Oct 2026', principal: '6,250.00', interest: '1,125.00', fee: '62.50', emi: '7,437.50', status: 'Paid' },
+  { n: 3, due: '5 Nov 2026', principal: '6,250.00', interest: '1,125.00', fee: '62.50', emi: '7,437.50', status: 'Paid' },
+  { n: 4, due: '5 Dec 2026', principal: '6,250.00', interest: '1,125.00', fee: '62.50', emi: '7,437.50', status: 'Due' },
+  { n: 5, due: '5 Jan 2027', principal: '6,250.00', interest: '1,125.00', fee: '62.50', emi: '7,437.50', status: 'Upcoming' },
+]
+
+const LEDGER_NOTES = [
   {
-    icon: <Workflow className="h-5 w-5" />,
-    title: 'Every loan, start to finish',
-    desc: 'From a borrower\'s first application to the final EMI — approval, disbursal and the schedule in between, with every amount computed exactly, in paise, on the server. Never in floats, never by hand.',
+    title: 'In paise, never in floats',
+    desc: 'Amounts are computed on the server as integers. An EMI of ₹7,437.50 is ₹7,437.50 in the schedule, on the receipt and in the month-end report — the same figure in all three places.',
   },
   {
-    icon: <HandCoins className="h-5 w-5" />,
-    title: 'Collections your agents can follow',
-    desc: 'Each morning, agents get a clear list of visits and dues. Cash collected in the field is recorded on the spot and verified by you — no notebook arithmetic late at night.',
+    title: 'Corrections leave a trail',
+    desc: 'A wrong collection is not deleted. It is reversed, and the original entry stays in the audit trail, with who recorded it and who verified it.',
   },
   {
-    icon: <CalendarClock className="h-5 w-5" />,
-    title: 'Promises, kept in sight',
-    desc: 'When a borrower promises to pay on Friday, that promise is written down where the whole team can see it — and followed up in time, instead of slipping away quietly.',
-  },
-  {
-    icon: <BellRing className="h-5 w-5" />,
-    title: 'Gentle reminders, sent on time',
-    desc: 'Due-soon, due-today and overdue reminders reach borrowers in their own portal, on schedule — a polite nudge before a problem, not a surprise after one. Your team gets follow-up tasks alongside.',
-  },
-  {
-    icon: <Users className="h-5 w-5" />,
-    title: 'Everyone sees their own work',
-    desc: 'You see the whole business. Agents see their day. Borrowers see only their own loans. Nobody sees what isn\'t theirs to see.',
-  },
-  {
-    icon: <BarChart3 className="h-5 w-5" />,
-    title: 'Month-end without the panic',
-    desc: 'Portfolio, collections and overdue-ageing reports sit on a proper double-entry ledger — so when the month ends or the auditor asks, the answers are already ready.',
-  },
-  {
-    icon: <LifeBuoy className="h-5 w-5" />,
-    title: 'Borrowers can reach you, properly',
-    desc: 'Questions and problems arrive as support tickets from the borrower\'s own panel, tracked from open to resolved — not buried in a chat thread nobody can find later.',
-  },
-  {
-    icon: <Lock className="h-5 w-5" />,
-    title: 'A record you can stand behind',
-    desc: 'KYC and personal details stay encrypted, and every approval, collection and correction is written into an audit trail that cannot be quietly changed after the fact.',
+    title: 'Reminders read the same schedule',
+    desc: 'The 09:15 reminder run works off this schedule — due in three days, due today, overdue — and writes to the borrower\'s portal, so a nudge lands before a missed EMI, not after.',
   },
 ]
 
-const DAY_MOMENTS = [
+const CHANGES: Array<{ paper: string; loanops: string }> = [
   {
-    icon: <Sunrise className="h-6 w-6" />,
-    time: 'The morning',
-    title: 'The day starts clear',
-    desc: 'Before the first visit, your agents open one simple list: who to meet today, what is due, which promises fall due. You see yesterday\'s collections already tallied — no register to reconcile over morning tea.',
+    paper: 'Collections written in a notebook, tallied late at night',
+    loanops: 'Posted to the ledger as they are recorded. The day closes itself.',
   },
   {
-    icon: <MapPin className="h-6 w-6" />,
-    time: 'Out in the field',
-    title: 'The field stays in step',
-    desc: 'A collection at a borrower\'s doorstep is recorded then and there, and the receipt is shared on the spot. A promise made in the village is visible at the office in the same minute — nobody has to phone it in at night.',
+    paper: 'Dues and promises carried in the agent\'s memory',
+    loanops: 'A morning list of today\'s visits, dues and promises-to-pay.',
   },
   {
-    icon: <MoonStar className="h-6 w-6" />,
-    time: 'The evening',
-    title: 'The tally matches',
-    desc: 'The day closes against the ledger, reconciled — not guessed. Borrowers can check their own schedule and receipts whenever they like, and you go home knowing exactly where the business stands.',
+    paper: 'Reminders sent if someone finds the time',
+    loanops: 'Sent at 09:15 — three days before the due date, on the day, and when overdue.',
+  },
+  {
+    paper: '“How much is left on my loan?” means a phone call to the office',
+    loanops: 'The borrower opens their portal: the schedule, the balance, every receipt.',
+  },
+  {
+    paper: 'Month-end rebuilt in a spreadsheet, from memory',
+    loanops: 'Portfolio, collections and overdue-ageing reports, drawn from the same ledger.',
+  },
+  {
+    paper: 'A mistake crossed out in ink, initialled if you are lucky',
+    loanops: 'A reversal entry. The original stays, and the audit trail says why.',
   },
 ]
 
-const PANELS = [
+const PEOPLE = [
   {
-    icon: <Landmark className="h-6 w-6" />,
-    title: 'For the owner',
-    desc: 'You built this business to lend well, not to drown in registers. LoanOps gives you the whole picture, honestly — approve with confidence, disburse when you are satisfied, and know on any evening exactly where things stand.',
-    points: ['Portfolio & collections at a glance', 'Approvals & disbursement in your hands', 'Ledger, reconciliation & reports that add up'],
+    role: 'The owner',
+    line: 'Approves, disburses, and answers for the book.',
+    points: [
+      'Portfolio, collections and overdue ageing on one screen.',
+      'No figure reaches a report without a ledger entry behind it.',
+    ],
   },
   {
-    icon: <UserCog className="h-6 w-6" />,
-    title: 'For the agent in the field',
-    desc: 'Your agents are the face of your business on every street they walk. They get a clear, mobile-first day: visits planned, collections recorded on the spot, and follow-ups that never depend on one person\'s memory.',
-    points: ['Today\'s visits & dues, listed clearly', 'Cash collection & receipts from the field', 'Follow-ups, promises & escalations, tracked'],
+    role: 'The field agent',
+    line: 'The face of the business, out on the street.',
+    points: [
+      'Today\'s visits and dues, in order, on the phone.',
+      'Cash recorded at the doorstep; the receipt is issued on the spot.',
+    ],
   },
   {
-    icon: <User className="h-6 w-6" />,
-    title: 'For the borrower',
-    desc: 'A borrower who can see their own loan — what is paid, what is due, every receipt — is a borrower who trusts you. And in lending, that trust is the business.',
-    points: ['Their schedule & receipts, always visible', 'Application & KYC status — no need to call and ask', 'Reminders & support in one private place'],
+    role: 'The borrower',
+    line: 'Owes the money — and can see exactly where it stands.',
+    points: [
+      'Schedule, balance and every receipt, in a private portal.',
+      'A reminder before the due date, and a support ticket when something is wrong.',
+    ],
   },
 ]
 
 const STEPS = [
   {
-    title: 'Say hello',
-    desc: 'Tell us about your lending business in the enquiry form below — how many borrowers and agents you have, and what eats up your day. No obligation; it is just a conversation.',
+    title: 'Tell us about your business',
+    desc: 'Use the enquiry form below: how many borrowers you serve, how many agents walk for you, and which part of the day still runs on paper. A few lines is enough. No obligation — it is a conversation, not a contract.',
   },
   {
-    title: 'We set up your corner',
-    desc: 'Your loan products, agreement templates and your team — owners and field agents — are set up on the platform, shaped around how you already work.',
+    title: 'We set up your organisation',
+    desc: 'Your loan products, your agreement and Key Facts Statement templates, and your team — owners and field agents — set up around how you already lend.',
   },
   {
     title: 'Borrowers come on board',
-    desc: 'Share an application link or a QR code. Borrowers apply, complete KYC and accept their agreement digitally; you approve and disburse when you are satisfied.',
+    desc: 'Share an application link or a QR code. Borrowers apply, complete KYC and accept their agreement digitally. You approve, and disburse when you are satisfied.',
   },
   {
-    title: 'Then, just run the day',
-    desc: 'Collect EMIs, follow up promises, let reminders go out on time, support your borrowers — and close every day with reports that already reconcile.',
+    title: 'Then, run the day',
+    desc: 'Collect EMIs, follow up promises-to-pay, let the 09:15 reminders go out, and close the day against reports that have already reconciled.',
   },
 ]
 
-const SECURITY_POINTS = [
-  { title: 'Encrypted, always', desc: 'Aadhaar, PAN and bank details are encrypted at rest (AES-256-GCM) and masked in everyday screens.' },
-  { title: 'Only the right eyes', desc: 'Every panel and API enforces roles on the server — a borrower can never reach owner or agent data.' },
-  { title: 'Nothing quietly changed', desc: 'Sign-ins, approvals, collections and corrections are recorded in an append-only audit trail.' },
-  { title: 'Consent, recorded', desc: 'Built with the DPDP Act in mind — consents are recorded at application time, and borrower data requests are handled inside the platform.' },
+const SECURITY_ROWS = [
+  {
+    title: 'Encrypted at rest',
+    desc: 'Aadhaar, PAN and bank details are encrypted (AES-256-GCM) and masked on everyday screens.',
+  },
+  {
+    title: 'Roles, enforced on the server',
+    desc: 'Owner, agent and borrower panels check permissions on the server, not just in the browser. A borrower cannot reach another borrower\'s loan — or your side of the business.',
+  },
+  {
+    title: 'An audit trail that stays written',
+    desc: 'Sign-ins, approvals, collections and corrections are recorded in an append-only audit trail. Nothing is quietly edited after the fact.',
+  },
+  {
+    title: 'DPDP, KFS and grievance, in the product',
+    desc: 'Borrower consents are recorded when they apply. The Key Facts Statement, fair-practices and grievance pages ship with the platform, because the RBI expects them on a lender\'s website.',
+  },
 ]
-
-const NAV_LINK =
-  'h-9 items-center rounded-lg px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
 
 export default function Page() {
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-background via-background to-muted/40">
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
       {/* Homepage-only JSON-LD (Organization + SoftwareApplication). */}
       <JsonLd />
 
-      {/* Header — one brand, a few section anchors, Enquire, and the
-          single universal Login button. */}
-      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-border/60">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
-          <a href="#top" className="flex items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" aria-label="LoanOps — back to top">
-            <span className="h-9 w-9 rounded-xl bg-gradient-fintech flex items-center justify-center text-primary-foreground shadow-glow">
-              <Wallet className="h-5 w-5" />
-            </span>
-            <span>
-              <span className="block font-bold tracking-tight leading-none text-base">LoanOps</span>
-              <span className="block text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Loan Operations Platform</span>
-            </span>
+      {/* Header — wordmark, section anchors, and the single universal
+          Login button. Plain, ruled, no glass and no glow. */}
+      <header className="sticky top-0 z-30 border-b border-border bg-background">
+        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+          <a
+            href="#top"
+            className="flex items-baseline gap-2.5 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            aria-label="LoanOps — back to top"
+          >
+            <span aria-hidden="true" className="h-2.5 w-2.5 translate-y-[-1px] bg-primary" />
+            <span className="text-lg font-semibold leading-none tracking-tight">LoanOps</span>
+            <span className="hidden text-xs text-muted-foreground sm:inline">Loan operations, kept in one ledger</span>
           </a>
-          <nav aria-label="Homepage sections" className="flex items-center gap-1 sm:gap-2">
-            <a href="#features" className={`${NAV_LINK} hidden sm:inline-flex`}>Features</a>
-            <a href="#day" className={`${NAV_LINK} hidden lg:inline-flex`}>A day with LoanOps</a>
+          <nav aria-label="Homepage sections" className="flex items-center gap-0.5 sm:gap-1.5">
+            <a href="#ledger" className={`${NAV_LINK} hidden md:inline-flex`}>The ledger</a>
+            <a href="#what-changes" className={`${NAV_LINK} hidden lg:inline-flex`}>What changes</a>
             <a href="#how-it-works" className={`${NAV_LINK} hidden md:inline-flex`}>How it works</a>
             <a href="#security" className={`${NAV_LINK} hidden sm:inline-flex`}>Security</a>
-            <a href="#enquire" className={`${NAV_LINK} hidden md:inline-flex`}>Enquire</a>
-            <Button asChild size="sm" className="h-9 rounded-lg shadow-glow ml-1 px-4">
+            <a href="#enquire" className={`${NAV_LINK} hidden sm:inline-flex`}>Enquire</a>
+            <Button asChild size="sm" className="ml-2 h-9 rounded-md px-4">
               <a href="/login">Login</a>
             </Button>
           </nav>
         </div>
       </header>
 
-      <main id="top" className="flex-1 flex flex-col">
-        {/* Hero */}
-        <section className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-warning/10 via-transparent to-info/10 pointer-events-none" />
-          <div className="absolute -top-24 -right-24 h-96 w-96 rounded-full bg-warning/15 blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-32 -left-24 h-80 w-80 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14 sm:pt-24 pb-12 sm:pb-16 relative">
-            <div className="text-center max-w-3xl mx-auto">
-              <FadeIn>
-                <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 text-primary px-3 py-1.5 text-xs font-medium mb-6">
-                  <HeartHandshake className="h-3.5 w-3.5" />
-                  For NBFCs, MFIs and lending businesses across India
-                </div>
-                <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.08]">
-                  The daily work of lending,
-                  <br className="hidden sm:block" />
-                  <span className="text-gradient-primary"> finally calm.</span>
-                </h1>
-                <p className="mt-6 text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-                  Registers that don&apos;t tally. Collections scattered across notebooks and WhatsApp
-                  threads. A borrower asking a simple question that nobody can answer quickly. If that
-                  sounds familiar, LoanOps was built for your day — applications, disbursal, collections,
-                  reminders and reports in one place, so your team can get back to the people they lend to.
-                </p>
-              </FadeIn>
-              <FadeIn delay={0.12}>
-                <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-                  <Button asChild size="lg" className="w-full sm:w-auto h-12 text-base rounded-xl shadow-glow">
-                    <a href="#enquire">Tell us about your business <ArrowRight className="ml-2 h-4 w-4" /></a>
-                  </Button>
-                  <Button asChild size="lg" variant="outline" className="w-full sm:w-auto h-12 text-base rounded-xl">
-                    <a href="#day">See a day with LoanOps</a>
-                  </Button>
-                </div>
-                <p className="mt-6 text-xs sm:text-sm text-muted-foreground">
-                  For single-branch lenders and multi-agent field teams alike — if you lend, LoanOps speaks your language.
-                </p>
-              </FadeIn>
-            </div>
-          </div>
-        </section>
-
-        {/* Lifecycle strip — every loan, followed through its whole life */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 w-full" aria-label="The complete loan lifecycle">
-          <p className="text-center text-xs sm:text-sm text-muted-foreground mb-4">
-            Every loan, followed from the first application to the final EMI:
-          </p>
-          <div className="overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
-            <div className="flex items-center gap-2 sm:gap-3 min-w-max sm:min-w-0 sm:justify-center">
-              {[
-                'Application', 'KYC', 'Agreement', 'Approval', 'Disbursement',
-                'EMI Schedule', 'Collection', 'Ledger', 'Receipt', 'Closure',
-              ].map((step, i, arr) => (
-                <span key={step} className="flex items-center gap-2 sm:gap-3">
-                  <span className="flex-shrink-0 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-card border border-border text-xs sm:text-sm font-medium shadow-sm">
-                    {step}
-                  </span>
-                  {i < arr.length - 1 && <ArrowRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
-                </span>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* A day with LoanOps — the human story of the product */}
-        <section id="day" className="w-full bg-accent/40 border-y border-border/50 mt-10 sm:mt-14 scroll-mt-20">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-20">
-            <div className="text-center mb-10 sm:mb-12">
-              <p className={EYEBROW}>A day with LoanOps</p>
-              <h2 className="text-2xl sm:text-3xl font-bold mt-3">One ordinary day, minus the chaos</h2>
-              <p className="text-muted-foreground mt-3 max-w-2xl mx-auto leading-relaxed">
-                Lending is not done at a desk. It happens on morning rounds, at doorsteps, and in the
-                evening tally. Here is how the day feels when the paperwork keeps up on its own.
-              </p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 sm:gap-6">
-              {DAY_MOMENTS.map((m) => (
-                <Card key={m.title} className="rounded-2xl border bg-card hover:shadow-premium transition-shadow h-full">
-                  <CardContent className="p-6">
-                    <div className="flex items-center gap-3">
-                      <span className="h-12 w-12 rounded-2xl bg-warning/15 text-warning-foreground dark:text-warning flex items-center justify-center shrink-0">
-                        {m.icon}
-                      </span>
-                      <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{m.time}</span>
-                    </div>
-                    <h3 className="text-lg font-bold mt-4">{m.title}</h3>
-                    <p className="text-sm text-muted-foreground mt-2 leading-relaxed">{m.desc}</p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Features */}
-        <section id="features" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-20 w-full scroll-mt-20">
-          <div className="text-center mb-10 sm:mb-12">
-            <p className={EYEBROW}>Features</p>
-            <h2 className="text-2xl sm:text-3xl font-bold mt-3">Everything your lending day runs on</h2>
-            <p className="text-muted-foreground mt-3 max-w-2xl mx-auto leading-relaxed">
-              Not another register to maintain — the register, the rounds, the reminders and the
-              reports, finally keeping themselves.
+      <main id="top" className="flex-1">
+        {/* Hero — left-aligned, set in type. The product itself follows
+            immediately below; nothing here glows or floats. */}
+        <section className="mx-auto w-full max-w-6xl px-4 pt-14 sm:px-6 sm:pt-20 lg:px-8">
+          <FadeIn>
+            <p className="flex items-center gap-3 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              <span aria-hidden="true" className="h-px w-10 bg-foreground" />
+              For NBFCs, MFIs and lending businesses in India
             </p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
-            {FEATURES.map((f) => (
-              <Card key={f.title} className="rounded-xl border bg-card hover:shadow-premium transition-shadow h-full">
-                <CardContent className="p-4 sm:p-5">
-                  <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                    {f.icon}
-                  </div>
-                  <h3 className="font-semibold text-sm sm:text-base mt-3">{f.title}</h3>
-                  <p className="text-xs sm:text-sm text-muted-foreground mt-1 leading-snug">{f.desc}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+            <h1 className="mt-7 max-w-[16ch] text-[2.75rem] font-semibold leading-[1.04] tracking-[-0.02em] sm:text-6xl lg:text-7xl">
+              The daily work of lending, kept in one ledger.
+            </h1>
+            <p className="mt-7 max-w-[62ch] text-base leading-relaxed text-muted-foreground sm:text-lg">
+              LoanOps is the register, the rounds list and the receipt book of a lending
+              business, kept digitally — applications, disbursement, EMI schedules, field
+              collections and reports, recorded once and exact to the paise. Your agents
+              work from one list. Your borrowers can see their own loans. You close the
+              day against a ledger that balances.
+            </p>
+            <div className="mt-9 flex flex-wrap items-center gap-x-7 gap-y-4">
+              <Button asChild size="lg" className="h-12 rounded-md px-6 text-base">
+                <a href="#enquire">
+                  Tell us about your business <ArrowRight className="ml-2 h-4 w-4" />
+                </a>
+              </Button>
+              <a
+                href="#ledger"
+                className="inline-flex items-center gap-1.5 rounded-sm text-base font-medium underline decoration-foreground/30 underline-offset-[6px] transition-colors hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                See the loan ledger <ArrowDown className="h-4 w-4" />
+              </a>
+            </div>
+            <p className="mt-8 text-sm text-muted-foreground">
+              For single-branch lenders and multi-agent field teams alike.
+            </p>
+          </FadeIn>
         </section>
 
-        {/* Panels — described in human terms; entry is only via the header Login */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-14 sm:pb-20 w-full">
-          <div className="text-center mb-10 sm:mb-12">
-            <p className={EYEBROW}>Who it is for</p>
-            <h2 className="text-2xl sm:text-3xl font-bold mt-3">One platform, three people it serves</h2>
-            <p className="text-muted-foreground mt-3 max-w-2xl mx-auto leading-relaxed">
-              The owner, the agent in the field and the borrower each get a panel shaped to their
-              work — and fenced to their role. One login at the top of this page opens the right one.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 sm:gap-6">
-            {PANELS.map((p) => (
-              <Card key={p.title} className="rounded-2xl border bg-card hover:shadow-premium transition-shadow h-full">
-                <CardContent className="p-6">
-                  <div className="h-12 w-12 rounded-2xl bg-gradient-fintech text-primary-foreground flex items-center justify-center shadow-glow">
-                    {p.icon}
+        {/* 01 — The ledger: the product, shown rather than described.
+            The figures are the product's own demo loan and they add up. */}
+        <section id="ledger" className="mx-auto w-full max-w-6xl scroll-mt-24 px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+          <SectionHead no="01" title="Start with the loan itself">
+            This is the loan detail screen — the page your team works from. One borrower,
+            one schedule, and a collection recorded against it. Nothing here is a mock-up
+            of numbers: the schedule below is worked out the way the product works it out.
+          </SectionHead>
+
+          <figure>
+            <div className="overflow-hidden rounded-lg border border-border bg-card">
+              {/* Loan header */}
+              <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-border px-5 py-4 sm:px-7">
+                <p className="text-base font-semibold tracking-tight">
+                  Priya Sharma
+                  <span className="ml-3 text-sm font-normal text-muted-foreground">Personal loan</span>
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Disbursed 5 Aug 2026 · Agent: Arjun Nair · Monthly
+                </p>
+              </div>
+
+              {/* Terms — the figures the schedule is built from */}
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-4 px-5 py-5 sm:grid-cols-5 sm:px-7">
+                {[
+                  ['Principal', '₹75,000.00'],
+                  ['Interest', '18% p.a.'],
+                  ['Tenure', '12 months'],
+                  ['EMI', '₹7,437.50'],
+                  ['Total repayable', '₹89,250.00'],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{label}</dt>
+                    <dd className="mt-1 text-base font-semibold tabular-nums tracking-tight">{value}</dd>
                   </div>
-                  <h3 className="text-xl font-bold mt-4">{p.title}</h3>
-                  <p className="text-sm text-muted-foreground mt-2 leading-relaxed">{p.desc}</p>
-                  <ul className="mt-4 space-y-1.5">
-                    {p.points.map((point) => (
-                      <li key={point} className="flex items-start gap-2 text-sm">
-                        <FileCheck2 className="h-4 w-4 text-success shrink-0 mt-0.5" />
-                        <span>{point}</span>
-                      </li>
+                ))}
+              </dl>
+
+              {/* Installment schedule */}
+              <div className="table-scroll overflow-x-auto border-t border-border">
+                <table className="w-full min-w-[430px] border-collapse text-sm">
+                  <caption className="px-5 pt-4 text-left text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground sm:px-7">
+                    Installment Schedule
+                  </caption>
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                      <th scope="col" className="px-5 py-2.5 font-medium sm:px-7">No.</th>
+                      <th scope="col" className="px-3 py-2.5 font-medium">Due date</th>
+                      <th scope="col" className="hidden px-3 py-2.5 text-right font-medium sm:table-cell">Principal</th>
+                      <th scope="col" className="hidden px-3 py-2.5 text-right font-medium sm:table-cell">Interest</th>
+                      <th scope="col" className="hidden px-3 py-2.5 text-right font-medium sm:table-cell">Fee</th>
+                      <th scope="col" className="px-3 py-2.5 text-right font-medium">EMI (₹)</th>
+                      <th scope="col" className="px-5 py-2.5 text-right font-medium sm:px-7">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {SCHEDULE.map((row) => (
+                      <tr key={row.n} className="border-b border-border/70 last:border-0">
+                        <td className="px-5 py-2.5 tabular-nums text-muted-foreground sm:px-7">{row.n}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5">{row.due}</td>
+                        <td className="hidden px-3 py-2.5 text-right tabular-nums sm:table-cell">{row.principal}</td>
+                        <td className="hidden px-3 py-2.5 text-right tabular-nums sm:table-cell">{row.interest}</td>
+                        <td className="hidden px-3 py-2.5 text-right tabular-nums sm:table-cell">{row.fee}</td>
+                        <td className="px-3 py-2.5 text-right font-medium tabular-nums">{row.emi}</td>
+                        <td className="px-5 py-2.5 text-right sm:px-7">
+                          {row.status === 'Paid' ? (
+                            <span className="font-medium text-success">Paid</span>
+                          ) : row.status === 'Due' ? (
+                            <span className="font-medium">Due</span>
+                          ) : (
+                            <span className="text-muted-foreground">Upcoming</span>
+                          )}
+                        </td>
+                      </tr>
                     ))}
-                  </ul>
-                </CardContent>
-              </Card>
+                    <tr>
+                      <td colSpan={7} className="px-5 py-2.5 text-sm text-muted-foreground sm:px-7">
+                        …and 7 more instalments, to 5 Aug 2027.
+                      </td>
+                    </tr>
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-foreground font-semibold">
+                      <td colSpan={2} className="px-5 py-3 sm:px-7">Total</td>
+                      <td className="hidden px-3 py-3 text-right tabular-nums sm:table-cell">75,000.00</td>
+                      <td className="hidden px-3 py-3 text-right tabular-nums sm:table-cell">13,500.00</td>
+                      <td className="hidden px-3 py-3 text-right tabular-nums sm:table-cell">750.00</td>
+                      <td className="px-3 py-3 text-right tabular-nums">89,250.00</td>
+                      <td className="px-5 py-3 sm:px-7" />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Latest collection + balance, in the product's own words */}
+              <div className="border-t border-border px-5 py-4 sm:px-7">
+                <p className="text-sm leading-relaxed">
+                  <span className="font-medium">Latest collection</span>
+                  <span className="text-muted-foreground">
+                    {' '}— 5 Nov 2026 · Instalment 3 · Cash, collected by Arjun Nair ·{' '}
+                  </span>
+                  <span className="font-medium tabular-nums">₹7,437.50</span>
+                  <span className="text-muted-foreground"> · Receipt issued · Verified by owner</span>
+                </p>
+                <p className="mt-1.5 text-sm text-muted-foreground">
+                  Outstanding principal{' '}
+                  <span className="font-medium tabular-nums text-foreground">₹56,250.00</span>
+                  {' '}· Next EMI due 5 Dec 2026
+                </p>
+              </div>
+            </div>
+            <figcaption className="mt-3 text-sm text-muted-foreground">
+              Fig. 01 — The loan detail screen. Demo figures: ₹75,000 at 18% over 12 months,
+              with the processing fee spread across the instalments. The schedule the
+              borrower sees in their portal is this same schedule.
+            </figcaption>
+          </figure>
+
+          {/* Three notes under the figure — ruled, not boxed */}
+          <div className="mt-12 grid gap-8 sm:mt-14 md:grid-cols-3 md:gap-10">
+            {LEDGER_NOTES.map((note) => (
+              <div key={note.title} className="border-t border-border pt-4">
+                <h3 className="font-semibold tracking-tight">{note.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{note.desc}</p>
+              </div>
             ))}
           </div>
         </section>
 
-        {/* How it works */}
-        <section id="how-it-works" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-14 sm:pb-20 w-full scroll-mt-20">
-          <div className="text-center mb-10 sm:mb-12">
-            <p className={EYEBROW}>How it works</p>
-            <h2 className="text-2xl sm:text-3xl font-bold mt-3">Getting started is a conversation</h2>
-            <p className="text-muted-foreground mt-3 max-w-2xl mx-auto leading-relaxed">
-              From a first hello to a lending operation that runs its day digitally — at your pace, with your people.
+        {/* Lifecycle — one ruled line, start to finish */}
+        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8" aria-label="The complete loan lifecycle">
+          <p className="border-y border-border py-4 text-sm leading-loose text-muted-foreground">
+            <span className="font-medium text-foreground">Every loan, followed through its whole life:</span>{' '}
+            Application · KYC · Agreement · Approval · Disbursement · EMI schedule ·
+            Collection · Ledger · Receipt · Closure
+          </p>
+        </div>
+
+        {/* 02 — What changes: paper on the left, LoanOps on the right */}
+        <section id="what-changes" className="mx-auto w-full max-w-6xl scroll-mt-24 px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+          <SectionHead no="02" title="What changes when the register closes">
+            LoanOps does not ask a lending business to work differently. It takes the work
+            that already happens — on paper, in notebooks, over WhatsApp — and keeps it in
+            one place instead.
+          </SectionHead>
+          <div>
+            <div className="hidden grid-cols-2 gap-x-10 pb-3 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground sm:grid">
+              <span>On paper</span>
+              <span>In LoanOps</span>
+            </div>
+            {CHANGES.map((row) => (
+              <div
+                key={row.paper}
+                className="grid gap-1 border-t border-border py-4 sm:grid-cols-2 sm:gap-x-10 sm:gap-y-0"
+              >
+                <p className="leading-relaxed text-muted-foreground">{row.paper}</p>
+                <p className="leading-relaxed">{row.loanops}</p>
+              </div>
+            ))}
+            <p className="border-t border-border pt-4 text-sm leading-relaxed text-muted-foreground">
+              The rest of the working day is covered too: applications by QR link, KYC and
+              digital agreements, disbursement, support tickets from the borrower&apos;s
+              portal, reconciliation and refunds.
             </p>
           </div>
-          <ol className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5 list-none">
-            {STEPS.map((s, i) => (
-              <li key={s.title}>
-                <Card className="rounded-xl border bg-card h-full">
-                  <CardContent className="p-4 sm:p-5">
-                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
-                      {i + 1}
-                    </span>
-                    <h3 className="font-semibold text-sm sm:text-base mt-3">{s.title}</h3>
-                    <p className="text-xs sm:text-sm text-muted-foreground mt-1 leading-snug">{s.desc}</p>
-                  </CardContent>
-                </Card>
+        </section>
+
+        {/* 03 — Who it serves: three people, ruled columns, no cards */}
+        <section id="who" className="mx-auto w-full max-w-6xl scroll-mt-24 px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+          <SectionHead no="03" title="Three people, one set of figures">
+            The owner, the agent in the field and the borrower each get a panel shaped to
+            their work and fenced to their role. One login, at the top of this page, opens
+            the right one.
+          </SectionHead>
+          <div className="grid gap-10 md:grid-cols-3 md:gap-0">
+            {PEOPLE.map((person, i) => (
+              <div
+                key={person.role}
+                className={`border-t-2 border-t-foreground pt-5 ${
+                  i === 0 ? 'md:pr-10' : 'md:border-l md:border-l-border md:pl-10'
+                } ${i === 1 ? 'md:pr-10' : ''}`}
+              >
+                <h3 className="text-lg font-semibold tracking-tight">{person.role}</h3>
+                <p className="mt-1.5 text-sm italic leading-relaxed text-muted-foreground">{person.line}</p>
+                <ul className="mt-4 space-y-2.5">
+                  {person.points.map((point) => (
+                    <li key={point} className="text-sm leading-relaxed">
+                      {point}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* 04 — Getting started: a numbered, ruled list */}
+        <section id="how-it-works" className="mx-auto w-full max-w-6xl scroll-mt-24 px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+          <SectionHead no="04" title="Getting started is a conversation" />
+          <ol className="list-none">
+            {STEPS.map((step, i) => (
+              <li
+                key={step.title}
+                className="grid gap-2 border-t border-border py-6 sm:grid-cols-[3.5rem_16rem_1fr] sm:gap-x-6"
+              >
+                <span className="font-mono text-sm text-muted-foreground">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <h3 className="font-semibold tracking-tight">{step.title}</h3>
+                <p className="max-w-[62ch] leading-relaxed text-muted-foreground">{step.desc}</p>
               </li>
             ))}
           </ol>
         </section>
 
-        {/* Security — borrowers' data, treated with respect */}
-        <section id="security" className="w-full bg-card/60 border-y border-border/60 scroll-mt-20">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-20">
-            <div className="flex items-center gap-3 mb-8">
-              <span className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                <ShieldCheck className="h-5 w-5" />
-              </span>
-              <div>
-                <h2 className="text-xl sm:text-2xl font-bold leading-tight">Your borrowers&apos; data, treated with respect</h2>
-                <p className="text-sm text-muted-foreground mt-0.5">People hand you their Aadhaar, their bank details and their trust. LoanOps guards all three.</p>
+        {/* 05 — Security: definition rows, claims unchanged and specific */}
+        <section id="security" className="mx-auto w-full max-w-6xl scroll-mt-24 px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+          <SectionHead no="05" title="Your borrowers' data, treated with respect">
+            People hand you their Aadhaar, their bank details and their trust. These are
+            the arrangements that guard all three.
+          </SectionHead>
+          <dl>
+            {SECURITY_ROWS.map((row) => (
+              <div
+                key={row.title}
+                className="grid gap-1 border-t border-border py-5 sm:grid-cols-[16rem_1fr] sm:gap-x-6"
+              >
+                <dt className="font-semibold tracking-tight">{row.title}</dt>
+                <dd className="max-w-[62ch] leading-relaxed text-muted-foreground">{row.desc}</dd>
               </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
-              {SECURITY_POINTS.map((s) => (
-                <div key={s.title} className="rounded-xl border border-border bg-background p-4 sm:p-5">
-                  <h3 className="font-semibold text-sm sm:text-base">{s.title}</h3>
-                  <p className="text-xs sm:text-sm text-muted-foreground mt-1 leading-snug">{s.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+            ))}
+          </dl>
         </section>
 
-        {/* Enquire */}
-        <section id="enquire" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-20 w-full scroll-mt-20">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 lg:gap-12 items-start">
+        {/* 06 — Enquire: the form itself is untouched */}
+        <section id="enquire" className="mx-auto w-full max-w-6xl scroll-mt-24 px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+          <SectionHead no="06" title="Tell us about your lending business">
+            How many borrowers do you serve? How many agents walk the field for you? Which
+            part of the day still runs on paper? A few lines is enough — we will call you
+            back on your mobile, walk you through the platform, and talk honestly about
+            whether LoanOps fits your business.
+          </SectionHead>
+          <div className="grid gap-10 lg:grid-cols-5 lg:gap-14">
             <div className="lg:col-span-2">
-              <p className={EYEBROW}>Let&apos;s talk</p>
-              <h2 className="text-2xl sm:text-3xl font-bold leading-tight mt-3">Tell us about your lending business</h2>
-              <p className="text-muted-foreground mt-3 text-sm sm:text-base leading-relaxed">
-                How many borrowers do you serve? How many agents walk the field for you? Which part of
-                the day still runs on paper? Tell us in a few lines — we will call you back on your
-                mobile, walk you through the platform, and talk honestly about whether LoanOps fits
-                your business.
-              </p>
-              <ul className="mt-5 space-y-2 text-sm">
-                <li className="flex items-start gap-2"><ScrollText className="h-4 w-4 text-success shrink-0 mt-0.5" /> No obligation — an enquiry is only a conversation.</li>
-                <li className="flex items-start gap-2"><ScrollText className="h-4 w-4 text-success shrink-0 mt-0.5" /> Your details are used only to respond to this enquiry.</li>
+              <ul className="space-y-3 text-sm leading-relaxed">
+                <li className="border-t border-border pt-3">
+                  No obligation. An enquiry is only a conversation.
+                </li>
+                <li className="border-t border-border pt-3">
+                  Your details are used only to respond to this enquiry.
+                </li>
+                <li className="border-t border-border pt-3">
+                  Already a customer? Use the Login button at the top of this page.
+                </li>
               </ul>
             </div>
             <div className="lg:col-span-3">
-              <Card className="rounded-2xl border bg-card shadow-premium">
-                <CardContent className="p-5 sm:p-7">
-                  <EnquiryForm />
-                </CardContent>
-              </Card>
+              <div className="rounded-lg border border-border bg-card p-5 sm:p-7">
+                <EnquiryForm />
+              </div>
             </div>
           </div>
         </section>
