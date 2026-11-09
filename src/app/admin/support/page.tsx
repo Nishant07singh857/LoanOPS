@@ -21,6 +21,12 @@ import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
+import { TicketThread, SupportStatusControl, type ThreadMessage } from '@/components/support/ticket-thread'
+import type { SupportStatusValue } from '@/lib/support'
+
+interface SupportTicketDetail extends SupportTicket {
+  messages: ThreadMessage[]
+}
 
 type ChipKey = 'ALL' | 'OPEN' | 'IN_REVIEW' | 'RESOLVED' | 'CLOSED'
 
@@ -81,6 +87,36 @@ export default function SupportPage() {
         || t.candidate.mobile.toLowerCase().includes(q)
     }
     return true
+  })
+
+  const { data: thread, isLoading: threadLoading } = useQuery({
+    queryKey: ['owner-support-thread', viewTicket?.id],
+    queryFn: () => api.get<SupportTicketDetail>(`/api/owner/support/${viewTicket!.id}`),
+    enabled: !!viewTicket,
+  })
+
+  const replyMutation = useMutation({
+    mutationFn: (body: string) => api.post(`/api/owner/support/${viewTicket!.id}/reply`, { body }),
+    onSuccess: () => {
+      toast.success('Reply sent', { description: 'The borrower has been notified.' })
+      queryClient.invalidateQueries({ queryKey: ['owner-support-thread', viewTicket?.id] })
+      queryClient.invalidateQueries({ queryKey: ['owner-support'] })
+    },
+    onError: (e: Error) => toast.error('Reply not sent', { description: e.message }),
+  })
+
+  const statusMutation = useMutation({
+    mutationFn: ({ to, resolution }: { to: SupportStatusValue; resolution?: string }) =>
+      api.post(`/api/owner/support/${viewTicket!.id}/status`, {
+        status: to,
+        ...(resolution ? { resolution } : {}),
+      }),
+    onSuccess: () => {
+      toast.success('Status updated', { description: 'The borrower has been notified.' })
+      queryClient.invalidateQueries({ queryKey: ['owner-support-thread', viewTicket?.id] })
+      queryClient.invalidateQueries({ queryKey: ['owner-support'] })
+    },
+    onError: (e: Error) => toast.error('Status not changed', { description: e.message }),
   })
 
   const resolveMutation = useMutation({
@@ -287,15 +323,30 @@ export default function SupportPage() {
                 <p className="text-xs text-muted-foreground">Category &amp; Subject</p>
                 <p className="font-semibold mt-0.5">[{viewTicket.category}] {viewTicket.subject}</p>
               </div>
-              <div className="rounded-lg bg-muted/40 border border-border p-3">
-                <p className="text-xs text-muted-foreground mb-1">Description</p>
-                <p className="text-xs sm:text-sm whitespace-pre-wrap">{viewTicket.description || 'No description provided.'}</p>
-              </div>
-              {viewTicket.resolution && (
-                <div className="rounded-lg bg-success/10 border border-success/20 p-3">
-                  <p className="text-xs font-semibold text-success mb-1">Resolution Notes</p>
-                  <p className="text-xs sm:text-sm whitespace-pre-wrap">{viewTicket.resolution}</p>
+              {threadLoading || !thread ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
                 </div>
+              ) : (
+                <>
+                  <TicketThread
+                    openingBody={thread.description}
+                    openingAt={thread.createdAt}
+                    openingAuthorLabel={thread.candidate.fullName}
+                    messages={thread.messages}
+                    status={thread.status}
+                    resolution={thread.resolution}
+                    viewerIsBorrower={false}
+                    replyPending={replyMutation.isPending}
+                    onReply={(body) => replyMutation.mutate(body)}
+                  />
+                  <SupportStatusControl
+                    status={thread.status}
+                    pending={statusMutation.isPending}
+                    onApply={(to, resolution) => statusMutation.mutate({ to, resolution })}
+                  />
+                </>
               )}
             </div>
           )}
