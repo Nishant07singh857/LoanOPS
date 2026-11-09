@@ -21,6 +21,7 @@ import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { formatPaiseToINR, formatBpsToPercent } from '@/lib/money'
 import { summarizeApplication } from '@/lib/application-summary'
+import { COMPLIANCE_CONFIG } from '@/lib/compliance-config'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
 import { useSession } from '@/lib/session'
 import {
@@ -513,6 +514,13 @@ function DraftApplicationFlow({
 
   // Agreement
   const [agreementAccepted, setAgreementAccepted] = React.useState(false)
+  // Itemised consents (DPDP): the two mandatory acknowledgements start
+  // unticked and must be actively granted; the KYC / credit-check
+  // toggles are genuinely optional and also start OFF — never pre-ticked.
+  const [consentDataProcessing, setConsentDataProcessing] = React.useState(false)
+  const [consentTermsPrivacy, setConsentTermsPrivacy] = React.useState(false)
+  const [consentKycAadhaar, setConsentKycAadhaar] = React.useState(false)
+  const [consentCreditCheck, setConsentCreditCheck] = React.useState(false)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
 
   const principalPaise = Number(draftApplication.principalAmount || 0)
@@ -608,6 +616,12 @@ function DraftApplicationFlow({
         ...(bankIfsc.trim() ? { bankIfsc: bankIfsc.trim().toUpperCase() } : {}),
         ...(upiId.trim() ? { upiId: upiId.trim() } : {}),
         agreementAccepted,
+        consents: [
+          { consentType: 'DATA_PROCESSING', granted: consentDataProcessing, policyVersion: COMPLIANCE_CONFIG.policyVersion },
+          { consentType: 'TERMS_PRIVACY', granted: consentTermsPrivacy, policyVersion: COMPLIANCE_CONFIG.policyVersion },
+          { consentType: 'KYC_AADHAAR', granted: consentKycAadhaar, policyVersion: COMPLIANCE_CONFIG.policyVersion },
+          { consentType: 'CREDIT_CHECK', granted: consentCreditCheck, policyVersion: COMPLIANCE_CONFIG.policyVersion },
+        ],
       }),
     onSuccess: (res) => {
       toast.success('Application submitted!', {
@@ -626,6 +640,13 @@ function DraftApplicationFlow({
       setErrors((prev) => ({
         ...prev,
         agreement: 'You must read and accept the Loan Agreement before submitting.',
+      }))
+      return
+    }
+    if (!consentDataProcessing || !consentTermsPrivacy) {
+      setErrors((prev) => ({
+        ...prev,
+        consents: 'Please tick the two required consent boxes so we can process your application.',
       }))
       return
     }
@@ -1006,6 +1027,79 @@ function DraftApplicationFlow({
                   <AlertCircle className="h-4 w-4 flex-shrink-0" /> {errors.agreement}
                 </p>
               )}
+
+              <div className="rounded-xl border border-border bg-background p-4 space-y-3">
+                <p className="text-sm font-semibold">Your consents</p>
+                <p className="text-xs text-muted-foreground -mt-1.5">
+                  We record exactly what you choose here — nothing is pre-ticked for you.
+                </p>
+
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={consentDataProcessing}
+                    onChange={(e) => {
+                      setConsentDataProcessing(e.target.checked)
+                      if (errors.consents) setErrors((prev) => ({ ...prev, consents: '' }))
+                    }}
+                    className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                  />
+                  <span className="text-xs sm:text-sm leading-relaxed">
+                    <span className="font-semibold">[Required]</span> I agree that {orgName} may collect and
+                    use my personal details to process and service this loan application, as explained in
+                    the Privacy Policy.
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={consentTermsPrivacy}
+                    onChange={(e) => {
+                      setConsentTermsPrivacy(e.target.checked)
+                      if (errors.consents) setErrors((prev) => ({ ...prev, consents: '' }))
+                    }}
+                    className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                  />
+                  <span className="text-xs sm:text-sm leading-relaxed">
+                    <span className="font-semibold">[Required]</span> I have read and agree to the Terms of
+                    Use and the Privacy Policy.
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={consentKycAadhaar}
+                    onChange={(e) => setConsentKycAadhaar(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                  />
+                  <span className="text-xs sm:text-sm leading-relaxed">
+                    <span className="font-semibold">[Optional]</span> You may use my Aadhaar details to
+                    verify my identity (KYC). If you leave this off, we may ask you for other identity
+                    documents instead.
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={consentCreditCheck}
+                    onChange={(e) => setConsentCreditCheck(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                  />
+                  <span className="text-xs sm:text-sm leading-relaxed">
+                    <span className="font-semibold">[Optional]</span> You may check my credit history with
+                    credit bureaus to help assess this application.
+                  </span>
+                </label>
+
+                {errors.consents && (
+                  <p className="text-xs text-destructive flex items-center gap-1.5" role="alert">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" /> {errors.consents}
+                  </p>
+                )}
+              </div>
 
               <div className="flex items-center justify-between gap-3 pt-2">
                 <Button type="button" variant="outline" onClick={() => setStep(2)} className="min-h-[44px]">

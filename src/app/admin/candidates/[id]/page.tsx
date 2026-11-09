@@ -6,8 +6,13 @@ import { useParams, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import {
   ArrowLeft, User, Phone, Mail, Briefcase, CreditCard, ShieldCheck,
-  Eye, EyeOff, FileText, Banknote, Receipt, Handshake, LifeBuoy, Bell,
+  Eye, EyeOff, FileText, Banknote, Receipt, Handshake, LifeBuoy, Bell, Pencil,
 } from 'lucide-react'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -210,7 +215,12 @@ export default function CandidateDetailPage() {
         title={c.fullName}
         description={`Candidate since ${fmtDate(c.createdAt)}`}
         icon={<User className="h-5 w-5" />}
-        action={<StatusBadge variant={c.status}>{formatStatus(c.status)}</StatusBadge>}
+        action={
+          <div className="flex items-center gap-2">
+            <EditRecordDialog candidate={c} onSaved={refetch} />
+            <StatusBadge variant={c.status}>{formatStatus(c.status)}</StatusBadge>
+          </div>
+        }
       />
 
       <FadeIn>
@@ -489,5 +499,173 @@ function Term({ label, value }: { label: string; value: string }) {
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="text-sm font-semibold mt-0.5 break-words">{value}</p>
     </div>
+  )
+}
+
+// Edit the candidate's ordinary record fields (name, contact, address,
+// employment, income, bank details). Mobile, Aadhaar/PAN and agent
+// assignment are intentionally absent: mobile is the borrower's
+// portal-login identity, identity documents belong to the KYC flow,
+// and assignment has its own control. Every save is audit-logged
+// server-side with the changed field names.
+function EditRecordDialog({ candidate: c, onSaved }: { candidate: CandidateDetail; onSaved: () => void }) {
+  const [open, setOpen] = React.useState(false)
+  const [saving, setSaving] = React.useState(false)
+  const [fullName, setFullName] = React.useState(c.fullName)
+  const [email, setEmail] = React.useState(c.email ?? '')
+  const [dob, setDob] = React.useState(c.dob ? c.dob.slice(0, 10) : '')
+  const [address, setAddress] = React.useState(c.address ?? '')
+  const [occupation, setOccupation] = React.useState(c.occupation ?? '')
+  const [employer, setEmployer] = React.useState(c.employer ?? '')
+  const [monthlyIncomeRupees, setMonthlyIncomeRupees] = React.useState(
+    c.monthlyIncome != null ? String(c.monthlyIncome / 100) : ''
+  )
+  const [bankName, setBankName] = React.useState(c.bankName ?? '')
+  const [bankIfsc, setBankIfsc] = React.useState(c.bankIfsc ?? '')
+  const [upiId, setUpiId] = React.useState(c.upiId ?? '')
+  const [bankAccount, setBankAccount] = React.useState('')
+
+  // Re-seed the form from the freshly fetched record each time it opens.
+  const handleOpen = () => {
+    setFullName(c.fullName)
+    setEmail(c.email ?? '')
+    setDob(c.dob ? c.dob.slice(0, 10) : '')
+    setAddress(c.address ?? '')
+    setOccupation(c.occupation ?? '')
+    setEmployer(c.employer ?? '')
+    setMonthlyIncomeRupees(c.monthlyIncome != null ? String(c.monthlyIncome / 100) : '')
+    setBankName(c.bankName ?? '')
+    setBankIfsc(c.bankIfsc ?? '')
+    setUpiId(c.upiId ?? '')
+    setBankAccount('')
+    setOpen(true)
+  }
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const income = monthlyIncomeRupees.trim()
+    let monthlyIncome: number | null = null
+    if (income) {
+      const rupees = Number(income)
+      if (!Number.isFinite(rupees) || rupees < 0) {
+        toast.error('Monthly income must be a valid amount')
+        return
+      }
+      monthlyIncome = Math.round(rupees * 100)
+    }
+    setSaving(true)
+    try {
+      const res = await api.patch<{ id: string; changedFields: string[] }>(`/api/owner/candidates/${c.id}`, {
+        fullName: fullName.trim(),
+        email: email.trim() || null,
+        dob: dob || null,
+        address: address.trim() || null,
+        occupation: occupation.trim() || null,
+        employer: employer.trim() || null,
+        monthlyIncome,
+        bankName: bankName.trim() || null,
+        bankIfsc: bankIfsc.trim().toUpperCase() || null,
+        upiId: upiId.trim() || null,
+        // Blank means "keep the current account" — the stored value is
+        // encrypted and only ever shown masked, so it is never prefilled.
+        ...(bankAccount.trim() ? { bankAccount: bankAccount.trim().replace(/\s+/g, '') } : {}),
+      })
+      toast.success('Candidate record updated', {
+        description: res.changedFields.length
+          ? `Changed: ${res.changedFields.join(', ')}`
+          : 'No changes were needed.',
+      })
+      setOpen(false)
+      onSaved()
+    } catch (err: any) {
+      toast.error('Could not update the record', { description: err.message })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const fieldCls = 'min-h-[44px] sm:min-h-9'
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <Button type="button" variant="outline" size="sm" onClick={handleOpen} className="min-h-[44px] sm:min-h-8">
+        <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit Record
+      </Button>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Edit Candidate Record</DialogTitle>
+          <DialogDescription>
+            Update the borrower&apos;s ordinary record details. Mobile number, Aadhaar/PAN and agent
+            assignment cannot be changed here — they are managed through their own verified flows.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <Label htmlFor="edit-fullName">Full Name</Label>
+            <Input id="edit-fullName" value={fullName} onChange={(e) => setFullName(e.target.value)} required minLength={2} maxLength={100} className={fieldCls} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="edit-email">Email</Label>
+              <Input id="edit-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={fieldCls} />
+            </div>
+            <div>
+              <Label htmlFor="edit-dob">Date of Birth</Label>
+              <Input id="edit-dob" type="date" value={dob} onChange={(e) => setDob(e.target.value)} className={fieldCls} />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="edit-address">Address</Label>
+            <Input id="edit-address" value={address} onChange={(e) => setAddress(e.target.value)} maxLength={500} className={fieldCls} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="edit-occupation">Occupation</Label>
+              <Input id="edit-occupation" value={occupation} onChange={(e) => setOccupation(e.target.value)} maxLength={100} className={fieldCls} />
+            </div>
+            <div>
+              <Label htmlFor="edit-employer">Employer</Label>
+              <Input id="edit-employer" value={employer} onChange={(e) => setEmployer(e.target.value)} maxLength={100} className={fieldCls} />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="edit-income">Monthly Income (₹)</Label>
+            <Input id="edit-income" type="number" min="0" step="any" value={monthlyIncomeRupees} onChange={(e) => setMonthlyIncomeRupees(e.target.value)} className={fieldCls} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="edit-bankName">Bank Name</Label>
+              <Input id="edit-bankName" value={bankName} onChange={(e) => setBankName(e.target.value)} maxLength={100} className={fieldCls} />
+            </div>
+            <div>
+              <Label htmlFor="edit-bankIfsc">Bank IFSC</Label>
+              <Input id="edit-bankIfsc" value={bankIfsc} onChange={(e) => setBankIfsc(e.target.value.toUpperCase())} maxLength={11} className={`${fieldCls} uppercase font-mono`} />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="edit-bankAccount">Bank Account Number</Label>
+              <Input
+                id="edit-bankAccount"
+                value={bankAccount}
+                onChange={(e) => setBankAccount(e.target.value)}
+                placeholder={c.bankAccount ?? 'Leave blank to keep current'}
+                autoComplete="off"
+                className={fieldCls}
+              />
+              <p className="text-xs text-muted-foreground mt-1">Leave blank to keep the current account ({c.bankAccount ?? 'none on record'}).</p>
+            </div>
+            <div>
+              <Label htmlFor="edit-upiId">UPI ID</Label>
+              <Input id="edit-upiId" value={upiId} onChange={(e) => setUpiId(e.target.value)} maxLength={100} className={fieldCls} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving} className="min-h-[44px] sm:min-h-9">Cancel</Button>
+            <Button type="submit" disabled={saving} className="min-h-[44px] sm:min-h-9">{saving ? 'Saving...' : 'Save Changes'}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }

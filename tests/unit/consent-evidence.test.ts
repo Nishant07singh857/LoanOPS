@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import {
   APPLY_REQUIRED_CONSENTS,
   SIGNUP_REQUIRED_CONSENTS,
+  SUBMIT_REQUIRED_CONSENTS,
   missingRequiredConsents,
   type SubmittedConsent,
 } from '../../src/lib/consents'
@@ -100,6 +101,53 @@ test('duplicate types: the LAST entry wins (latest-state rule)', () => {
       SIGNUP_REQUIRED_CONSENTS
     ),
     ['TERMS_PRIVACY']
+  )
+})
+
+test('submit contract: mandatory pair is DATA_PROCESSING + TERMS_PRIVACY', () => {
+  assert.deepEqual([...SUBMIT_REQUIRED_CONSENTS], ['DATA_PROCESSING', 'TERMS_PRIVACY'])
+})
+
+test('submit gate: itemised consents with the mandatory pair granted pass', () => {
+  assert.deepEqual(
+    missingRequiredConsents(
+      [
+        granted('DATA_PROCESSING'),
+        granted('TERMS_PRIVACY'),
+        granted('KYC_AADHAAR'),
+        denied('CREDIT_CHECK'),
+      ],
+      SUBMIT_REQUIRED_CONSENTS
+    ),
+    []
+  )
+})
+
+test('submit gate: the historical four (no TERMS_PRIVACY) fail the itemised gate', () => {
+  // Requests that itemise must carry the mandatory pair; the legacy
+  // DATA_PROCESSING/KYC_AADHAAR/CREDIT_CHECK/KFS_DISCLOSURE bundle only
+  // remains valid on the consents-absent fallback path (route-level).
+  assert.deepEqual(
+    missingRequiredConsents(
+      [
+        granted('DATA_PROCESSING'),
+        granted('KYC_AADHAAR'),
+        granted('CREDIT_CHECK'),
+        granted('KFS_DISCLOSURE'),
+      ],
+      SUBMIT_REQUIRED_CONSENTS
+    ),
+    ['TERMS_PRIVACY']
+  )
+})
+
+test('submit gate: a mandatory consent denied (granted=false) fails', () => {
+  assert.deepEqual(
+    missingRequiredConsents(
+      [denied('DATA_PROCESSING'), granted('TERMS_PRIVACY')],
+      SUBMIT_REQUIRED_CONSENTS
+    ),
+    ['DATA_PROCESSING']
   )
 })
 

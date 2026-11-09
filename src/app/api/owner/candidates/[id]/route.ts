@@ -1,12 +1,13 @@
 // GET /api/owner/candidates/[id] — single candidate detail
 import { NextRequest } from 'next/server'
+import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { requireOwner } from '@/lib/server/auth'
 import { apiHandler, success, notFound, badRequest, validateBody } from '@/lib/server/api'
 import { z } from 'zod'
 import { auditRaw } from '@/lib/server/auth'
-import { decryptPIIForMask } from '@/lib/server/crypto'
-import { maskAadhaar, maskPan, maskBankAccount } from '@/lib/utils'
+import { decryptPIIForMask, encryptPII } from '@/lib/server/crypto'
+import { maskAadhaar, maskPan, maskBankAccount, BANK_ACCOUNT_REGEX, IFSC_REGEX } from '@/lib/utils'
 
 export const GET = apiHandler(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const ctx = await requireOwner()
@@ -180,16 +181,51 @@ const assignSchema = z.object({
   assignedAgentId: z.string().trim().min(1).nullable(),
 }).strict()
 
-// PATCH /api/owner/candidates/[id] — (re)assign the collection agent.
-// This is the write path behind the dashboard "Assign agent" action and
-// the candidates workspace; assignment drives every agent-side ownership
-// check (agent routes compare candidate.assignedAgentId to the agent's
-// profile id).
+// Profile-edit schema: the ordinary record fields the create form
+// collects (POST /api/owner/candidates), with the same validation.
+// Deliberately NOT editable here (strict mode rejects them with 422):
+// - mobile — it is the borrower's portal-login identity, bound to the
+//   @@unique([organizationId, mobile]) constraint and the claim flow;
+//   changing it would strand the borrower's login and invite duplicates.
+// - aadhaarMasked / panMasked — identity-document PII owned by the KYC
+//   + consent + audited-reveal machinery, never free-form record edits.
+// - organizationId / status / userId / claim fields — tenancy and
+//   lifecycle state, each with its own flow.
+// - assignedAgentId — assignment has its own branch of this PATCH.
+const editSchema = z.object({
+  fullName: z.string().trim().min(2).max(100).optional(),
+  email: z.string().trim().email('Invalid email').max(200).optional().nullable(),
+  dob: z.string().trim().refine((v) => !Number.isNaN(Date.parse(v)), {
+    message: 'Invalid dob',
+  }).optional().nullable(),
+  address: z.string().trim().max(500).optional().nullable(),
+  occupation: z.string().trim().max(100).optional().nullable(),
+  employer: z.string().trim().max(100).optional().nullable(),
+  monthlyIncome: z.number().int().nonnegative().optional().nullable(),
+  bankName: z.string().trim().min(2).max(100).optional().nullable(),
+  bankAccount: z.string().trim().regex(BANK_ACCOUNT_REGEX, 'Invalid bank account number').optional().nullable(),
+  bankIfsc: z.string().trim().toUpperCase().regex(IFSC_REGEX, 'Invalid IFSC format').optional().nullable(),
+  upiId: z.string().trim().max(100).optional().nullable(),
+}).strict()
+
+// PATCH /api/owner/candidates/[id] — two owner write paths, dispatched
+// on the body shape:
+// - { assignedAgentId } → (re)assign the collection agent. This is the
+//   write path behind the dashboard "Assign agent" action and the
+//   candidates workspace; assignment drives every agent-side ownership
+//   check (agent routes compare candidate.assignedAgentId to the
+//   agent's profile id).
+// - any profile field → edit the candidate's record (see editSchema).
 export const PATCH = apiHandler(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const ctx = await requireOwner()
   const { id } = await params
   const body = await req.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON body')
+
+  if (!Object.prototype.hasOwnProperty.call(body, 'assignedAgentId')) {
+    return editCandidateProfile(ctx, id, body)
+  }
+
   const data = validateBody(assignSchema, body)
 
   const candidate = await db.candidate.findFirst({
@@ -201,9 +237,11 @@ export const PATCH = apiHandler(async (req: NextRequest, { params }: { params: P
   if (data.assignedAgentId) {
     const agent = await db.agentProfile.findFirst({
       where: { id: data.assignedAgentId, organizationId: ctx.user.organizationId },
-      select: { id: true },
+      select: { id: true, isActive: true },
     })
     if (!agent) return badRequest('Agent not found in your organization')
+    // Deactivated agents keep their existing book but take no new work.
+    if (!agent.isActive) return badRequest('Agent is deactivated and cannot take new assignments')
   }
 
   const updated = await db.candidate.update({
@@ -218,3 +256,72 @@ export const PATCH = apiHandler(async (req: NextRequest, { params }: { params: P
 
   return success(updated)
 })
+
+// Profile-edit branch of the PATCH above. Org-scoping matches the rest
+// of this route: a candidate outside the owner's org is a 404, never a
+// 403 (no cross-org existence leak). The audit entry records WHICH
+// fields changed — never the values (the create/assign audit patterns
+// record identifiers, not PII payloads; bankAccount above all is
+// write-only here and stored encrypted exactly as at creation).
+async function editCandidateProfile(
+  ctx: Awaited<ReturnType<typeof import('@/lib/server/auth').requireOwner>>,
+  id: string,
+  body: unknown
+) {
+  const data = validateBody(editSchema, body)
+
+  const candidate = await db.candidate.findFirst({
+    where: { id, organizationId: ctx.user.organizationId },
+  })
+  if (!candidate) return notFound('Candidate not found')
+
+  const update: Prisma.CandidateUpdateInput = {}
+  const changedFields: string[] = []
+  const consider = (field: keyof typeof data, value: unknown, current: unknown) => {
+    if (value === undefined) return
+    const same =
+      value instanceof Date && current instanceof Date
+        ? value.getTime() === current.getTime()
+        : value === current
+    if (!same) {
+      ;(update as Record<string, unknown>)[field] = value
+      changedFields.push(field)
+    }
+  }
+
+  consider('fullName', data.fullName, candidate.fullName)
+  consider('email', data.email, candidate.email)
+  consider('dob', data.dob === undefined ? undefined : data.dob === null ? null : new Date(data.dob), candidate.dob)
+  consider('address', data.address, candidate.address)
+  consider('occupation', data.occupation, candidate.occupation)
+  consider('employer', data.employer, candidate.employer)
+  consider('monthlyIncome', data.monthlyIncome, candidate.monthlyIncome)
+  consider('bankName', data.bankName, candidate.bankName)
+  consider('bankIfsc', data.bankIfsc, candidate.bankIfsc)
+  consider('upiId', data.upiId, candidate.upiId)
+  // Bank account is compared/stored only in encrypted form (as at
+  // creation); any submitted value counts as a change by construction —
+  // the stored ciphertext is never decrypted just to diff it.
+  if (data.bankAccount !== undefined) {
+    update.bankAccount = data.bankAccount === null ? null : encryptPII(data.bankAccount)
+    changedFields.push('bankAccount')
+  }
+
+  if (changedFields.length === 0) {
+    return success({ id: candidate.id, changedFields: [] as string[] })
+  }
+
+  await db.candidate.update({ where: { id: candidate.id }, data: update })
+
+  await auditRaw(
+    ctx.user.organizationId,
+    ctx.user.id,
+    'UPDATE',
+    'Candidate',
+    candidate.id,
+    `Edited candidate ${candidate.fullName} record — changed: ${changedFields.join(', ')}`,
+    { changedFields }
+  )
+
+  return success({ id: candidate.id, changedFields })
+}

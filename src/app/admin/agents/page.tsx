@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { UserCog, ArrowUpDown, Target, CheckCircle2, XCircle, Phone, ChevronRight, Plus } from 'lucide-react'
+import { UserCog, ArrowUpDown, Target, CheckCircle2, XCircle, Phone, ChevronRight, Plus, UserX, UserCheck } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -54,7 +54,26 @@ export default function AgentsPage() {
   const [selected, setSelected] = React.useState<AgentRow | null>(null)
   
   const [createOpen, setCreateOpen] = React.useState(false)
+  const [confirmToggle, setConfirmToggle] = React.useState<AgentRow | null>(null)
   const queryClient = useQueryClient()
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      api.patch<{ id: string; isActive: boolean; sessionsRevoked: number }>(`/api/owner/agents/${id}`, { isActive }),
+    onSuccess: (_data, vars) => {
+      toast.success(vars.isActive ? 'Agent reactivated' : 'Agent deactivated', {
+        description: vars.isActive
+          ? 'The agent can sign in again.'
+          : 'Login is disabled and any live session was signed out. Assignments and history are unchanged.',
+      })
+      queryClient.invalidateQueries({ queryKey: ['owner-agents'] })
+      setConfirmToggle(null)
+      setSelected(null)
+    },
+    onError: (err: any) => {
+      toast.error('Could not update agent status', { description: err.message })
+    },
+  })
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['owner-agents'],
@@ -186,13 +205,16 @@ export default function AgentsPage() {
                     </TableHeader>
                     <TableBody>
                       {sorted.map((a) => (
-                        <TableRow key={a.id} className="cursor-pointer" onClick={() => setSelected(a)}>
+                        <TableRow key={a.id} className={cn('cursor-pointer', !a.isActive && 'opacity-60')} onClick={() => setSelected(a)}>
                           <TableCell className="pl-6">
                             <div className="flex items-center gap-2.5">
                               <Avatar className="h-8 w-8">
                                 <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-semibold">{a.name.split(' ').map(p => p[0]).join('')}</AvatarFallback>
                               </Avatar>
                               <span className="font-medium">{a.name}</span>
+                              {!a.isActive && (
+                                <span className="inline-flex items-center rounded-md bg-destructive/15 text-destructive px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">Deactivated</span>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell className="text-xs">{a.zone ?? '—'}</TableCell>
@@ -208,6 +230,15 @@ export default function AgentsPage() {
                             </span>
                           </TableCell>
                           <TableCell className="pr-6 text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              aria-label={a.isActive ? `Deactivate ${a.name}` : `Reactivate ${a.name}`}
+                              title={a.isActive ? 'Deactivate agent' : 'Reactivate agent'}
+                              onClick={(e) => { e.stopPropagation(); setConfirmToggle(a) }}
+                            >
+                              {a.isActive ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
+                            </Button>
                             <Button variant="ghost" size="sm" aria-label={`View details for ${a.name}`}><ChevronRight className="h-4 w-4" /></Button>
                           </TableCell>
                         </TableRow>
@@ -228,7 +259,12 @@ export default function AgentsPage() {
                                   <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-semibold">{a.name.split(' ').map(p => p[0]).join('')}</AvatarFallback>
                                 </Avatar>
                                 <div className="min-w-0">
-                                  <p className="text-sm font-semibold truncate">{a.name}</p>
+                                  <p className="text-sm font-semibold truncate flex items-center gap-2">
+                                    {a.name}
+                                    {!a.isActive && (
+                                      <span className="inline-flex items-center rounded-md bg-destructive/15 text-destructive px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide flex-shrink-0">Deactivated</span>
+                                    )}
+                                  </p>
                                   <p className="text-xs text-muted-foreground truncate">{a.zone ?? '—'}</p>
                                 </div>
                               </div>
@@ -309,7 +345,14 @@ export default function AgentsPage() {
                 </div>
               </div>
 
-              <SheetFooter>
+              <SheetFooter className="flex-col gap-2">
+                <Button
+                  variant={selected.isActive ? 'destructive' : 'default'}
+                  className="w-full min-h-[44px] sm:min-h-9"
+                  onClick={() => setConfirmToggle(selected)}
+                >
+                  {selected.isActive ? <><UserX className="h-4 w-4" /> Deactivate Agent</> : <><UserCheck className="h-4 w-4" /> Reactivate Agent</>}
+                </Button>
                 {selected.phone ? (
                   <Button asChild className="w-full min-h-[44px] sm:min-h-9">
                     <a href={`tel:${selected.phone.replace(/\s/g, '')}`}>
@@ -326,6 +369,49 @@ export default function AgentsPage() {
           )}
         </SheetContent>
       </Sheet>
+      {/* Deactivate / reactivate confirmation */}
+      <Dialog open={!!confirmToggle} onOpenChange={(o) => !o && setConfirmToggle(null)}>
+        <DialogContent>
+          {confirmToggle && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{confirmToggle.isActive ? 'Deactivate agent?' : 'Reactivate agent?'}</DialogTitle>
+                <DialogDescription>
+                  {confirmToggle.isActive ? (
+                    <>
+                      {confirmToggle.name} will no longer be able to sign in, and any live session will be
+                      signed out immediately. Their assigned candidates, collections and history stay
+                      exactly as they are — nothing is reassigned or deleted. You can reactivate the
+                      agent at any time.
+                    </>
+                  ) : (
+                    <>
+                      {confirmToggle.name} will be able to sign in again with their existing password.
+                    </>
+                  )}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setConfirmToggle(null)} disabled={toggleActiveMutation.isPending} className="min-h-[44px] sm:min-h-9">
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant={confirmToggle.isActive ? 'destructive' : 'default'}
+                  disabled={toggleActiveMutation.isPending}
+                  onClick={() => toggleActiveMutation.mutate({ id: confirmToggle.id, isActive: !confirmToggle.isActive })}
+                  className="min-h-[44px] sm:min-h-9"
+                >
+                  {toggleActiveMutation.isPending
+                    ? 'Updating...'
+                    : confirmToggle.isActive ? 'Deactivate' : 'Reactivate'}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
