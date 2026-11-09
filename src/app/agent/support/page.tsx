@@ -21,6 +21,13 @@ import {
 import { toast } from 'sonner'
 import { pluralize } from '@/lib/money'
 import { api, ApiRequestError } from '@/lib/api-client'
+import { TicketThread, SupportStatusControl, type ThreadMessage } from '@/components/support/ticket-thread'
+import type { SupportStatusValue } from '@/lib/support'
+
+interface TicketDetail extends Ticket {
+  description: string
+  messages: ThreadMessage[]
+}
 
 interface Ticket {
   id: string
@@ -51,6 +58,7 @@ function fmtDate(d: string) {
 export default function AgentSupportPage() {
   const queryClient = useQueryClient()
   const [newOpen, setNewOpen] = React.useState(false)
+  const [activeId, setActiveId] = React.useState<string | null>(null)
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['agent-support'],
@@ -58,6 +66,37 @@ export default function AgentSupportPage() {
   })
   const tickets = data?.items ?? []
   const activeCount = tickets.filter((t) => t.status === 'OPEN' || t.status === 'IN_REVIEW').length
+  const activeTicket = tickets.find((t) => t.id === activeId) ?? null
+
+  const { data: thread, isLoading: threadLoading } = useQuery({
+    queryKey: ['agent-support-thread', activeId],
+    queryFn: () => api.get<TicketDetail>(`/api/agent/support/${activeId}`),
+    enabled: !!activeId,
+  })
+
+  const replyMutation = useMutation({
+    mutationFn: (body: string) => api.post(`/api/agent/support/${activeId}/reply`, { body }),
+    onSuccess: () => {
+      toast.success('Reply sent', { description: 'The borrower has been notified.' })
+      queryClient.invalidateQueries({ queryKey: ['agent-support-thread', activeId] })
+      queryClient.invalidateQueries({ queryKey: ['agent-support'] })
+    },
+    onError: (e: Error) => toast.error('Reply not sent', { description: e.message }),
+  })
+
+  const statusMutation = useMutation({
+    mutationFn: ({ to, resolution }: { to: SupportStatusValue; resolution?: string }) =>
+      api.post(`/api/agent/support/${activeId}/status`, {
+        status: to,
+        ...(resolution ? { resolution } : {}),
+      }),
+    onSuccess: () => {
+      toast.success('Status updated', { description: 'The borrower has been notified.' })
+      queryClient.invalidateQueries({ queryKey: ['agent-support-thread', activeId] })
+      queryClient.invalidateQueries({ queryKey: ['agent-support'] })
+    },
+    onError: (e: Error) => toast.error('Status not changed', { description: e.message }),
+  })
 
   return (
     <div className="space-y-6">
@@ -112,6 +151,9 @@ export default function AgentSupportPage() {
                         <span className="font-medium">Resolution:</span> {t.resolution}
                       </p>
                     )}
+                    <Button variant="outline" size="sm" className="h-9" onClick={() => setActiveId(t.id)}>
+                      View conversation &amp; reply
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -128,6 +170,49 @@ export default function AgentSupportPage() {
           setNewOpen(false)
         }}
       />
+
+      {/* Conversation thread dialog */}
+      <Dialog open={!!activeId} onOpenChange={(o) => !o && setActiveId(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 flex-wrap">
+              <span>{activeTicket?.ticketNumber ?? 'Ticket'}</span>
+              {activeTicket && <StatusBadge variant={activeTicket.status}>{formatStatus(activeTicket.status)}</StatusBadge>}
+            </DialogTitle>
+            <DialogDescription>
+              {activeTicket ? `${activeTicket.subject}${activeTicket.candidate?.fullName ? ` · Borrower: ${activeTicket.candidate.fullName}` : ''}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          {threadLoading || !thread ? (
+            <div className="space-y-3">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <TicketThread
+                openingBody={thread.description}
+                openingAt={thread.createdAt}
+                openingAuthorLabel={thread.candidate?.fullName ?? 'Borrower'}
+                messages={thread.messages}
+                status={thread.status}
+                resolution={thread.resolution}
+                viewerIsBorrower={false}
+                replyPending={replyMutation.isPending}
+                onReply={(body) => replyMutation.mutate(body)}
+              />
+              <SupportStatusControl
+                status={thread.status}
+                pending={statusMutation.isPending}
+                onApply={(to, resolution) => statusMutation.mutate({ to, resolution })}
+              />
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" className="h-11" onClick={() => setActiveId(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

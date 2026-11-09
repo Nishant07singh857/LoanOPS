@@ -137,6 +137,7 @@ export const MODEL_CLASSIFICATION: Readonly<Record<string, PruneClassification>>
   Ptp: 'NEVER',
   Escalation: 'NEVER',
   SupportTicket: 'NEVER',
+  SupportTicketMessage: 'NEVER', // ticket thread replies — support evidence, like the ticket itself
   Enquiry: 'NEVER', // website sales leads — business records, not logs
 
   // — Never: product content & legal/compliance evidence —

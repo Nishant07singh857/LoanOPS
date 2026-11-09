@@ -26,6 +26,8 @@ import {
 } from '@/components/ui/accordion'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
+import { TicketThread, type ThreadMessage } from '@/components/support/ticket-thread'
+import { supportStatusBorrowerLabel } from '@/lib/support'
 import { openWhatsApp, buildWhatsAppMessage, WHATSAPP_TEMPLATES } from '@/lib/whatsapp'
 import { useSession } from '@/lib/session'
 import { pluralize } from '@/lib/money'
@@ -70,6 +72,11 @@ interface Ticket {
   createdAt: string
 }
 
+interface TicketDetail extends Ticket {
+  description: string
+  messages: ThreadMessage[]
+}
+
 function fmtTimestamp(d: string) {
   const date = new Date(d)
   const now = new Date()
@@ -86,12 +93,30 @@ export default function SupportPage() {
   const { user } = useSession()
   const candidateName = user?.name || 'Candidate'
   const [newOpen, setNewOpen] = React.useState(false)
+  const [activeId, setActiveId] = React.useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['candidate-support'],
     queryFn: () => api.get<{ items: Ticket[] }>('/api/candidate/support'),
   })
   const tickets = data?.items ?? []
+  const activeTicket = tickets.find((t) => t.id === activeId) ?? null
+
+  const { data: thread, isLoading: threadLoading } = useQuery({
+    queryKey: ['candidate-support-thread', activeId],
+    queryFn: () => api.get<TicketDetail>(`/api/candidate/support/${activeId}`),
+    enabled: !!activeId,
+  })
+
+  const replyMutation = useMutation({
+    mutationFn: (body: string) => api.post(`/api/candidate/support/${activeId}/reply`, { body }),
+    onSuccess: () => {
+      toast.success('Reply sent')
+      queryClient.invalidateQueries({ queryKey: ['candidate-support-thread', activeId] })
+      queryClient.invalidateQueries({ queryKey: ['candidate-support'] })
+    },
+    onError: (e: Error) => toast.error('Reply not sent', { description: e.message }),
+  })
 
   const { data: loanData } = useQuery({
     queryKey: ['candidate-loan'],
@@ -234,6 +259,15 @@ export default function SupportPage() {
                           <span className="font-semibold text-foreground">Resolution: </span>{t.resolution}
                         </p>
                       )}
+                      <p className="text-[11px] text-muted-foreground mt-2">{supportStatusBorrowerLabel(t.status)}</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 h-9"
+                        onClick={() => setActiveId(t.id)}
+                      >
+                        <MessageCircle className="h-3.5 w-3.5" /> View conversation &amp; reply
+                      </Button>
                     </div>
                   </StaggerItem>
                 ))}
@@ -286,6 +320,42 @@ export default function SupportPage() {
       <NewTicketDialog open={newOpen} onOpenChange={setNewOpen} onCreated={() => {
         queryClient.invalidateQueries({ queryKey: ['candidate-support'] })
       }} />
+
+      {/* Conversation thread dialog */}
+      <Dialog open={!!activeId} onOpenChange={(o) => !o && setActiveId(null)}>
+        <DialogContent className="max-w-[95vw] sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 flex-wrap">
+              <span>{activeTicket?.ticketNumber}</span>
+              {activeTicket && <StatusBadge variant={activeTicket.status}>{formatStatus(activeTicket.status)}</StatusBadge>}
+            </DialogTitle>
+            <DialogDescription>
+              {activeTicket ? `${activeTicket.subject} · ${supportStatusBorrowerLabel(activeTicket.status)}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          {threadLoading || !thread ? (
+            <div className="space-y-3">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : (
+            <TicketThread
+              openingBody={thread.description}
+              openingAt={thread.createdAt}
+              openingAuthorLabel="You"
+              messages={thread.messages}
+              status={thread.status}
+              resolution={thread.resolution}
+              viewerIsBorrower
+              replyPending={replyMutation.isPending}
+              onReply={(body) => replyMutation.mutate(body)}
+            />
+          )}
+          <DialogFooter>
+            <Button variant="outline" className="h-11" onClick={() => setActiveId(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

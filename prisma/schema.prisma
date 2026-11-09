@@ -87,6 +87,7 @@ model User {
   followUps            FollowUp[]
   ptps                 Ptp[]
   escalations          Escalation[]
+  supportMessages      SupportTicketMessage[]
   disbursements        Disbursement[]
   refunds              Refund[]
   corrections          FinancialCorrection[]
@@ -991,9 +992,30 @@ model SupportTicket {
 
   organization Organization @relation(fields: [organizationId], references: [id])
   candidate    Candidate    @relation(fields: [candidateId], references: [id])
+  messages     SupportTicketMessage[]
 
   @@index([organizationId])
   @@index([candidateId])
+}
+
+// One entry in a support ticket's conversation thread. The ticket's
+// own `description` is the opening message (rendered as such in the
+// UI, never duplicated into this table); every later borrower/staff
+// reply is a row here, authored by a real User account. Support
+// evidence — NEVER pruned (see MODEL_CLASSIFICATION in
+// src/lib/prune-logs.ts).
+model SupportTicketMessage {
+  id           String   @id @default(cuid())
+  ticketId     String
+  authorUserId String
+  body         String
+  createdAt    DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User          @relation(fields: [authorUserId], references: [id])
+
+  @@index([ticketId, createdAt])
+  @@index([authorUserId])
 }
 
 // ============================================================
