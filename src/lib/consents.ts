@@ -37,6 +37,22 @@ export const APPLY_REQUIRED_CONSENTS = [
 ] as const
 
 /**
+ * Mandatory consents for POST /api/candidate/application/submit WHEN the
+ * request carries an itemised `consents` array. The portal submit UI
+ * collects exactly these two as required acknowledgements (alongside the
+ * agreement acceptance) plus KYC_AADHAAR / CREDIT_CHECK as separate,
+ * genuinely optional toggles, and always submits the mandatory pair
+ * granted — so enforcing the pair server-side cannot break the product
+ * flow. When `consents` is absent entirely, the endpoint keeps its
+ * historical behaviour (four records derived from agreementAccepted);
+ * the gate only governs requests that DO itemise, and for those it
+ * applies the same D1 rule as signup/apply: mandatory pair present +
+ * granted, else 422 before any write, and exactly the submitted entries
+ * are recorded (including granted=false optionals).
+ */
+export const SUBMIT_REQUIRED_CONSENTS = ['DATA_PROCESSING', 'TERMS_PRIVACY'] as const
+
+/**
  * Returns the subset of `required` consent types NOT satisfied by the
  * submitted list — absent entirely, or present with granted !== true.
  * When a type is submitted more than once, the LAST entry wins (the

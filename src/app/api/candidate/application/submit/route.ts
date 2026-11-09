@@ -3,7 +3,8 @@ import { promises as fs } from 'fs'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requireCandidate, audit, getClientIp } from '@/lib/server/auth'
-import { apiHandler, success, badRequest, validate } from '@/lib/server/api'
+import { apiHandler, success, badRequest, unprocessable, validate } from '@/lib/server/api'
+import { SUBMIT_REQUIRED_CONSENTS, missingRequiredConsents } from '@/lib/consents'
 import {
   AADHAAR_REGEX,
   PAN_REGEX,
@@ -75,6 +76,23 @@ export const POST = apiHandler(async (req: NextRequest) => {
 
   if (!input.agreementAccepted) {
     return badRequest('You must accept the agreement and KFS disclosure to continue')
+  }
+
+  // Itemised-consent gate (D1 rule, same as signup/apply): when the
+  // request itemises its consents, the mandatory pair must be present
+  // and granted — rejected here, BEFORE any file is stored or any row
+  // is written. The submitted entries are then recorded exactly as
+  // given (including granted=false optionals) further below. When
+  // `consents` is absent entirely, the historical agreementAccepted
+  // fallback below applies unchanged.
+  if (input.consents && input.consents.length > 0) {
+    const missingConsents = missingRequiredConsents(input.consents, SUBMIT_REQUIRED_CONSENTS)
+    if (missingConsents.length > 0) {
+      return unprocessable(
+        'Explicit consent to data processing and the terms & privacy policy is required to submit your application',
+        { missing: missingConsents }
+      )
+    }
   }
 
   // Validate uploaded KYC documents (magic-byte check + EXIF stripping + private storage)
@@ -259,7 +277,9 @@ export const POST = apiHandler(async (req: NextRequest) => {
     },
   })
 
-  // Record explicit KYC, Credit Check, and KFS Consents
+  // Record consents: exactly the itemised entries when the request
+  // carried them (already gated above); otherwise the historical
+  // fallback — four records derived from the agreementAccepted flag.
   const ip = getClientIp(req)
   const userAgent = req.headers.get('user-agent') || null
   const consentEntries =

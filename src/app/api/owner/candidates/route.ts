@@ -144,6 +144,8 @@ export const POST = apiHandler(async (req: NextRequest) => {
       where: { id: data.assignedAgentId, organizationId: ctx.user.organizationId },
     })
     if (!agent) return badRequest('Agent not found in your organization')
+    // Deactivated agents keep their existing book but take no new work.
+    if (!agent.isActive) return badRequest('Agent is deactivated and cannot take new assignments')
   }
 
   // One record per mobile per org. A collision is a loud 409 carrying
