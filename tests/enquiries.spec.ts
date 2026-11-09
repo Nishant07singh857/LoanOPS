@@ -68,8 +68,9 @@ test.describe('Homepage — product page, one universal Login button', () => {
 
     // It is a product page: pitch + sections + the enquiry form.
     expect(html).toContain('daily work of lending')
-    expect(html).toContain('id="day"')
-    expect(html).toContain('id="features"')
+    expect(html).toContain('id="ledger"')
+    expect(html).toContain('id="what-changes"')
+    expect(html).toContain('id="who"')
     expect(html).toContain('id="how-it-works"')
     expect(html).toContain('id="enquire"')
     expect(html).toContain('name="businessName"')
