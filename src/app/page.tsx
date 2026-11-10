@@ -5,7 +5,6 @@ import { JsonLd } from '@/components/json-ld'
 import { LegalFooter } from '@/components/legal/legal-footer'
 import { CookieBanner } from '@/components/legal/cookie-banner'
 import { EnquiryForm } from '@/components/enquiry-form'
-import { FadeIn } from '@/components/ui/motion'
 
 // Public product homepage — built from the 2026-11-10 homepage design
 // research (~/workspace/research_notes/top-saas-homepage-design-research-20261110-0737):
@@ -59,22 +58,43 @@ export const metadata: Metadata = {
 // filled action. Ink is a tinted near-black, never pure black; the
 // accent is the product's brand navy. Semantic colours appear only
 // inside product-UI data, where they carry meaning.
+//
+// Contrast (phase-2 research §accessibility): every text token is
+// checked against BOTH page surfaces — white and the alt tint
+// #f8f9fb. INK_2 (70% ink) computes 6.58:1 / 6.43:1; INK_3 is the
+// tertiary token, raised from 55% (3.97:1 / 3.91:1 — failed AA) to
+// 62%, which composites to rgb(107,112,122) on white and
+// rgb(104,110,120) on the alt tint: 4.99:1 and 4.90:1, both clear
+// of the 4.5:1 floor for normal text at 12–15px.
 const INK = 'text-[#101828]'
 const INK_2 = 'text-[#101828]/70'
-const INK_3 = 'text-[#101828]/55'
+const INK_3 = 'text-[#101828]/62'
 const HAIR = 'border-[#101828]/10'
 const MONO = '[font-family:var(--font-plex-mono)] tabular-nums'
 const CONTAINER = 'mx-auto w-full max-w-7xl px-6 lg:px-8'
 const SECTION = 'py-24 lg:py-32'
 
+// Type ladder (phase-2 research §tokens), as used across this page:
+// display −0.025em / 1.03 → section H2 −0.02em / 1.08 → H3
+// −0.015…−0.01em → body tracking 0, leading 1.6 → lead 1.55 →
+// small text 1.5; eyebrow +0.08em; all data in mono, tabular.
+//
+// Motion tokens (phase-2 research §motion) — the only two durations
+// on this page: hover/state 160ms on the standard easing
+// cubic-bezier(0.3,0,0.2,1); the hero reveal is 600ms on the
+// entrance easing cubic-bezier(0,0,0.2,1), fires once, and exists
+// only under prefers-reduced-motion: no-preference (see the style
+// block in Page).
+const HOVER = 'transition-colors duration-[160ms] ease-[cubic-bezier(0.3,0,0.2,1)]'
+
 const NAV_LINK =
-  'text-[15px] text-[#101828]/70 underline-offset-4 transition-colors duration-150 hover:text-[#101828] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f3778] focus-visible:ring-offset-2 rounded-sm px-1 py-1'
+  `text-[15px] text-[#101828]/70 underline-offset-4 ${HOVER} hover:text-[#101828] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f3778] focus-visible:ring-offset-2 rounded-sm px-1 py-1`
 
 const BTN_PRIMARY =
-  'inline-flex h-11 items-center rounded-full bg-[#0f3778] px-5 text-[15px] font-medium text-white transition-colors duration-150 hover:bg-[#0b2a5e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f3778] focus-visible:ring-offset-2'
+  `inline-flex h-11 items-center rounded-full bg-[#0f3778] px-5 text-[15px] font-medium text-white ${HOVER} hover:bg-[#0b2a5e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f3778] focus-visible:ring-offset-2`
 
 const BTN_GHOST =
-  'inline-flex h-11 items-center rounded-full border border-[#101828]/15 px-5 text-[15px] font-medium text-[#101828] transition-colors duration-150 hover:border-[#101828]/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f3778] focus-visible:ring-offset-2'
+  `inline-flex h-11 items-center rounded-full border border-[#101828]/15 px-5 text-[15px] font-medium text-[#101828] ${HOVER} hover:border-[#101828]/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f3778] focus-visible:ring-offset-2`
 
 function SectionHead({
   title,
@@ -301,6 +321,24 @@ const MODULES: Array<{
   },
 ]
 
+// Beside the enquiry form (phase-2 research §forms): what happens
+// after a visitor sends the form, in three steps. Process only —
+// no response-time promise is made, because none is guaranteed.
+const NEXT_STEPS: Array<{ title: string; desc: string }> = [
+  {
+    title: 'You send the enquiry',
+    desc: 'Your name, mobile number and a few lines about your lending business — portfolio size and branches, if you know them.',
+  },
+  {
+    title: 'We go through your lending business details',
+    desc: 'We read what you have sent before we reply, so the conversation starts from your book, not from a script.',
+  },
+  {
+    title: 'We set up your demo on sample data and walk you through it',
+    desc: 'A working session on the same screens shown on this page, with your questions on them. No commitment.',
+  },
+]
+
 const ONBOARDING: Array<{ title: string; desc: string }> = [
   {
     title: 'Share your current data',
@@ -359,6 +397,21 @@ export default function Page() {
       {/* Homepage-only JSON-LD (Organization + SoftwareApplication). */}
       <JsonLd />
 
+      {/* Hero reveal — the page's one entrance animation (600ms,
+          entrance easing, fires once). It is defined ONLY under
+          prefers-reduced-motion: no-preference, so a visitor who
+          prefers reduced motion gets no transform/opacity
+          animation at all: the panel is simply there. */}
+      <style>{`
+        @keyframes hp-hero-reveal {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @media (prefers-reduced-motion: no-preference) {
+          .hp-hero-reveal { animation: hp-hero-reveal 600ms cubic-bezier(0, 0, 0.2, 1) both; }
+        }
+      `}</style>
+
       {/* Header — sticky, hairline-ruled. Wordmark left, section
           anchors in the centre, and on the right the page's ONLY
           login link (plain text) followed by the one filled pill. */}
@@ -366,7 +419,7 @@ export default function Page() {
         <div className={`${CONTAINER} flex h-16 items-center justify-between gap-4`}>
           <a
             href="#top"
-            className="flex items-center gap-2.5 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f3778] focus-visible:ring-offset-2"
+            className="flex h-11 items-center gap-2.5 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f3778] focus-visible:ring-offset-2"
             aria-label="LoanOps — back to top"
           >
             <span aria-hidden="true" className="h-2.5 w-2.5 bg-[#0f3778]" />
@@ -382,7 +435,7 @@ export default function Page() {
           <div className="flex items-center gap-2 sm:gap-4">
             <a
               href="/login"
-              className="rounded-sm px-1 py-1 text-[15px] font-medium text-[#101828] underline-offset-4 transition-colors duration-150 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f3778] focus-visible:ring-offset-2"
+              className={`inline-flex h-11 items-center rounded-sm px-2 text-[15px] font-medium text-[#101828] underline-offset-4 ${HOVER} hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f3778] focus-visible:ring-offset-2`}
             >
               Log in
             </a>
@@ -422,7 +475,7 @@ export default function Page() {
           </p>
 
           {/* The product panel — one collections day */}
-          <FadeIn className="relative z-10 mt-14 -mb-28 lg:mt-16">
+          <div className="hp-hero-reveal relative z-10 mt-14 -mb-28 lg:mt-16">
             <figure
               id="product"
               className={`scroll-mt-24 overflow-hidden rounded-lg border ${HAIR} bg-white shadow-[0_24px_64px_-16px_rgba(16,24,40,0.18)]`}
@@ -474,7 +527,7 @@ export default function Page() {
 
               <div className={`border-t ${HAIR} px-5 py-4 sm:px-7`}>
                 <p className={`text-[13px] font-medium ${INK_2}`}>Portfolio by days past due</p>
-                <dl className="mt-2.5 grid grid-cols-3 gap-x-4 gap-y-3 sm:grid-cols-6">
+                <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-3 min-[480px]:grid-cols-3 lg:grid-cols-6">
                   {AGEING.map((cell) => (
                     <div key={cell.bucket}>
                       <dt className={`text-[12px] ${INK_3}`}>{cell.bucket}</dt>
@@ -489,7 +542,7 @@ export default function Page() {
               </div>
             </figure>
             <p className={`mt-3 text-[13px] ${INK_3}`}>Sample data.</p>
-          </FadeIn>
+          </div>
         </section>
 
         {/* Trust bar — where a logo wall would sit. Verifiable facts
@@ -775,7 +828,7 @@ export default function Page() {
                 </div>
                 <ul className={`divide-y divide-[#101828]/10 self-start border-y ${HAIR}`}>
                   {mod.rows.map((row) => (
-                    <li key={row} className="py-3.5 leading-[1.55]">
+                    <li key={row} className="py-3.5 leading-[1.6]">
                       {row}
                     </li>
                   ))}
@@ -839,18 +892,32 @@ export default function Page() {
             </SectionHead>
             <div className="grid gap-12 lg:grid-cols-5 lg:gap-14">
               <div className="lg:col-span-2">
-                <ul className={`divide-y divide-[#101828]/10 border-y ${HAIR} text-[15px] leading-[1.6]`}>
-                  <li className="py-4">
-                    The demo is a working session on sample data, run by our team —
-                    the same screens shown on this page, with your questions on them.
-                  </li>
-                  <li className="py-4">
-                    Your details are used only to respond to this enquiry.
-                  </li>
-                  <li className="py-4">
-                    Already a customer? Use the Log in link at the top of this page.
-                  </li>
-                </ul>
+                <h3 className="text-lg font-medium tracking-[-0.01em]">What happens next</h3>
+                <ol className={`mt-6 list-none divide-y divide-[#101828]/10 border-y ${HAIR}`}>
+                  {NEXT_STEPS.map((step, i) => (
+                    <li key={step.title} className="grid grid-cols-[2.5rem_1fr] gap-x-3 py-5">
+                      <span className={`${MONO} text-sm ${INK_3}`}>{String(i + 1).padStart(2, '0')}</span>
+                      <div>
+                        <p className="font-medium leading-[1.5]">{step.title}</p>
+                        <p className={`mt-1 text-[15px] leading-[1.6] ${INK_2}`}>{step.desc}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+                <p className={`mt-6 text-sm leading-[1.5] ${INK_2}`}>
+                  Your details are used only to reply to your enquiry and to prepare
+                  your demo, and they are never sold — as set out in the{' '}
+                  <a
+                    href="/privacy"
+                    className={`font-medium text-[#101828] underline underline-offset-4 ${HOVER} hover:text-[#0f3778] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f3778] focus-visible:ring-offset-2 rounded-sm`}
+                  >
+                    Privacy Policy
+                  </a>
+                  .
+                </p>
+                <p className={`mt-4 text-sm leading-[1.5] ${INK_2}`}>
+                  Already a customer? Use the Log in link at the top of this page.
+                </p>
               </div>
               <div className="lg:col-span-3">
                 <div className={`rounded-lg border ${HAIR} bg-white p-5 sm:p-7`}>
