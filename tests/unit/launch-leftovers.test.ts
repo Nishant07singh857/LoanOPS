@@ -114,8 +114,8 @@ const tests: TestCase[] = [
       assert.equal(m.name, 'LoanOPS')
       assert.equal(m.short_name, 'LoanOPS')
       assert.equal(m.display, 'standalone')
-      assert.equal(m.theme_color, '#0f3778')
-      assert.equal(m.background_color, '#f6fdff')
+      assert.equal(m.theme_color, '#0A3D2C')
+      assert.equal(m.background_color, '#FAF7F0')
       const icons = m.icons ?? []
       assert.deepEqual(
         icons.map((i) => `${i.src}|${i.sizes}|${i.purpose}`),

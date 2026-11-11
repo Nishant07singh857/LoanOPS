@@ -31,8 +31,8 @@ export default function GlobalError({
           alignItems: 'center',
           justifyContent: 'center',
           fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif',
-          backgroundColor: '#f8fafc',
-          color: '#0f172a',
+          backgroundColor: '#FAF7F0',
+          color: '#14231C',
           padding: '1rem',
         }}
       >
@@ -89,8 +89,8 @@ export default function GlobalError({
               padding: '0 1.5rem',
               borderRadius: '0.75rem',
               border: 'none',
-              backgroundColor: '#0f172a',
-              color: '#ffffff',
+              backgroundColor: '#0A3D2C',
+              color: '#FAF7F0',
               fontSize: '1rem',
               cursor: 'pointer',
             }}
