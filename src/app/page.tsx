@@ -1,21 +1,25 @@
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
-import Image from 'next/image'
 import { Fraunces, IBM_Plex_Mono, IBM_Plex_Sans } from 'next/font/google'
 import { JsonLd } from '@/components/json-ld'
 import { LegalFooter } from '@/components/legal/legal-footer'
 import { CookieBanner } from '@/components/legal/cookie-banner'
 import { EnquiryForm } from '@/components/enquiry-form'
 
-// Public product homepage — the concept redesign (2026-11-11).
+// Public product homepage — the concept redesign (2026-11-11),
+// its background system replaced the same day on the owner's word.
 //
 // Concept: "The world your borrowers live in — the calm your office
-// runs on." A dawn painting of fields, a lotus pond and a small town
-// fills the hero; floating on it, one glass loan card carries the
-// product. Below the hero the page settles onto warm ivory, with one
-// deep-green section (the lifecycle) and the market-street painting
-// as a full-bleed band. The structure, facts and figures are the
-// previous homepage's, unchanged — only the design language is new.
+// runs on." The first build carried that world as paintings; the
+// owner found they read as AI art, so the hero and the band now sit
+// on a DESIGNED fintech surface instead — a deep forest-green base
+// with one soft light from the top, survey-style contour lines (an
+// abstract, engineered nod to the borrowers' terraced land) and a
+// whisper of grain, all built in CSS/SVG. Floating on it, one glass
+// loan card carries the product. Below the hero the page settles
+// onto warm ivory, with one deep-green section (the lifecycle) and
+// the contoured band carrying one serif line. The structure, facts
+// and figures are unchanged — only the background system is new.
 //
 // It carries exactly ONE link to the login page — the "Log in" pill
 // in the floating nav. There are no separate owner/agent/customer
@@ -70,19 +74,23 @@ export const metadata: Metadata = {
 }
 
 // Palette: deep forest green is the brand and the one accent family
-// (emerald shades only — gold exists only inside the paintings).
-// Sections below the hero sit on warm ivory #FAF7F0; text ink is a
-// green-tinted near-black #14231C.
+// (emerald shades only). Sections below the hero sit on warm ivory
+// #FAF7F0; text ink is a green-tinted near-black #14231C.
 //
-// Contrast (WCAG, computed 2026-11-11 — see homepage-concept-report):
+// Contrast (WCAG, computed 2026-11-11 — see homepage-fintech-bg-report):
 // on ivory, ink 15.25:1, ink/70 5.83:1, ink/64 4.85:1 — every text
 // token clears 4.5:1 on ivory, white and the deeper alt ivory
 // #F3EEE2 (worst case ink/64 on alt ivory: 4.69:1). On the green
 // #0A3D2C, ivory 11.43:1, ivory/75 7.11:1, ivory/65 5.77:1,
-// emerald #34D399 6.36:1. Over the hero painting, the deep-green
-// scrim (alpha 0.55 → 0.90) brings even the 99th-percentile-bright
-// pixel band to 5.12:1 for white text; the headline band computes
-// 9.92:1 or better.
+// emerald #34D399 6.36:1. Over the hero's designed background the
+// surface is deterministic, so the check is exact, not sampled:
+// against a worst-case bound (the lightest base stop #0A3D2C with
+// the full top light and a contour allowance composited over it),
+// white text computes 8.70:1, the ivory/95 sub 7.52:1, the ivory/85
+// figcaption 6.40:1, the ivory/80 note under the CTAs 5.88:1, and
+// the tightest text on the page — the card's ivory/65 labels on
+// their glass — 5.26:1. Every body text clears 4.5:1 and every
+// large text 3:1, at the bound; real placements are darker.
 const INK = 'text-[#14231C]'
 const INK_2 = 'text-[#14231C]/70'
 const INK_3 = 'text-[#14231C]/64'
@@ -153,6 +161,84 @@ function Fragment({
       </figcaption>
       <div className="px-5 py-4">{children}</div>
     </figure>
+  )
+}
+
+// ------------------------------------------------------------------
+// The designed background system — no imagery anywhere on this page.
+//
+// ContourField draws survey-style contour lines: closed, concentric
+// rings around a rise, generated from a smooth harmonic function so
+// they read as engineered — a terraced-field / topographic survey
+// abstraction of the borrowers' land, not a picture of it. Every
+// fifth ring is an "index contour", slightly stronger, the way real
+// survey maps mark them. The rings are deterministic (same input,
+// same path), decorative only, and sit under everything.
+// ------------------------------------------------------------------
+
+function contourRing(
+  cx: number,
+  cy: number,
+  r: number,
+  phase: number,
+  stretchX: number,
+  stretchY: number,
+): string {
+  const steps = 90
+  const pts: string[] = []
+  for (let i = 0; i <= steps; i++) {
+    const t = (i / steps) * Math.PI * 2
+    const w =
+      1 +
+      0.055 * Math.sin(3 * t + phase) +
+      0.038 * Math.sin(5 * t + phase * 1.7) +
+      0.026 * Math.sin(2 * t + phase * 0.6)
+    const x = cx + r * w * Math.cos(t) * stretchX
+    const y = cy + r * w * Math.sin(t) * stretchY
+    pts.push(`${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`)
+  }
+  return `${pts.join(' ')} Z`
+}
+
+function ContourField({ variant }: { variant: 'hero' | 'band' }) {
+  const clusters =
+    variant === 'hero'
+      ? [
+          // The main rise, high right — its outer rings drift off
+          // the top and right edges of the hero.
+          { cx: 1170, cy: 110, rings: 15, step: 34, phase: 0.8, base: 0.07 },
+          // A smaller rise, low left, mostly off-canvas.
+          { cx: 60, cy: 850, rings: 8, step: 30, phase: 2.4, base: 0.05 },
+        ]
+      : [
+          // The band is short and wide: denser rings, one rise
+          // left of centre and a quieter echo to the right.
+          { cx: 330, cy: 250, rings: 12, step: 26, phase: 1.9, base: 0.08 },
+          { cx: 1260, cy: 90, rings: 9, step: 26, phase: 0.3, base: 0.05 },
+        ]
+  return (
+    <svg
+      aria-hidden="true"
+      className="absolute inset-0 h-full w-full"
+      viewBox={variant === 'hero' ? '0 0 1440 900' : '0 0 1440 480'}
+      preserveAspectRatio="xMidYMid slice"
+      fill="none"
+    >
+      {clusters.map((c) =>
+        Array.from({ length: c.rings }, (_, i) => {
+          const index = i % 5 === 4
+          return (
+            <path
+              key={`${c.cx}-${i}`}
+              d={contourRing(c.cx, c.cy, 36 + i * c.step, c.phase + i * 0.12, 1.45, 0.82)}
+              stroke="#FAF7F0"
+              strokeOpacity={index ? Math.min(1, c.base + 0.045) : c.base}
+              strokeWidth={index ? 1.3 : 1}
+            />
+          )
+        }),
+      )}
+    </svg>
   )
 }
 
@@ -417,30 +503,34 @@ export default function Page() {
         @media (prefers-reduced-motion: no-preference) {
           .hp-reveal { animation: hp-reveal 600ms cubic-bezier(0, 0, 0.2, 1) both; }
         }
+        /* Grain — an SVG feTurbulence tile at a whisper (the rect
+           renders at 0.55 inside the tile and the layer itself is
+           set to 0.05 opacity, so the effective noise is under 3%):
+           enough texture that the green surface never reads flat. */
+        .hp-grain {
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+        }
       `}</style>
 
       <main className="flex-1">
-      {/* ============ HERO — the borrower's world, the product on it ============ */}
+      {/* ============ HERO — the designed surface, the product on it ============ */}
       <section className="relative overflow-hidden bg-[#06231A]">
-        <Image
-          src="/landing/hero-landscape.jpg"
-          alt=""
-          fill
-          preload
-          sizes="100vw"
-          className="object-cover object-center"
-        />
-        {/* Deep-green scrim: a legibility gradient over the painting
-            (linear alpha 0.55 → 0.90, measured — see palette note),
-            deepened at the centre where the card and headline sit. */}
+        {/* The designed background system: a single soft diagonal
+            surface shade across the forest-green base (surface
+            shading, not decoration), one soft light from the top
+            centre, the survey contours, and the grain over all of
+            it. No imagery — the surface is built, like a finance
+            app's. All four layers are decorative and aria-hidden. */}
         <div
           aria-hidden="true"
-          className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(6,35,26,0.55),rgba(6,35,26,0.72)_45%,rgba(6,35,26,0.90))]"
+          className="absolute inset-0 bg-[linear-gradient(155deg,#06231A_0%,#082A1F_55%,#0A3D2C_100%)]"
         />
         <div
           aria-hidden="true"
-          className="absolute inset-0 bg-[radial-gradient(ellipse_62%_52%_at_50%_58%,rgba(6,35,26,0.38),transparent_72%)]"
+          className="absolute inset-0 bg-[radial-gradient(ellipse_80%_55%_at_50%_-5%,rgba(250,247,240,0.08),transparent_65%)]"
         />
+        <ContourField variant="hero" />
+        <div aria-hidden="true" className="hp-grain pointer-events-none absolute inset-0 opacity-[0.05]" />
 
         {/* Floating glass pill nav. On the right: a Book a demo text
             link and the page's ONLY login link — Log in, the white
@@ -482,10 +572,10 @@ export default function Page() {
           </p>
 
           {/* The loan card group — the product, floating on the
-              painting. The two glass chips sit beside the card on
-              wide screens and stack beneath it on smaller ones. All
-              three carry sample figures; the caption is attached to
-              the group as its figcaption. */}
+              contoured surface. The two glass chips sit beside the
+              card on wide screens and stack beneath it on smaller
+              ones. All three carry sample figures; the caption is
+              attached to the group as its figcaption. */}
           <figure id="product" className="hp-reveal relative mt-10 w-full max-w-[35rem] scroll-mt-24">
             <div className="relative overflow-hidden rounded-[24px] border border-white/25 bg-[linear-gradient(135deg,rgba(12,68,48,0.88),rgba(5,30,20,0.94))] p-6 text-left shadow-[0_40px_90px_-30px_rgba(0,0,0,0.65)] backdrop-blur-md sm:p-8">
               <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/30" />
@@ -601,22 +691,22 @@ export default function Page() {
         </div>
       </section>
 
-      {/* Market band — the high street the borrowers live on. A
-          positioning line, not a factual claim. */}
+      {/* Statement band — the high street the borrowers live on,
+          carried by the same designed surface as the hero (denser
+          contours, no imagery). A positioning line, not a factual
+          claim. */}
       <section className="relative overflow-hidden bg-[#06231A]">
-        <Image
-          src="/landing/market-street.jpg"
-          alt=""
-          fill
-          sizes="100vw"
-          className="object-cover object-center"
-        />
         <div
           aria-hidden="true"
-          className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(6,35,26,0.66),rgba(6,35,26,0.78))]"
+          className="absolute inset-0 bg-[linear-gradient(180deg,#06231A_0%,#082A1F_100%)]"
         />
+        <ContourField variant="band" />
+        <div aria-hidden="true" className="hp-grain pointer-events-none absolute inset-0 opacity-[0.05]" />
         <div className={`relative ${CONTAINER} py-28 text-center lg:py-36`}>
-          <p className={`mx-auto max-w-[27ch] ${SERIF} text-3xl font-medium leading-[1.2] text-white md:text-[2.6rem]`}>
+          <p className={`${MONO} text-[11px] font-medium uppercase tracking-[0.22em] text-[#34D399]`}>
+            Where your borrowers live
+          </p>
+          <p className={`mx-auto mt-6 max-w-[27ch] ${SERIF} text-3xl font-medium leading-[1.2] text-white md:text-[2.6rem]`}>
             Built for the high streets and small towns where your borrowers actually live.
           </p>
         </div>
