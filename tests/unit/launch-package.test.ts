@@ -133,6 +133,10 @@ const tests: TestCase[] = [
       const paths = entries.map((e) => e.url.replace(expectedBase, ''))
       assert.deepEqual(paths, [
         '/',
+        // Dose trim (2026-11-11): the homepage's detail moved to two
+        // new public pages — both belong in the sitemap.
+        '/product',
+        '/security',
         '/privacy',
         '/terms',
         '/grievance',

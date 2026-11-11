@@ -7,19 +7,31 @@ import { CookieBanner } from '@/components/legal/cookie-banner'
 import { EnquiryForm } from '@/components/enquiry-form'
 
 // Public product homepage — the concept redesign (2026-11-11),
-// its background system replaced the same day on the owner's word.
+// its background system replaced the same day on the owner's word,
+// and its content dose trimmed the same day on the owner's word
+// again: "homepage pe utna hi dikhe jitna hona chahiye" — a
+// homepage shows only what a homepage should.
 //
 // Concept: "The world your borrowers live in — the calm your office
-// runs on." The first build carried that world as paintings; the
-// owner found they read as AI art, so the hero and the band now sit
-// on a DESIGNED fintech surface instead — a deep forest-green base
-// with one soft light from the top, survey-style contour lines (an
-// abstract, engineered nod to the borrowers' terraced land) and a
-// whisper of grain, all built in CSS/SVG. Floating on it, one glass
-// loan card carries the product. Below the hero the page settles
-// onto warm ivory, with one deep-green section (the lifecycle) and
-// the contoured band carrying one serif line. The structure, facts
-// and figures are unchanged — only the background system is new.
+// runs on." The hero sits on a DESIGNED fintech surface — a deep
+// forest-green base with one soft light from the top, survey-style
+// contour lines (an abstract, engineered nod to the borrowers'
+// terraced land) and a whisper of grain, all built in CSS/SVG.
+// Floating on it, one glass loan card carries the product. Below
+// the hero the page settles onto warm ivory and deep green.
+//
+// The dose (research: the best B2B homepages run 4–10 sections,
+// median ≈9, at ~9–11 viewport heights; lifecycle walkthroughs,
+// onboarding steps and multi-row security sections appear on none
+// of them — detail sits one click away, under specific links).
+// This page is SEVEN blocks: hero → trust strip → statement band
+// (carrying the problem in one line) → module overview (name +
+// one-line outcome each) → lifecycle strip (one line + the sample
+// story) → security strip (3 assurances) → enquiry. The full
+// 6-step lifecycle walkthrough, the module chapters and the
+// 4-step onboarding live on /product; all seven security rows
+// live on /security. Nothing was deleted — it moved, and each
+// strip links to it with a specific label.
 //
 // It carries exactly ONE link to the login page — the "Log in" pill
 // in the floating nav. There are no separate owner/agent/customer
@@ -93,7 +105,6 @@ export const metadata: Metadata = {
 // large text 3:1, at the bound; real placements are darker.
 const INK = 'text-[#14231C]'
 const INK_2 = 'text-[#14231C]/70'
-const INK_3 = 'text-[#14231C]/64'
 const IVORY_T = 'text-[#FAF7F0]'
 const IVORY_2 = 'text-[#FAF7F0]/75'
 const IVORY_3 = 'text-[#FAF7F0]/65'
@@ -103,6 +114,9 @@ const MONO = '[font-family:var(--font-plex-mono)] tabular-nums'
 const SERIF = '[font-family:var(--font-fraunces),Georgia,serif]'
 const CONTAINER = 'mx-auto w-full max-w-7xl px-6 lg:px-8'
 const SECTION = 'py-24 lg:py-32'
+// The compressed strips (modules, lifecycle, security) run tighter
+// than a full section — one idea each, at band height.
+const STRIP = 'py-16 lg:py-20'
 
 // Motion tokens — the only two durations on this page: hover/state
 // 160ms on the standard easing cubic-bezier(0.3,0,0.2,1); the hero
@@ -134,33 +148,6 @@ function SectionHead({
         <p className={`mt-5 max-w-[65ch] text-lg leading-[1.55] ${leadCls}`}>{children}</p>
       ) : null}
     </div>
-  )
-}
-
-// A product excerpt, set like a page from a paper ledger: warm card,
-// hairline rule under its title, generous radius. `surface` is the
-// card colour — ivory on the green lifecycle section, white on the
-// ivory module chapters.
-function Fragment({
-  title,
-  children,
-  className = '',
-  surface = 'bg-white',
-}: {
-  title: string
-  children: ReactNode
-  className?: string
-  surface?: string
-}) {
-  return (
-    <figure className={`overflow-hidden rounded-[20px] border ${HAIR} ${surface} ${INK} ${className}`}>
-      <figcaption
-        className={`border-b ${HAIR} px-5 py-3 text-[13px] font-medium ${INK_2}`}
-      >
-        {title}
-      </figcaption>
-      <div className="px-5 py-4">{children}</div>
-    </figure>
   )
 }
 
@@ -219,7 +206,7 @@ function ContourField({ variant }: { variant: 'hero' | 'band' }) {
   return (
     <svg
       aria-hidden="true"
-      className="absolute inset-0 h-full w-full"
+      className="pointer-events-none absolute inset-0 h-full w-full"
       viewBox={variant === 'hero' ? '0 0 1440 900' : '0 0 1440 480'}
       preserveAspectRatio="xMidYMid slice"
       fill="none"
@@ -261,12 +248,14 @@ function CardChip() {
 }
 
 // ------------------------------------------------------------------
-// Page data — the established sample loan and product facts, carried
-// over unchanged from the previous homepage. Priya Sharma's loan:
-// ₹75,000 at 18% over 12 months. EMI ₹7,437.50 (principal ₹6,250.00
-// + interest ₹1,125.00 + fee ₹62.50); total repayable ₹89,250.00.
-// Collections day: ₹20,075.00 collected of ₹29,705.00 due; portfolio
-// ageing totals ₹87,08,212 across the product's six DPD buckets.
+// Page data — the established sample loan and product facts. Priya
+// Sharma's loan: ₹75,000 at 18% over 12 months. EMI ₹7,437.50
+// (principal ₹6,250.00 + interest ₹1,125.00 + fee ₹62.50); total
+// repayable ₹89,250.00. Collections day: ₹20,075.00 collected of
+// ₹29,705.00 due; portfolio ageing totals ₹87,08,212 across the
+// product's six DPD buckets. The detail behind the strips below —
+// the walkthrough, the module chapters, the full security rows —
+// lives on /product and /security, in the same words.
 // ------------------------------------------------------------------
 
 const TRUST_FACTS = [
@@ -276,141 +265,34 @@ const TRUST_FACTS = [
   'Built and supported in India by NIRVYA PTD LTD',
 ]
 
-const PROBLEMS: Array<{ title: string; cost: string }> = [
-  {
-    title: 'Loans tracked in Excel and notebooks',
-    cost: 'The book exists in more than one copy, and no two copies agree at month-end.',
-  },
-  {
-    title: 'The collection position is known days late',
-    cost: 'You learn what the field collected when the agent returns to the office, or when the cash is counted.',
-  },
-  {
-    title: 'Ledger and reports rebuilt by hand for audit',
-    cost: 'Every audit begins with re-typing figures that were already written down once, in a register.',
-  },
+// The module overview: each module's name and the outcome clause
+// its chapter on /product carries — one line each, nothing more.
+const MODULE_OUTCOMES: Array<{ title: string; outcome: string }> = [
+  { title: 'Origination', outcome: 'Applications arrive complete, or not at all.' },
+  { title: 'Collections', outcome: 'Know today’s collection position before the day starts.' },
+  { title: 'Ledger & accounting', outcome: 'Every rupee posted twice, or not at all.' },
+  { title: 'Reports & audit', outcome: 'Month-end is a report, not a reconstruction.' },
 ]
 
-const LIFECYCLE_SCHEDULE: Array<{
-  n: number
-  due: string
-  emi: string
-  status: 'Paid' | 'Overdue' | 'Upcoming'
-}> = [
-  { n: 1, due: '5 Sep 2026', emi: '7,437.50', status: 'Paid' },
-  { n: 2, due: '5 Oct 2026', emi: '7,437.50', status: 'Paid' },
-  { n: 3, due: '5 Nov 2026', emi: '7,437.50', status: 'Paid' },
-  { n: 4, due: '5 Dec 2026', emi: '7,437.50', status: 'Overdue' },
-  { n: 5, due: '5 Jan 2027', emi: '7,437.50', status: 'Upcoming' },
-]
+// The lifecycle in one line — every stage the walkthrough on
+// /product follows, named once.
+const LIFECYCLE_STAGES = ['Application', 'Approval', 'Disbursal', 'Collections', 'Ledger', 'Reports']
 
-const MODULES: Array<{
-  title: string
-  heading: string
-  intro: string
-  rows: string[]
-  fragment: ReactNode
-}> = [
+// The security strip: the three assurances an evaluator checks
+// first, in the words of the full rows on /security (the first
+// sentence of each). All seven rows live there.
+const SECURITY_STRIP: Array<{ title: string; desc: string }> = [
   {
-    title: 'Origination',
-    heading: 'Applications arrive complete, or not at all.',
-    intro:
-      'A borrower applies from a link or QR code you share. KYC, consents and the agreement are collected in that one sitting, and the application reaches you ready to decide on.',
-    rows: [
-      'Applications by link and QR code, with KYC in the same sitting',
-      'Aadhaar and PAN collected encrypted; itemised DPDP consents recorded',
-      'Agreement and Key Facts Statement accepted digitally',
-      'Approval by the owner, on the record',
-    ],
-    fragment: (
-      <dl className="space-y-2 text-sm">
-        {[
-          ['Applicant', 'Priya Sharma'],
-          ['Applied', '28 Jul 2026 · QR link'],
-          ['KYC', 'Aadhaar · PAN · bank details'],
-          ['Consents', '4 recorded, itemised'],
-          ['Decision', 'Approved · 1 Aug 2026'],
-        ].map(([k, v]) => (
-          <div key={k} className="flex items-baseline justify-between gap-6">
-            <dt className={INK_3}>{k}</dt>
-            <dd className="text-right font-medium">{v}</dd>
-          </div>
-        ))}
-      </dl>
-    ),
+    title: 'Encryption for identity and bank data',
+    desc: 'Aadhaar, PAN and bank details are encrypted with AES-256-GCM and masked on everyday screens.',
   },
   {
-    title: 'Collections',
-    heading: 'Know today’s collection position before the day starts.',
-    intro:
-      'Each agent opens the day with a list: who to visit, what is due, what was promised. Collections are recorded at the doorstep and reach the office the moment they are posted.',
-    rows: [
-      'A morning list of visits, dues and promises-to-pay for every agent',
-      'Cash and bank collections recorded in the field, receipt issued on the spot',
-      'Reminders run at 09:15 — due soon, due today, overdue',
-      'Overdue ageing by days past due, always current',
-    ],
-    fragment: (
-      <ul className="space-y-2 text-sm">
-        {[
-          ['09:15', 'Reminder run — 3 due today, 1 overdue'],
-          ['Visit 1', 'Anitha Rao · ₹3,150.00 due'],
-          ['Visit 2', 'Mohammed Faiz · promised 9 Dec'],
-        ].map(([k, v]) => (
-          <li key={k} className="flex items-baseline gap-4">
-            <span className={`${MONO} text-[13px] ${INK_3}`}>{k}</span>
-            <span>{v}</span>
-          </li>
-        ))}
-      </ul>
-    ),
+    title: 'Access enforced on the server',
+    desc: 'Owner, agent and borrower roles are checked on the server, not just in the browser.',
   },
   {
-    title: 'Ledger & accounting',
-    heading: 'Every rupee posted twice, or not at all.',
-    intro:
-      'The ledger is double-entry and append-only. Disbursal, collections and corrections post themselves from the work that caused them; a mistake is reversed, never deleted.',
-    rows: [
-      'Double-entry postings for disbursal, collections, fees and refunds',
-      'Amounts held in paise, as integers — no float rounding, anywhere',
-      'Corrections by reversal entry; the original stays on the record',
-      'Reconciliation view for cash and bank, day by day',
-    ],
-    fragment: (
-      <div className={`space-y-1.5 text-[13px] ${MONO}`}>
-        <p>Dr Loans Receivable ····· ₹75,000.00</p>
-        <p>Cr Bank Account ········· ₹75,000.00</p>
-        <p className={`pt-1 font-sans text-[13px] ${INK_3}`}>
-          Disbursement posting — the pair balances, or it does not post.
-        </p>
-      </div>
-    ),
-  },
-  {
-    title: 'Reports & audit',
-    heading: 'Month-end is a report, not a reconstruction.',
-    intro:
-      'Portfolio, collections and overdue-ageing reports are drawn from the same ledger the day ran on. Every figure in them traces back to an entry, and every entry to the person who made it.',
-    rows: [
-      'Portfolio, collections and overdue-ageing reports, drawn from the ledger',
-      'Reports export to CSV for your auditors and your board',
-      'Append-only audit trail: sign-ins, approvals, collections, corrections',
-      'Separate panels for owner, agent and borrower, fenced by role',
-    ],
-    fragment: (
-      <div className="space-y-2 text-sm">
-        {[
-          ['Active loans', '124'],
-          ['Outstanding', '₹87,08,212'],
-          ['Overdue (60+)', '₹11,200'],
-        ].map(([k, v]) => (
-          <div key={k} className="flex items-baseline justify-between gap-6">
-            <span className={INK_3}>{k}</span>
-            <span className={`${MONO} font-medium`}>{v}</span>
-          </div>
-        ))}
-      </div>
-    ),
+    title: 'An audit trail that stays written',
+    desc: 'Sign-ins, approvals, disbursals, collections and corrections are recorded in an append-only audit trail.',
   },
 ]
 
@@ -429,56 +311,6 @@ const NEXT_STEPS: Array<{ title: string; desc: string }> = [
   {
     title: 'We set up your demo on sample data and walk you through it',
     desc: 'A working session on the same screens shown on this page, with your questions on them. No commitment.',
-  },
-]
-
-const ONBOARDING: Array<{ title: string; desc: string }> = [
-  {
-    title: 'Share your current data',
-    desc: 'You send the Excel sheets or legacy export your book currently lives in. We read it with you and agree what carries over — loans, borrowers, schedules, balances.',
-  },
-  {
-    title: 'We migrate and configure',
-    desc: 'Your data is loaded, and your branches, loan products, agreement and Key Facts Statement templates, and team accounts are set up the way you already lend.',
-  },
-  {
-    title: 'Train the team',
-    desc: 'Owner and agents learn on your own data: approving, disbursing, collecting, following up. Borrowers receive their portal access and claim codes.',
-  },
-  {
-    title: 'Go live',
-    desc: 'The day runs in LoanOps from the next morning list onward. Questions go to the in-app support desk, where the borrower’s tickets already live.',
-  },
-]
-
-const SECURITY_ROWS: Array<{ title: string; desc: string }> = [
-  {
-    title: 'Encryption for identity and bank data',
-    desc: 'Aadhaar, PAN and bank details are encrypted with AES-256-GCM and masked on everyday screens. An owner can reveal a number only on the record, and the reveal is audit-logged.',
-  },
-  {
-    title: 'Passwords and sign-in',
-    desc: 'Passwords are hashed, never stored in readable form, and a password policy is enforced when one is set. Sign-in is rate-limited, repeated failures lock the account, and staff accounts can add TOTP two-factor codes.',
-  },
-  {
-    title: 'Access enforced on the server',
-    desc: 'Owner, agent and borrower roles are checked on the server, not just in the browser. Agents see the work assigned to them; a borrower sees only their own loans.',
-  },
-  {
-    title: 'An audit trail that stays written',
-    desc: 'Sign-ins, approvals, disbursals, collections and corrections are recorded in an append-only audit trail. Corrections are reversal entries — nothing is quietly edited after the fact.',
-  },
-  {
-    title: 'Consent records under DPDP',
-    desc: 'When a borrower applies and submits, each consent is recorded item by item — what was agreed, and what was not — against the application it belongs to.',
-  },
-  {
-    title: 'Backups',
-    desc: 'The database is backed up automatically every week, and backups are retained for 90 days.',
-  },
-  {
-    title: 'Your data stays exportable',
-    desc: 'Reports export to CSV. The figures your business runs on are never locked inside the product.',
   },
 ]
 
@@ -675,26 +507,12 @@ export default function Page() {
         </div>
       </div>
 
-      {/* The problem, in the buyer's nouns — three ruled rows */}
-      <section className={`${CONTAINER} ${SECTION}`}>
-        <SectionHead title="The work is sound. The records are scattered.">
-          None of this is a people problem. It is what happens when one loan book
-          is kept in a register, a spreadsheet and three people’s memory at once.
-        </SectionHead>
-        <div className={`divide-y divide-[#14231C]/10 border-y ${HAIR}`}>
-          {PROBLEMS.map((row) => (
-            <div key={row.title} className="grid gap-1.5 py-7 md:grid-cols-[22rem_1fr] md:gap-x-12">
-              <h3 className={`${SERIF} text-[1.35rem] font-medium leading-snug`}>{row.title}</h3>
-              <p className={`max-w-[65ch] leading-[1.6] ${INK_2}`}>{row.cost}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
       {/* Statement band — the high street the borrowers live on,
           carried by the same designed surface as the hero (denser
           contours, no imagery). A positioning line, not a factual
-          claim. */}
+          claim — and beneath it, the problem in one line: where the
+          three ruled problem rows used to stand, the whole of their
+          substance in a single sentence. */}
       <section className="relative overflow-hidden bg-[#06231A]">
         <div
           aria-hidden="true"
@@ -709,320 +527,100 @@ export default function Page() {
           <p className={`mx-auto mt-6 max-w-[27ch] ${SERIF} text-3xl font-medium leading-[1.2] text-white md:text-[2.6rem]`}>
             Built for the high streets and small towns where your borrowers actually live.
           </p>
+          <p className={`mx-auto mt-7 max-w-[62ch] leading-[1.6] ${IVORY_2}`}>
+            None of this is a people problem. It is what happens when one loan book
+            is kept in a register, a spreadsheet and three people’s memory at once.
+          </p>
         </div>
       </section>
 
-      {/* Lifecycle — the centrepiece, on deep green. One loan,
-          followed from application to report, each step with the
-          ledger page it produces. Sample data throughout, and
-          labelled as such. */}
+      {/* Module overview — the whole scope in four lines: each
+          module's name and its outcome. The chapters (intro, rows,
+          ledger fragment) live on /product. */}
+      <section id="modules" className={`${CONTAINER} ${STRIP} scroll-mt-16`}>
+        <div className="mb-10">
+          <h2 className={`max-w-[26ch] ${SERIF} text-[2rem] font-medium leading-[1.08] tracking-[-0.01em] md:text-[2.4rem]`}>
+            Four modules. One ledger underneath.
+          </h2>
+          <p className={`mt-4 max-w-[65ch] text-lg leading-[1.55] ${INK_2}`}>
+            Each module is a part of the same working day, and each writes to —
+            and reads from — the same records.
+          </p>
+        </div>
+        <div className={`divide-y divide-[#14231C]/10 border-y ${HAIR}`}>
+          {MODULE_OUTCOMES.map((mod) => (
+            <div key={mod.title} className="grid items-baseline gap-1.5 py-6 md:grid-cols-[20rem_1fr] md:gap-x-12">
+              <h3 className="text-[13px] font-semibold uppercase tracking-[0.12em] text-[#047857]">{mod.title}</h3>
+              <p className={`${SERIF} text-[1.4rem] font-medium leading-snug`}>{mod.outcome}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Lifecycle strip — the whole life of a loan in one line,
+          over the sample story in one sentence. The full six-step
+          walkthrough, with every ledger fragment, is on /product. */}
       <section id="lifecycle" className="scroll-mt-16 bg-[#0A3D2C]">
-        <div className={`${CONTAINER} ${SECTION}`}>
-          <SectionHead tone="ivory" title="One loan, followed from application to report.">
-            Priya Sharma’s loan — ₹75,000 at 18% over 12 months — is the sample
-            every figure on this page comes from. Follow it through the system
-            and check the numbers as you go. Sample data.
-          </SectionHead>
-
-          <div className="divide-y divide-white/10 border-y border-white/10">
-            {/* Step 1 — Application & approval */}
-            <div className="grid gap-8 py-12 lg:grid-cols-[18rem_1fr] lg:gap-14">
-              <div>
-                <p className={`${MONO} text-sm text-[#34D399]`}>Step 1</p>
-                <h3 className={`mt-2 ${SERIF} text-[1.45rem] font-medium leading-snug ${IVORY_T}`}>Application &amp; approval</h3>
-                <p className={`mt-3 leading-[1.6] ${IVORY_2}`}>
-                  She applies from a QR link the agent shares. KYC and consents are
-                  collected in the same sitting, and the owner approves on the record —
-                  nothing travels on paper.
-                </p>
-              </div>
-              <Fragment title="Application — Priya Sharma" className="self-start" surface="bg-[#FAF7F0]">
-                <dl className="space-y-2 text-sm">
-                  {[
-                    ['Applied', '28 Jul 2026 · QR link'],
-                    ['KYC', 'Aadhaar · PAN · bank details, encrypted'],
-                    ['Consents', '4 recorded, itemised'],
-                    ['Agreement & KFS', 'Accepted digitally'],
-                    ['Decision', 'Approved · 1 Aug 2026'],
-                  ].map(([k, v]) => (
-                    <div key={k} className="flex items-baseline justify-between gap-6">
-                      <dt className={INK_3}>{k}</dt>
-                      <dd className="text-right font-medium">{v}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </Fragment>
-            </div>
-
-            {/* Step 2 — Disbursal */}
-            <div className="grid gap-8 py-12 lg:grid-cols-[18rem_1fr] lg:gap-14">
-              <div>
-                <p className={`${MONO} text-sm text-[#34D399]`}>Step 2</p>
-                <h3 className={`mt-2 ${SERIF} text-[1.45rem] font-medium leading-snug ${IVORY_T}`}>Disbursal</h3>
-                <p className={`mt-3 leading-[1.6] ${IVORY_2}`}>
-                  On 5 Aug 2026 the loan is disbursed to her bank account, and the
-                  ledger posting is written by the same action — a balanced pair,
-                  or nothing posts.
-                </p>
-              </div>
-              <Fragment title="Ledger — disbursement posting" className="self-start" surface="bg-[#FAF7F0]">
-                <div className={`space-y-1.5 text-sm ${MONO}`}>
-                  <p className="flex items-baseline justify-between gap-6">
-                    <span>Dr Loans Receivable</span>
-                    <span>₹75,000.00</span>
-                  </p>
-                  <p className="flex items-baseline justify-between gap-6">
-                    <span>Cr Bank Account</span>
-                    <span>₹75,000.00</span>
-                  </p>
-                  <p className={`border-t ${HAIR} pt-2 font-sans text-[13px] ${INK_3}`}>
-                    5 Aug 2026 · Type: Disbursement · Reference: the loan number
-                  </p>
-                </div>
-              </Fragment>
-            </div>
-
-            {/* Step 3 — EMI schedule */}
-            <div className="grid gap-8 py-12 lg:grid-cols-[18rem_1fr] lg:gap-14">
-              <div>
-                <p className={`${MONO} text-sm text-[#34D399]`}>Step 3</p>
-                <h3 className={`mt-2 ${SERIF} text-[1.45rem] font-medium leading-snug ${IVORY_T}`}>The EMI schedule</h3>
-                <p className={`mt-3 leading-[1.6] ${IVORY_2}`}>
-                  Twelve instalments of ₹7,437.50 — principal ₹6,250.00, interest
-                  ₹1,125.00 and a ₹62.50 share of the ₹750 processing fee in each.
-                  The borrower sees this same schedule in her portal.
-                </p>
-              </div>
-              <Fragment title="Instalment schedule — first five of twelve" className="self-start" surface="bg-[#FAF7F0]">
-                <table className="w-full border-collapse text-sm">
-                  <thead>
-                    <tr className={`border-b ${HAIR} text-left text-[13px] ${INK_3}`}>
-                      <th scope="col" className="py-2 pr-3 font-medium">No.</th>
-                      <th scope="col" className="py-2 pr-3 font-medium">Due date</th>
-                      <th scope="col" className="py-2 pr-3 text-right font-medium">EMI (₹)</th>
-                      <th scope="col" className="py-2 text-right font-medium">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {LIFECYCLE_SCHEDULE.map((row) => (
-                      <tr
-                        key={row.n}
-                        className={`border-b border-[#14231C]/5 last:border-0 ${
-                          row.status === 'Overdue' ? 'bg-[#FEF3F2]' : ''
-                        }`}
-                      >
-                        <td className={`py-2 pr-3 ${MONO} ${INK_3}`}>{row.n}</td>
-                        <td className="py-2 pr-3">{row.due}</td>
-                        <td className={`py-2 pr-3 text-right ${MONO}`}>{row.emi}</td>
-                        <td className="py-2 text-right">
-                          {row.status === 'Paid' ? (
-                            <span className="font-medium text-[#067647]">Paid</span>
-                          ) : row.status === 'Overdue' ? (
-                            <span className="font-medium text-[#B42318]">Overdue</span>
-                          ) : (
-                            <span className={INK_2}>Upcoming</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                    <tr className={`border-t ${HAIR} font-medium`}>
-                      <td colSpan={2} className="py-2 pr-3">Total repayable</td>
-                      <td className={`py-2 pr-3 text-right ${MONO}`}>89,250.00</td>
-                      <td className="py-2" />
-                    </tr>
-                  </tbody>
-                </table>
-              </Fragment>
-            </div>
-
-            {/* Step 4 — A missed payment */}
-            <div className="grid gap-8 py-12 lg:grid-cols-[18rem_1fr] lg:gap-14">
-              <div>
-                <p className={`${MONO} text-sm text-[#34D399]`}>Step 4</p>
-                <h3 className={`mt-2 ${SERIF} text-[1.45rem] font-medium leading-snug ${IVORY_T}`}>A missed payment</h3>
-                <p className={`mt-3 leading-[1.6] ${IVORY_2}`}>
-                  Instalment 4 is not paid on 5 Dec. The loan moves in the ageing
-                  the same day, the reminder run has already been ahead of it, and
-                  the follow-up ends in a promise to pay — recorded, not remembered.
-                </p>
-              </div>
-              <Fragment title="Follow-up — instalment 4" className="self-start" surface="bg-[#FAF7F0]">
-                <ul className="space-y-2.5 text-sm">
-                  <li className="flex items-baseline justify-between gap-6">
-                    <span className={INK_3}>2 Dec · 09:15</span>
-                    <span className="text-right">Reminder sent — due in three days</span>
-                  </li>
-                  <li className="flex items-baseline justify-between gap-6">
-                    <span className={INK_3}>5 Dec · 09:15</span>
-                    <span className="text-right">Reminder sent — due today</span>
-                  </li>
-                  <li className="flex items-baseline justify-between gap-6">
-                    <span className={INK_3}>6 Dec</span>
-                    <span className="text-right">
-                      Instalment overdue · <span className="font-medium text-[#B42318]">DPD 1</span> · follow-up task created
-                    </span>
-                  </li>
-                  <li className="flex items-baseline justify-between gap-6">
-                    <span className={INK_3}>7 Dec</span>
-                    <span className="text-right">Promise to pay recorded — 9 Dec, by Arjun Nair</span>
-                  </li>
-                </ul>
-              </Fragment>
-            </div>
-
-            {/* Step 5 — Collection & receipt */}
-            <div className="grid gap-8 py-12 lg:grid-cols-[18rem_1fr] lg:gap-14">
-              <div>
-                <p className={`${MONO} text-sm text-[#34D399]`}>Step 5</p>
-                <h3 className={`mt-2 ${SERIF} text-[1.45rem] font-medium leading-snug ${IVORY_T}`}>Collection &amp; receipt</h3>
-                <p className={`mt-3 leading-[1.6] ${IVORY_2}`}>
-                  On 9 Dec the instalment is collected in cash at her doorstep. The
-                  receipt is issued on the spot, the owner verifies it, and the
-                  collection posts to the ledger in its three parts.
-                </p>
-              </div>
-              <Fragment title="Receipt — instalment 4, collected 9 Dec 2026" className="self-start" surface="bg-[#FAF7F0]">
-                <div className="space-y-2 text-sm">
-                  <p className="flex items-baseline justify-between gap-6">
-                    <span className={INK_3}>Amount · Cash · Arjun Nair</span>
-                    <span className={`${MONO} font-medium`}>₹7,437.50</span>
-                  </p>
-                  <p className="flex items-baseline justify-between gap-6">
-                    <span className={INK_3}>Status</span>
-                    <span>Verified by owner</span>
-                  </p>
-                  <div className={`space-y-1.5 border-t ${HAIR} pt-2.5 ${MONO} text-[13px]`}>
-                    <p className="flex items-baseline justify-between gap-6">
-                      <span>Dr Cash in Hand</span>
-                      <span>₹7,437.50</span>
-                    </p>
-                    <p className="flex items-baseline justify-between gap-6">
-                      <span>Cr Loans Receivable</span>
-                      <span>₹6,250.00</span>
-                    </p>
-                    <p className="flex items-baseline justify-between gap-6">
-                      <span>Cr Interest Income</span>
-                      <span>₹1,125.00</span>
-                    </p>
-                    <p className="flex items-baseline justify-between gap-6">
-                      <span>Cr Fee Income</span>
-                      <span>₹62.50</span>
-                    </p>
-                  </div>
-                </div>
-              </Fragment>
-            </div>
-
-            {/* Step 6 — Portfolio & report view */}
-            <div className="grid gap-8 py-12 lg:grid-cols-[18rem_1fr] lg:gap-14">
-              <div>
-                <p className={`${MONO} text-sm text-[#34D399]`}>Step 6</p>
-                <h3 className={`mt-2 ${SERIF} text-[1.45rem] font-medium leading-snug ${IVORY_T}`}>The report view</h3>
-                <p className={`mt-3 leading-[1.6] ${IVORY_2}`}>
-                  The loan now stands at four instalments paid. It appears in the
-                  portfolio report, the collections report and the audit trail —
-                  three views of the same entries, because there is only one ledger.
-                </p>
-              </div>
-              <Fragment title="Portfolio — this loan" className="self-start" surface="bg-[#FAF7F0]">
-                <dl className="space-y-2 text-sm">
-                  {[
-                    ['Status', 'Active'],
-                    ['Instalments paid', '4 of 12'],
-                    ['Outstanding principal', '₹50,000.00'],
-                    ['Next EMI due', '5 Jan 2027'],
-                    ['Audit trail', 'Application → disbursal → 4 collections'],
-                  ].map(([k, v]) => (
-                    <div key={k} className="flex items-baseline justify-between gap-6">
-                      <dt className={INK_3}>{k}</dt>
-                      <dd className="text-right font-medium">{v}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </Fragment>
-            </div>
+        <div className={`${CONTAINER} ${STRIP}`}>
+          <p className={`${MONO} text-[11px] font-medium uppercase tracking-[0.22em] text-[#34D399]`}>
+            The loan lifecycle
+          </p>
+          <ol className="mt-7 flex list-none flex-wrap items-baseline gap-x-3 gap-y-2">
+            {LIFECYCLE_STAGES.map((stage, i) => (
+              <li key={stage} className="flex items-baseline gap-3">
+                <span className={`${SERIF} text-[1.45rem] font-medium leading-none ${IVORY_T} md:text-[1.7rem]`}>{stage}</span>
+                {i < LIFECYCLE_STAGES.length - 1 ? (
+                  <span aria-hidden="true" className="text-lg leading-none text-[#34D399]">→</span>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+          <p className={`mt-7 max-w-[65ch] leading-[1.6] ${IVORY_2}`}>
+            Priya Sharma’s loan — ₹75,000 at 18% over 12 months, EMI ₹7,437.50 — is
+            followed through every stage, from her application to the report view.
+          </p>
+          <div className="mt-6 flex flex-wrap items-baseline gap-x-8 gap-y-2">
+            <p className={`text-sm ${IVORY_3}`}>Sample data</p>
+            <a
+              href="/product"
+              className={`inline-flex h-11 items-center font-medium text-[#6EE7B7] underline underline-offset-4 ${HOVER} hover:text-[#A7E8C9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded-sm`}
+            >
+              See the full walkthrough →
+            </a>
           </div>
         </div>
       </section>
 
-      {/* Module chapters — serif outcome headings, hairline rows,
-          one ledger fragment each. */}
-      <section id="modules" className={`${CONTAINER} ${SECTION} scroll-mt-16`}>
-        <SectionHead title="Four modules. One ledger underneath.">
-          Each module is a part of the same working day, and each writes to —
-          and reads from — the same records.
-        </SectionHead>
-        <div className={`divide-y divide-[#14231C]/10 border-y ${HAIR}`}>
-          {MODULES.map((mod) => (
-            <article key={mod.title} className="grid gap-8 py-12 lg:grid-cols-2 lg:gap-14">
-              <div>
-                <p className="text-[13px] font-semibold uppercase tracking-[0.12em] text-[#047857]">{mod.title}</p>
-                <h3 className={`mt-2.5 max-w-[26ch] ${SERIF} text-[1.7rem] font-medium leading-[1.15]`}>
-                  {mod.heading}
-                </h3>
-                <p className={`mt-4 max-w-[65ch] leading-[1.6] ${INK_2}`}>{mod.intro}</p>
-                <div className="mt-7">
-                  <Fragment title={mod.title} surface="bg-white" className="shadow-[0_16px_44px_-24px_rgba(20,35,28,0.25)]">
-                    {mod.fragment}
-                  </Fragment>
-                </div>
-              </div>
-              <ul className={`divide-y divide-[#14231C]/10 self-start border-y ${HAIR}`}>
-                {mod.rows.map((row) => (
-                  <li key={row} className="py-3.5 leading-[1.6]">
-                    {row}
-                  </li>
-                ))}
-              </ul>
-            </article>
-          ))}
+      {/* Security strip — the three assurances an evaluator checks
+          first, each in the first sentence of its full row. All
+          seven rows, stated as facts true of the product as it runs
+          today, are on /security. */}
+      <section id="security" className={`${CONTAINER} ${STRIP} scroll-mt-16`}>
+        <div className="mb-10">
+          <h2 className={`max-w-[26ch] ${SERIF} text-[2rem] font-medium leading-[1.08] tracking-[-0.01em] md:text-[2.4rem]`}>
+            Security &amp; data
+          </h2>
         </div>
-        <p className={`mt-8 text-sm leading-[1.5] ${INK_3}`}>
-          The figures in these fragments are sample data, from the same sample loan as the lifecycle above.
-        </p>
-      </section>
-
-      {/* How it works — a real sequence, so it is numbered */}
-      <section id="how" className="scroll-mt-16 bg-[#F3EEE2]">
-        <div className={`${CONTAINER} ${SECTION}`}>
-          <SectionHead title="How it works">
-            Four steps between the book you keep today and the same book in
-            LoanOps. The work at each step is stated plainly — who does it,
-            and what you hand over.
-          </SectionHead>
-          <ol className={`divide-y divide-[#14231C]/10 border-y ${HAIR} list-none`}>
-            {ONBOARDING.map((step, i) => (
-              <li key={step.title} className="grid gap-2 py-8 md:grid-cols-[4rem_18rem_1fr] md:gap-x-8">
-                <span className={`${MONO} text-sm font-medium text-[#047857]`}>{String(i + 1).padStart(2, '0')}</span>
-                <h3 className={`${SERIF} text-[1.3rem] font-medium leading-snug`}>{step.title}</h3>
-                <p className={`max-w-[65ch] leading-[1.6] ${INK_2}`}>{step.desc}</p>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
-
-      {/* Security & data — ruled two-column fact list. Every item
-          is true of this codebase today; nothing is claimed that
-          the product does not do. */}
-      <section id="security" className={`${CONTAINER} ${SECTION} scroll-mt-16`}>
-        <SectionHead title="Security &amp; data">
-          Borrowers hand you their Aadhaar, their bank details and their trust.
-          These are the arrangements that guard all three — stated as facts,
-          each one true of the product as it runs today.
-        </SectionHead>
-        <dl className={`divide-y divide-[#14231C]/10 border-y ${HAIR}`}>
-          {SECURITY_ROWS.map((row) => (
-            <div key={row.title} className="grid gap-1.5 py-7 md:grid-cols-[22rem_1fr] md:gap-x-12">
-              <dt className={`${SERIF} text-[1.3rem] font-medium leading-snug`}>{row.title}</dt>
-              <dd className={`max-w-[65ch] leading-[1.6] ${INK_2}`}>{row.desc}</dd>
+        <div className="grid gap-x-10 gap-y-10 md:grid-cols-3">
+          {SECURITY_STRIP.map((row) => (
+            <div key={row.title} className={`border-t ${HAIR} pt-6`}>
+              <h3 className={`${SERIF} text-[1.3rem] font-medium leading-snug`}>{row.title}</h3>
+              <p className={`mt-2.5 text-[15px] leading-[1.6] ${INK_2}`}>{row.desc}</p>
             </div>
           ))}
-        </dl>
-        <p className={`mt-10 max-w-[58ch] ${SERIF} text-[1.35rem] font-medium leading-[1.35]`}>
+        </div>
+        <p className={`mt-12 max-w-[65ch] text-[15px] leading-[1.6] ${INK_2}`}>
           One boundary, stated plainly: LoanOps is software. The lending
           institution remains the regulated lender — LoanOps keeps the records
           your auditors ask for.
+        </p>
+        <p className="mt-4">
+          <a
+            href="/security"
+            className={`inline-flex h-11 items-center font-medium text-[#047857] underline underline-offset-4 ${HOVER} hover:text-[#0A3D2C] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A3D2C] rounded-sm`}
+          >
+            See the full security detail →
+          </a>
         </p>
       </section>
 
@@ -1037,6 +635,16 @@ export default function Page() {
             what it costs, what is included, and what migration involves — before
             you decide anything.
           </SectionHead>
+          <p className={`-mt-4 mb-12 max-w-[65ch] text-[15px] leading-[1.6] lg:mb-14 ${IVORY_2}`}>
+            Going live includes migration of your existing book and training for
+            your team, on your own data.{' '}
+            <a
+              href="/product#onboarding"
+              className={`font-medium text-[#6EE7B7] underline underline-offset-4 ${HOVER} hover:text-[#A7E8C9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded-sm`}
+            >
+              How going live works →
+            </a>
+          </p>
           <div className="grid gap-12 lg:grid-cols-5 lg:gap-14">
             <div className="lg:col-span-2">
               <h3 className={`${SERIF} text-[1.35rem] font-medium ${IVORY_T}`}>What happens next</h3>
