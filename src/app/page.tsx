@@ -6,6 +6,7 @@ import { LegalFooter } from '@/components/legal/legal-footer'
 import { CookieBanner } from '@/components/legal/cookie-banner'
 import { EnquiryForm } from '@/components/enquiry-form'
 import { HeroTilt } from '@/components/hero-tilt'
+import { MobileMenu } from '@/components/mobile-menu'
 
 // Public product homepage — the concept redesign (2026-11-11),
 // its background system replaced the same day on the owner's word,
@@ -114,7 +115,9 @@ const HAIR_L = 'border-white/15'
 const MONO = '[font-family:var(--font-plex-mono)] tabular-nums'
 const SERIF = '[font-family:var(--font-fraunces),Georgia,serif]'
 const CONTAINER = 'mx-auto w-full max-w-7xl px-6 lg:px-8'
-const SECTION = 'py-24 lg:py-32'
+// Mobile section padding is 64px (the research rhythm: one value
+// for every section on phones); desktop keeps its taller spacing.
+const SECTION = 'py-16 lg:py-32'
 // The compressed strips (modules, lifecycle, security) run tighter
 // than a full section — one idea each, at band height.
 const STRIP = 'py-16 lg:py-20'
@@ -367,7 +370,10 @@ export default function Page() {
 
         {/* Floating glass pill nav. On the right: a Book a demo text
             link and the page's ONLY login link — Log in, the white
-            filled pill. One login serves every role. */}
+            filled pill. One login serves every role. On phones the
+            link run collapses behind the menu button (the sheet it
+            opens carries the anchors and Book a demo — never a
+            second login link). */}
         <header className="relative z-20">
           <div className={`${CONTAINER} pt-4 sm:pt-6`}>
             <div className="flex h-16 items-center justify-between gap-3 rounded-full border border-white/20 bg-[#04150E]/45 py-2 pl-5 pr-2 shadow-[0_18px_50px_-20px_rgba(0,0,0,0.55)] backdrop-blur-md sm:pl-6">
@@ -394,13 +400,22 @@ export default function Page() {
                 >
                   Log in
                 </a>
+                <MobileMenu />
               </div>
             </div>
           </div>
         </header>
 
-        <div id="top" className={`relative z-10 ${CONTAINER} flex flex-col items-center pb-24 pt-12 text-center lg:pb-32 lg:pt-16`}>
-          <p className="inline-flex h-9 items-center rounded-full border border-white/25 bg-[#04150E]/40 px-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#FAF7F0] backdrop-blur-md">
+        <div id="top" className={`relative z-10 ${CONTAINER} flex flex-col items-center pb-24 pt-8 text-center lg:pb-32 lg:pt-16`}>
+          {/* On phones the hero re-composes (mobile-layout research
+              §8.1): eyebrow → headline → support → CTA → the card
+              peeking into the first viewport. The desktop order —
+              eyebrow, card, headline — is restored at lg by the
+              order classes on the figure and the headline block;
+              nothing about the desktop composition changes. The
+              eyebrow's blur also drops on phones: the mobile glass
+              budget is the pill and the card only. */}
+          <p className="order-1 inline-flex h-9 items-center rounded-full border border-white/25 bg-[#04150E]/40 px-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#FAF7F0] backdrop-blur-md max-lg:backdrop-blur-none">
             For NBFCs &amp; Microfinance Teams
           </p>
 
@@ -415,9 +430,9 @@ export default function Page() {
               motion — the group is exactly this static composition.
               The card's shadow alpha rides on --hp-shadow, which
               HeroTilt deepens slightly as the tilt grows. */}
-          <figure id="product" className="hp-reveal relative mt-10 w-full max-w-[35rem] scroll-mt-24">
+          <figure id="product" className="hp-reveal relative order-3 mt-8 w-full max-w-[35rem] scroll-mt-24 lg:order-2 lg:mt-10">
             <HeroTilt>
-            <div data-tilt-card className="relative overflow-hidden rounded-[24px] border border-white/25 bg-[linear-gradient(135deg,rgba(12,68,48,0.88),rgba(5,30,20,0.94))] p-6 text-left shadow-[0_40px_90px_-30px_rgba(0,0,0,var(--hp-shadow,0.65))] backdrop-blur-md [transform-style:preserve-3d] sm:p-8">
+            <div data-tilt-card className="relative overflow-hidden rounded-[24px] border border-white/25 bg-[linear-gradient(135deg,rgba(12,68,48,0.88),rgba(5,30,20,0.94))] p-5 text-left shadow-[0_40px_90px_-30px_rgba(0,0,0,var(--hp-shadow,0.65))] backdrop-blur-md [transform-style:preserve-3d] sm:p-8">
               <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/30" />
               <div className="flex items-start justify-between gap-6">
                 <span className="flex items-center gap-2.5">
@@ -430,12 +445,12 @@ export default function Page() {
                 <p className="text-lg font-medium text-white">Priya Sharma</p>
                 <p className={`${MONO} text-[13px] ${IVORY_2}`}>LOAN-001 · Personal loan</p>
               </div>
-              <div className="mt-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+              <div className="mt-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-4 max-sm:flex-col max-sm:items-stretch max-sm:gap-y-5">
                 <div className="[transform:translateZ(20px)]">
                   <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${IVORY_3}`}>Monthly EMI</p>
-                  <p className={`${MONO} mt-1.5 text-[2.5rem] font-medium leading-none text-white sm:text-[2.75rem]`}>₹7,437.50</p>
+                  <p className={`${MONO} mt-1.5 whitespace-nowrap text-[2rem] font-medium leading-none text-white sm:text-[2.75rem]`}>₹7,437.50</p>
                 </div>
-                <div className="min-w-[9.5rem] [transform:translateZ(12px)]">
+                <div className="min-w-[9.5rem] [transform:translateZ(12px)] max-sm:w-full max-sm:min-w-0">
                   <p className="text-sm text-[#FAF7F0]">
                     <span className="font-semibold">3 of 12</span> <span className={IVORY_2}>EMIs paid</span>
                   </p>
@@ -450,20 +465,27 @@ export default function Page() {
               </div>
             </div>
 
-            <div className="mt-4 flex flex-col items-stretch gap-3 sm:flex-row sm:justify-center xl:contents">
-              <div data-tilt-chip className="rounded-[20px] border border-white/20 bg-[#04150E]/55 px-5 py-4 text-left shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)] backdrop-blur-md sm:w-64 xl:absolute xl:-left-[17.5rem] xl:top-14 xl:mt-0">
-                <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${IVORY_3}`}>Today’s collections</p>
-                <p className="mt-1.5 text-[15px] text-[#FAF7F0]">
-                  <span className={`${MONO} text-xl font-medium text-white`}>₹20,075</span> collected
+            {/* Chips on phones (research §8.2): no longer floating
+                glass — a 2-up row directly below the card, solid
+                fill, no backdrop-blur, figure first and the label
+                under it in sentence case (the caps label cannot fit
+                one line at 154px). The suffix word and the third
+                line wait for the wider layouts, where the chips
+                float beside the card as before. */}
+            <div className="mt-4 grid grid-cols-2 items-stretch gap-3 lg:flex lg:flex-row lg:justify-center xl:contents">
+              <div data-tilt-chip className="rounded-[20px] border border-white/20 bg-[#04150E]/55 px-5 py-4 text-left shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)] backdrop-blur-md max-lg:flex max-lg:flex-col max-lg:bg-[#04150E]/85 max-lg:px-3 max-lg:py-2.5 max-lg:backdrop-blur-none lg:w-64 xl:absolute xl:-left-[17.5rem] xl:top-14 xl:mt-0">
+                <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${IVORY_3} max-lg:order-2 max-lg:mt-1 max-lg:text-[13px] max-lg:font-medium max-lg:normal-case max-lg:tracking-normal`}>Today’s collections</p>
+                <p className="mt-1.5 text-[15px] text-[#FAF7F0] max-lg:order-1 max-lg:mt-0">
+                  <span className={`${MONO} text-xl font-medium text-white`}>₹20,075</span><span className="max-lg:hidden"> collected</span>
                 </p>
-                <p className={`mt-1 text-[13px] ${IVORY_2}`}>of ₹29,705.00 due today</p>
+                <p className={`mt-1 text-[13px] ${IVORY_2} max-lg:hidden`}>of ₹29,705.00 due today</p>
               </div>
-              <div data-tilt-chip className="rounded-[20px] border border-white/20 bg-[#04150E]/55 px-5 py-4 text-left shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)] backdrop-blur-md sm:w-64 xl:absolute xl:-right-[17.5rem] xl:top-32 xl:mt-0">
-                <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${IVORY_3}`}>Portfolio ageing</p>
-                <p className="mt-1.5 text-[15px] text-[#FAF7F0]">
-                  <span className={`${MONO} text-xl font-medium text-white`}>₹87,08,212</span> outstanding
+              <div data-tilt-chip className="rounded-[20px] border border-white/20 bg-[#04150E]/55 px-5 py-4 text-left shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)] backdrop-blur-md max-lg:flex max-lg:flex-col max-lg:bg-[#04150E]/85 max-lg:px-3 max-lg:py-2.5 max-lg:backdrop-blur-none lg:w-64 xl:absolute xl:-right-[17.5rem] xl:top-32 xl:mt-0">
+                <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${IVORY_3} max-lg:order-2 max-lg:mt-1 max-lg:text-[13px] max-lg:font-medium max-lg:normal-case max-lg:tracking-normal`}>Portfolio ageing</p>
+                <p className="mt-1.5 text-[15px] text-[#FAF7F0] max-lg:order-1 max-lg:mt-0">
+                  <span className={`${MONO} text-xl font-medium text-white`}>₹87,08,212</span><span className="max-lg:hidden"> outstanding</span>
                 </p>
-                <p className={`mt-1 text-[13px] ${IVORY_2}`}>across 6 DPD buckets</p>
+                <p className={`mt-1 text-[13px] ${IVORY_2} max-lg:hidden`}>across 6 DPD buckets</p>
               </div>
             </div>
             </HeroTilt>
@@ -471,25 +493,34 @@ export default function Page() {
             <figcaption className="mt-5 text-sm text-[#FAF7F0]/85">Sample data</figcaption>
           </figure>
 
-          <div className="hp-reveal flex flex-col items-center">
-            <h1 className={`mt-12 max-w-[17ch] ${SERIF} text-[2.65rem] font-medium leading-[1.06] text-white sm:text-6xl lg:text-[4.3rem]`}>
+          <div className="hp-reveal order-2 flex flex-col items-center max-lg:w-full lg:order-3">
+            <h1 className={`mt-6 max-w-[17ch] ${SERIF} text-[2.125rem] font-medium leading-[1.1] text-white sm:text-6xl lg:mt-12 lg:text-[4.3rem]`}>
               Run your entire lending business in one <em className="italic text-[#A7E8C9]">calm</em> platform.
             </h1>
-            <p className="mt-6 max-w-[62ch] text-lg leading-[1.6] text-[#FAF7F0]/95">
+            {/* Mobile support line: the desktop line's first
+                sentence, verbatim — the full line runs to four
+                lines at 360px and pushes the card out of the first
+                viewport (research §8.1 budgets the support line at
+                ≤2 lines). The desktop line below is untouched. */}
+            <p className="mt-4 max-w-[62ch] text-base leading-[1.55] text-[#FAF7F0]/95 lg:hidden">
+              Origination, approval, disbursal, collections, the ledger and
+              reports — the whole life of a loan in one system.
+            </p>
+            <p className="mt-6 max-w-[62ch] text-lg leading-[1.6] text-[#FAF7F0]/95 max-lg:hidden">
               Origination, approval, disbursal, collections, the ledger and reports —
               the whole life of a loan in one system, replacing the Excel sheets and
               disconnected tools the work is spread across today.
             </p>
-            <div className="mt-9 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
+            <div className="mt-6 flex w-full flex-col items-center gap-2 sm:gap-4 lg:mt-9 lg:w-auto lg:flex-row lg:flex-wrap lg:justify-center">
               <a
                 href="#enquire"
-                className={`inline-flex h-12 items-center rounded-full bg-white px-7 text-base font-semibold text-[#0A3D2C] ${HOVER} hover:bg-[#FAF7F0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white`}
+                className={`inline-flex h-12 items-center justify-center rounded-full bg-white px-7 text-base font-semibold text-[#0A3D2C] ${HOVER} hover:bg-[#FAF7F0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white max-lg:h-[52px] max-lg:w-full`}
               >
                 Book a demo
               </a>
               <a
                 href="#lifecycle"
-                className={`inline-flex h-12 items-center rounded-full border border-white/35 bg-white/5 px-7 text-base font-medium text-white backdrop-blur-md ${HOVER} hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white`}
+                className={`inline-flex h-12 items-center rounded-full border border-white/35 bg-white/5 px-7 text-base font-medium text-white backdrop-blur-md ${HOVER} hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white max-lg:h-11 max-lg:border-transparent max-lg:bg-transparent max-lg:px-2 max-lg:underline max-lg:underline-offset-4 max-lg:backdrop-blur-none`}
               >
                 See how it works
               </a>
@@ -529,11 +560,11 @@ export default function Page() {
         />
         <ContourField variant="band" />
         <div aria-hidden="true" className="hp-grain pointer-events-none absolute inset-0 opacity-[0.05]" />
-        <div className={`relative ${CONTAINER} py-28 text-center lg:py-36`}>
+        <div className={`relative ${CONTAINER} py-12 text-center md:py-28 lg:py-36`}>
           <p className={`${MONO} text-[11px] font-medium uppercase tracking-[0.22em] text-[#34D399]`}>
             Where your borrowers live
           </p>
-          <p className={`mx-auto mt-6 max-w-[27ch] ${SERIF} text-3xl font-medium leading-[1.2] text-white md:text-[2.6rem]`}>
+          <p className={`mx-auto mt-6 max-w-[27ch] ${SERIF} text-[1.625rem] font-medium leading-[1.25] text-white md:text-[2.6rem] md:leading-[1.2]`}>
             Built for the high streets and small towns where your borrowers actually live.
           </p>
           <p className={`mx-auto mt-7 max-w-[62ch] leading-[1.6] ${IVORY_2}`}>
@@ -574,12 +605,25 @@ export default function Page() {
           <p className={`${MONO} text-[11px] font-medium uppercase tracking-[0.22em] text-[#34D399]`}>
             The loan lifecycle
           </p>
-          <ol className="mt-7 flex list-none flex-wrap items-baseline gap-x-3 gap-y-2">
+          {/* On phones the chain rotates 90° (research §8.4): a
+              vertical numbered timeline, rail on the left — the
+              sequence reads in the scroll direction and no stage
+              hides off the right edge. The rail exists only below
+              lg; the desktop chain is untouched. */}
+          <ol className="mt-7 flex list-none flex-wrap items-baseline gap-x-3 gap-y-2 max-lg:flex-col max-lg:flex-nowrap max-lg:items-stretch max-lg:gap-x-0 max-lg:gap-y-0">
             {LIFECYCLE_STAGES.map((stage, i) => (
-              <li key={stage} className="flex items-baseline gap-3">
-                <span className={`${SERIF} text-[1.45rem] font-medium leading-none ${IVORY_T} md:text-[1.7rem]`}>{stage}</span>
+              <li key={stage} className="flex items-baseline gap-3 max-lg:items-start max-lg:gap-4">
+                <span aria-hidden="true" className="hidden w-7 shrink-0 flex-col items-center max-lg:flex">
+                  <span className={`flex h-7 w-7 items-center justify-center rounded-full border border-[#34D399]/50 ${MONO} text-[13px] text-[#34D399]`}>
+                    {i + 1}
+                  </span>
+                  {i < LIFECYCLE_STAGES.length - 1 ? (
+                    <span className="mt-1 h-6 w-px bg-white/15" />
+                  ) : null}
+                </span>
+                <span className={`${SERIF} text-[1.45rem] font-medium leading-none ${IVORY_T} max-lg:pt-1 max-lg:text-[1.25rem] lg:text-[1.7rem]`}>{stage}</span>
                 {i < LIFECYCLE_STAGES.length - 1 ? (
-                  <span aria-hidden="true" className="text-lg leading-none text-[#34D399]">→</span>
+                  <span aria-hidden="true" className="text-lg leading-none text-[#34D399] max-lg:hidden">→</span>
                 ) : null}
               </li>
             ))}

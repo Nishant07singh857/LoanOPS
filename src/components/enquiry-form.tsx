@@ -4,6 +4,13 @@
 // Plain controlled form + fetch (not the portal api-client: this is a
 // public, unauthenticated surface). On success the form swaps to a
 // confirmation panel in place — no navigation, no reload.
+//
+// Mobile sizing (phone-layout audit, 2026-11-11): on phones the
+// fields stand 52px tall and the submit 52px — the desktop heights
+// (44px fields, 48px submit) fall under the form spec's floors.
+// Inputs already render at 16px below md (the shared Input's
+// text-base), so iOS does not auto-zoom on focus; labels sit above
+// every field and the trust line sits under the submit.
 
 import * as React from 'react'
 import { CheckCircle2, Send, AlertTriangle } from 'lucide-react'
@@ -102,7 +109,7 @@ export function EnquiryForm() {
             placeholder="e.g. Priya Sharma"
             value={form.name}
             onChange={set('name')}
-            className="h-11"
+            className="h-[52px] sm:h-11"
           />
         </div>
         <div className="space-y-1.5">
@@ -118,7 +125,7 @@ export function EnquiryForm() {
             placeholder="10-digit mobile number"
             value={form.mobile}
             onChange={set('mobile')}
-            className="h-11"
+            className="h-[52px] sm:h-11"
           />
         </div>
       </div>
@@ -135,7 +142,7 @@ export function EnquiryForm() {
             placeholder="e.g. Sharma Micro Finance"
             value={form.businessName}
             onChange={set('businessName')}
-            className="h-11"
+            className="h-[52px] sm:h-11"
           />
         </div>
         <div className="space-y-1.5">
@@ -144,12 +151,13 @@ export function EnquiryForm() {
             id="enquiry-email"
             name="email"
             type="email"
+            inputMode="email"
             autoComplete="email"
             maxLength={200}
             placeholder="you@example.com"
             value={form.email}
             onChange={set('email')}
-            className="h-11"
+            className="h-[52px] sm:h-11"
           />
         </div>
       </div>
@@ -192,7 +200,7 @@ export function EnquiryForm() {
         </div>
       )}
 
-      <Button type="submit" size="lg" className="w-full sm:w-auto h-12 px-8 rounded-xl shadow-glow" disabled={submitting}>
+      <Button type="submit" size="lg" className="w-full sm:w-auto h-[52px] sm:h-12 px-8 rounded-xl shadow-glow" disabled={submitting}>
         {submitting ? 'Sending…' : (<>Send enquiry <Send className="ml-2 h-4 w-4" /></>)}
       </Button>
       <p className="text-[11px] text-muted-foreground">
