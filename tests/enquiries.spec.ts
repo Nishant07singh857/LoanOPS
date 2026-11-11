@@ -67,7 +67,12 @@ test.describe('Homepage — product page, one universal Login button', () => {
     }
 
     // It is a product page: pitch + sections + the enquiry form.
-    expect(html).toContain('loan operations system for NBFCs and MFIs')
+    // Concept-redesign H1 (2026-11-11): "Run your entire lending
+    // business in one calm platform." — the word "calm" is set in an
+    // italic <em>, so the raw HTML splits the sentence; pin the
+    // contiguous lead phrase and the closing word.
+    expect(html).toContain('Run your entire lending business in one')
+    expect(html).toContain('platform.')
     expect(html).toContain('id="product"')
     expect(html).toContain('id="lifecycle"')
     expect(html).toContain('id="modules"')
