@@ -5,6 +5,7 @@ import { JsonLd } from '@/components/json-ld'
 import { LegalFooter } from '@/components/legal/legal-footer'
 import { CookieBanner } from '@/components/legal/cookie-banner'
 import { EnquiryForm } from '@/components/enquiry-form'
+import { HeroTilt } from '@/components/hero-tilt'
 
 // Public product homepage — the concept redesign (2026-11-11),
 // its background system replaced the same day on the owner's word,
@@ -407,9 +408,16 @@ export default function Page() {
               contoured surface. The two glass chips sit beside the
               card on wide screens and stack beneath it on smaller
               ones. All three carry sample figures; the caption is
-              attached to the group as its figcaption. */}
+              attached to the group as its figcaption. HeroTilt adds
+              the research-spec subtle 3D (tilt ≤5°/4°, chip
+              parallax ±8px, gated on fine pointer + no-preference
+              motion); without JS — or on touch, or under reduced
+              motion — the group is exactly this static composition.
+              The card's shadow alpha rides on --hp-shadow, which
+              HeroTilt deepens slightly as the tilt grows. */}
           <figure id="product" className="hp-reveal relative mt-10 w-full max-w-[35rem] scroll-mt-24">
-            <div className="relative overflow-hidden rounded-[24px] border border-white/25 bg-[linear-gradient(135deg,rgba(12,68,48,0.88),rgba(5,30,20,0.94))] p-6 text-left shadow-[0_40px_90px_-30px_rgba(0,0,0,0.65)] backdrop-blur-md sm:p-8">
+            <HeroTilt>
+            <div data-tilt-card className="relative overflow-hidden rounded-[24px] border border-white/25 bg-[linear-gradient(135deg,rgba(12,68,48,0.88),rgba(5,30,20,0.94))] p-6 text-left shadow-[0_40px_90px_-30px_rgba(0,0,0,var(--hp-shadow,0.65))] backdrop-blur-md [transform-style:preserve-3d] sm:p-8">
               <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/30" />
               <div className="flex items-start justify-between gap-6">
                 <span className="flex items-center gap-2.5">
@@ -418,16 +426,16 @@ export default function Page() {
                 </span>
                 <CardChip />
               </div>
-              <div className={`mt-7 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t ${HAIR_L} pt-6`}>
+              <div className={`mt-7 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t ${HAIR_L} pt-6 [transform:translateZ(20px)]`}>
                 <p className="text-lg font-medium text-white">Priya Sharma</p>
                 <p className={`${MONO} text-[13px] ${IVORY_2}`}>LOAN-001 · Personal loan</p>
               </div>
               <div className="mt-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
-                <div>
+                <div className="[transform:translateZ(20px)]">
                   <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${IVORY_3}`}>Monthly EMI</p>
                   <p className={`${MONO} mt-1.5 text-[2.5rem] font-medium leading-none text-white sm:text-[2.75rem]`}>₹7,437.50</p>
                 </div>
-                <div className="min-w-[9.5rem]">
+                <div className="min-w-[9.5rem] [transform:translateZ(12px)]">
                   <p className="text-sm text-[#FAF7F0]">
                     <span className="font-semibold">3 of 12</span> <span className={IVORY_2}>EMIs paid</span>
                   </p>
@@ -443,14 +451,14 @@ export default function Page() {
             </div>
 
             <div className="mt-4 flex flex-col items-stretch gap-3 sm:flex-row sm:justify-center xl:contents">
-              <div className="rounded-[20px] border border-white/20 bg-[#04150E]/55 px-5 py-4 text-left shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)] backdrop-blur-md sm:w-64 xl:absolute xl:-left-[17.5rem] xl:top-14 xl:mt-0">
+              <div data-tilt-chip className="rounded-[20px] border border-white/20 bg-[#04150E]/55 px-5 py-4 text-left shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)] backdrop-blur-md sm:w-64 xl:absolute xl:-left-[17.5rem] xl:top-14 xl:mt-0">
                 <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${IVORY_3}`}>Today’s collections</p>
                 <p className="mt-1.5 text-[15px] text-[#FAF7F0]">
                   <span className={`${MONO} text-xl font-medium text-white`}>₹20,075</span> collected
                 </p>
                 <p className={`mt-1 text-[13px] ${IVORY_2}`}>of ₹29,705.00 due today</p>
               </div>
-              <div className="rounded-[20px] border border-white/20 bg-[#04150E]/55 px-5 py-4 text-left shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)] backdrop-blur-md sm:w-64 xl:absolute xl:-right-[17.5rem] xl:top-32 xl:mt-0">
+              <div data-tilt-chip className="rounded-[20px] border border-white/20 bg-[#04150E]/55 px-5 py-4 text-left shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)] backdrop-blur-md sm:w-64 xl:absolute xl:-right-[17.5rem] xl:top-32 xl:mt-0">
                 <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${IVORY_3}`}>Portfolio ageing</p>
                 <p className="mt-1.5 text-[15px] text-[#FAF7F0]">
                   <span className={`${MONO} text-xl font-medium text-white`}>₹87,08,212</span> outstanding
@@ -458,6 +466,7 @@ export default function Page() {
                 <p className={`mt-1 text-[13px] ${IVORY_2}`}>across 6 DPD buckets</p>
               </div>
             </div>
+            </HeroTilt>
 
             <figcaption className="mt-5 text-sm text-[#FAF7F0]/85">Sample data</figcaption>
           </figure>
