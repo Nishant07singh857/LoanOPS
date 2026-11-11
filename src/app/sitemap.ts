@@ -9,6 +9,8 @@ import type { MetadataRoute } from 'next'
 
 const PUBLIC_ROUTES: Array<{ path: string; priority: number; changeFrequency: 'weekly' | 'monthly' }> = [
   { path: '/', priority: 1, changeFrequency: 'weekly' },
+  { path: '/product', priority: 0.8, changeFrequency: 'monthly' },
+  { path: '/security', priority: 0.7, changeFrequency: 'monthly' },
   { path: '/privacy', priority: 0.5, changeFrequency: 'monthly' },
   { path: '/terms', priority: 0.5, changeFrequency: 'monthly' },
   { path: '/grievance', priority: 0.5, changeFrequency: 'monthly' },

@@ -76,9 +76,21 @@ test.describe('Homepage — product page, one universal Login button', () => {
     expect(html).toContain('id="product"')
     expect(html).toContain('id="lifecycle"')
     expect(html).toContain('id="modules"')
-    expect(html).toContain('id="how"')
+    // Dose trim (2026-11-11): the homepage is seven blocks. The
+    // onboarding section (id="how") moved to /product#onboarding;
+    // the lifecycle walkthrough and the full security rows moved to
+    // /product and /security, linked from the homepage strips with
+    // specific labels. The strips keep their anchor ids.
+    expect(html).not.toContain('id="how"')
     expect(html).toContain('id="security"')
     expect(html).toContain('id="enquire"')
+    expect(html).toContain('href="/product"')
+    expect(html).toContain('href="/security"')
+    // Sample figures on the trimmed homepage: the hero card group
+    // (figcaption) and the lifecycle strip (its own caption) — each
+    // carries its "Sample data" label as element text.
+    expect(html).toContain('>Sample data</figcaption>')
+    expect(html).toContain('>Sample data</p>')
     expect(html).toContain('name="businessName"')
     expect(html).toContain('name="message"')
     expect(html).toContain('Send enquiry')
