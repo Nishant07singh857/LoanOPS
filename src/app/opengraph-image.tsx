@@ -48,14 +48,59 @@ export default async function OpenGraphImage() {
             height: '200px',
             borderRadius: '44px',
             background: '#082A1F',
-            fontFamily: 'Fraunces',
-            fontWeight: 600,
-            fontSize: '118px',
-            lineHeight: 1,
-            color: '#FAF7F0',
           }}
         >
-          L
+          {/* Loan-card glyph (the brand mark), drawn with divs: card
+              outline, top stripe, chip dot and two ledger lines, in
+              the same proportions as public/logo.svg. */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              width: '120px',
+              height: '88px',
+              border: '9px solid #FAF7F0',
+              borderRadius: '12px',
+            }}
+          >
+            <div style={{ height: '13px' }} />
+            <div style={{ height: '9px', background: '#FAF7F0' }} />
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                flexGrow: 1,
+                paddingLeft: '6px',
+                marginTop: '10px',
+              }}
+            >
+              <div
+                style={{
+                  width: '14px',
+                  height: '14px',
+                  borderRadius: '7px',
+                  background: '#FAF7F0',
+                }}
+              />
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  marginLeft: '14px',
+                }}
+              >
+                <div style={{ width: '55px', height: '6px', background: '#FAF7F0' }} />
+                <div
+                  style={{
+                    width: '38px',
+                    height: '6px',
+                    background: '#FAF7F0',
+                    marginTop: '5px',
+                  }}
+                />
+              </div>
+            </div>
+          </div>
         </div>
         <div
           style={{
