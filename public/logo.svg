@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- LoanOPS brand mark: deep-green (#0A3D2C) rounded square with an ivory
-     (#FAF7F0) Fraunces serif "L". Matches src/app/icon.svg; the PNG/ICO
-     icon set (app/favicon.ico, app/apple-icon.png, public/icons/) is
-     rendered from the same mark in real Fraunces SemiBold. -->
+     (#FAF7F0) loan-card glyph — card outline, top stripe, chip dot and two
+     ledger lines. Matches src/app/icon.svg; the PNG/ICO icon set
+     (app/favicon.ico, app/apple-icon.png, public/icons/) is rendered from
+     the same geometry. -->
 <svg version="1.1" xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" viewBox="0 0 64 64" xml:space="preserve">
-  <rect width="64" height="64" rx="14" fill="#0A3D2C"/>
-  <text x="32" y="46.4" text-anchor="middle" font-family="Fraunces, Georgia, 'Times New Roman', serif" font-weight="600" font-size="40" fill="#FAF7F0">L</text>
+  <rect width="64" height="64" rx="14.4" fill="#0A3D2C"/>
+  <rect x="12.8" y="17.92" width="38.4" height="28.16" rx="3.84" fill="none" stroke="#FAF7F0" stroke-width="2.88"/>
+  <line x1="12.8" y1="26.37" x2="51.2" y2="26.37" stroke="#FAF7F0" stroke-width="2.88"/>
+  <circle cx="19.71" cy="37.07" r="2.24" fill="#FAF7F0"/>
+  <line x1="26.62" y1="35.28" x2="44.29" y2="35.28" stroke="#FAF7F0" stroke-width="2.02"/>
+  <line x1="26.62" y1="38.86" x2="38.91" y2="38.86" stroke="#FAF7F0" stroke-width="2.02"/>
 </svg>
