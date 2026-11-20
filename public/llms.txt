@@ -5,6 +5,8 @@
 ## Public pages
 
 - [Home](https://loanops.vercel.app/): Product overview and portal entry points.
+- [Product](https://loanops.vercel.app/product): Full product walkthrough: the complete loan lifecycle, the module chapters, and how going live works.
+- [Security](https://loanops.vercel.app/security): Security and data-protection practices, and the boundary that the institution remains the regulated lender.
 - [KFS & APR](https://loanops.vercel.app/kfs): Key Fact Statement format and APR calculation guide.
 - [Fair Practices](https://loanops.vercel.app/fair-practices): Fair practices code for lending operations.
 - [Grievance Redressal](https://loanops.vercel.app/grievance): How to raise a complaint and escalation tiers, including RBI CMS and Sachet portal links.
