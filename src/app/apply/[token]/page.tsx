@@ -4,7 +4,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Wallet, ShieldCheck, User, Phone, Sparkles, Loader2, ArrowRight } from 'lucide-react'
+import { Wallet, ShieldCheck, User, Phone, FileText, Loader2, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -144,7 +144,7 @@ export default function ApplyPage() {
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="max-w-md w-full text-center" role="status" aria-live="polite">
           <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" aria-hidden="true" />
-          <p className="mt-4 text-sm font-medium">Verifying your secure link…</p>
+          <p className="mt-4 text-sm font-medium">Checking your link…</p>
         </div>
       </div>
     )
@@ -168,18 +168,18 @@ export default function ApplyPage() {
       <div className="flex-1 flex flex-col justify-center px-4 sm:px-6 lg:px-8 py-10 max-w-2xl mx-auto w-full">
         <div className="mb-6 text-center">
           <div className="h-12 w-12 rounded-2xl bg-gradient-gold text-slate-950 flex items-center justify-center mx-auto mb-4 shadow-gold" aria-hidden="true">
-            <Sparkles className="h-6 w-6" />
+            <FileText className="h-6 w-6" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight">Apply &amp; Review Key Facts Statement</h1>
           <p className="text-sm text-muted-foreground mt-2">
-            You&apos;ve been invited by {applyData.organizationName}. Review your standardized RBI Key Facts Statement (KFS) and submit your application to proceed.
+            You&apos;ve been invited by {applyData.organizationName}. Review the Key Facts Statement (KFS) for this loan, then submit your application.
           </p>
         </div>
 
         {preConfig && (
           <>
-            <div className="rounded-2xl border border-border bg-card p-4 mb-4 text-center" role="region" aria-label="Pre-approved offer">
-              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Pre-Approved Offer</p>
+            <div className="rounded-2xl border border-border bg-card p-4 mb-4 text-center" role="region" aria-label="Loan offer">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Loan Offer</p>
               <p className="text-3xl font-bold text-primary">{formatPaiseToINR(Number(preConfig.principalAmount))}</p>
               <p className="text-sm text-muted-foreground mt-1">
                 {preConfig.installments} {preConfig.frequency.toLowerCase()} installments

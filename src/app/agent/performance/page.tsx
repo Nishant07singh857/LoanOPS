@@ -63,7 +63,7 @@ export default function AgentPerformancePage() {
     <div className="space-y-6 sm:space-y-8">
       <SectionHeading
         title="My Performance"
-        description="Your real task, follow-up and collection statistics."
+        description="Your task, follow-up and collection counts."
         icon={<Trophy className="h-5 w-5" />}
       />
 

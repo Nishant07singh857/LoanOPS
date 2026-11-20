@@ -56,7 +56,7 @@
 
 :root {
   --radius: 0.75rem;
-  /* Premium FinTech Palette - Deep Forest Green & Ivory, Elegant Gold accent.
+  /* Palette - Deep Forest Green & Ivory, gold accent.
      Brand primary family aligned to the homepage system (#0A3D2C / #FAF7F0);
      gold, semantic (success/warning/destructive/info) and chart hues are
      deliberately NOT brand surfaces and keep their values. */
@@ -76,7 +76,7 @@
   --muted: oklch(0.95 0.01 240);
   --muted-foreground: oklch(0.45 0.02 240);
   
-  /* Champagne Gold Accent */
+  /* Gold accent */
   --accent: oklch(0.94 0.04 85);
   --accent-foreground: oklch(0.28 0.07 165);
   --gold: oklch(0.76 0.15 85);
@@ -222,48 +222,40 @@
 @layer utilities {
   .glass {
     background: var(--card);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid oklch(0.90 0.02 240 / 0.5);
+    border: 1px solid var(--border);
   }
   .dark .glass {
     border: 1px solid oklch(0.25 0.02 240 / 0.5);
   }
   
   .bg-gradient-fintech {
-    background: linear-gradient(135deg, oklch(0.30 0.065 165) 0%, oklch(0.36 0.075 162) 100%);
+    background: oklch(0.30 0.065 165);
   }
   .bg-gradient-gold {
-    background: linear-gradient(135deg, oklch(0.76 0.15 85) 0%, oklch(0.85 0.12 85) 100%);
+    background: oklch(0.76 0.15 85);
   }
   .bg-gradient-premium {
-    background: linear-gradient(135deg, oklch(0.99 0.01 240) 0%, oklch(0.95 0.01 240) 100%);
+    background: oklch(0.99 0.01 240);
   }
   .dark .bg-gradient-premium {
-    background: linear-gradient(135deg, oklch(0.12 0.01 240) 0%, oklch(0.15 0.02 240) 100%);
+    background: oklch(0.12 0.01 240);
   }
   
   .shadow-premium {
-    box-shadow: 0 4px 24px -4px oklch(0.30 0.065 165 / 0.12), 0 2px 8px -2px oklch(0.30 0.065 165 / 0.08);
+    box-shadow: 0 1px 2px oklch(0.30 0.065 165 / 0.06), 0 1px 3px oklch(0.30 0.065 165 / 0.05);
   }
   .shadow-glow {
-    box-shadow: 0 0 0 1px oklch(0.76 0.15 85 / 0.25), 0 4px 16px oklch(0.30 0.065 165 / 0.15);
+    box-shadow: 0 1px 2px oklch(0.30 0.065 165 / 0.06), 0 1px 3px oklch(0.30 0.065 165 / 0.05);
   }
   .dark .shadow-glow {
-    box-shadow: 0 0 0 1px oklch(0.76 0.15 85 / 0.4), 0 4px 16px oklch(0.76 0.15 85 / 0.1);
+    box-shadow: 0 1px 2px oklch(0 0 0 / 0.25);
   }
   
   .text-gradient-primary {
-    background: linear-gradient(135deg, oklch(0.30 0.065 165), oklch(0.42 0.08 162));
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: oklch(0.30 0.065 165);
   }
   .text-gradient-gold {
-    background: linear-gradient(135deg, oklch(0.76 0.15 85), oklch(0.85 0.12 85));
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: oklch(0.76 0.15 85);
   }
   
   .focus-ring {
@@ -292,7 +284,7 @@
      The owner sidebar holds 16 items across 4 groups; on laptop-height
      viewports it must scroll. The webkit bar is 10px wide (the drag hit
      area); the thumb is inset with a transparent border so the visible
-     pill stays slim and premium, and it intensifies on hover. Firefox
+     pill stays slim, and it darkens on hover. Firefox
      only supports the `thin` keyword (no pixel widths) — still visible
      and draggable there. */
   .sidebar-scroll {

@@ -77,7 +77,7 @@ export default function AgentWhatsAppPage() {
     <div className="space-y-6">
       <SectionHeading
         title="WhatsApp Templates"
-        description="Pre-approved messaging templates with auto-fill placeholders."
+        description="Message templates with borrower details filled in. Messages open in WhatsApp — they are not sent from here."
         icon={<MessageCircle className="h-5 w-5" />}
         action={
           <Button onClick={() => setBroadcastOpen(true)} size="sm">

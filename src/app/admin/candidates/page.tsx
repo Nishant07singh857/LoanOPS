@@ -81,7 +81,7 @@ function CandidatesPageInner() {
     <div className="space-y-6">
       <SectionHeading
         title="Candidates"
-        description="All candidates across the platform — borrowers with active, pending, or closed loans."
+        description="Borrowers in this organisation, with active, pending or closed loans."
         icon={<Users className="h-5 w-5" />}
       />
 

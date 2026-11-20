@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 
 export default function NotFound() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-8 bg-gradient-to-b from-background via-background to-muted/40">
+    <main className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-8 bg-background">
       <div className="w-full max-w-md">
         <div className="flex items-center gap-2.5 mb-6 justify-center">
           <div className="h-10 w-10 rounded-xl bg-gradient-fintech flex items-center justify-center text-primary-foreground shadow-glow">
@@ -13,7 +13,7 @@ export default function NotFound() {
           </div>
           <div>
             <p className="font-bold tracking-tight leading-none text-base">LoanOps</p>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Premium Loan Operations</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Loan Operations</p>
           </div>
         </div>
 
@@ -29,7 +29,7 @@ export default function NotFound() {
 
             <h1 className="text-2xl font-bold tracking-tight mt-3">Page Not Found</h1>
             <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-              The page or resource you are looking for doesn&apos;t exist, may have been moved, or requires a valid portal link.
+              This page doesn&apos;t exist. It may have been moved, or the link may be wrong.
             </p>
 
             <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">

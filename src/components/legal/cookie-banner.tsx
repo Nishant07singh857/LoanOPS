@@ -39,7 +39,7 @@ export function CookieBanner() {
   return (
     <aside
       aria-label="Cookie and data privacy notice"
-      className="fixed bottom-3 left-3 right-3 sm:left-auto sm:right-5 sm:bottom-5 sm:max-w-md z-50 rounded-2xl border border-border bg-card/95 backdrop-blur-xl p-4 shadow-premium"
+      className="fixed bottom-3 left-3 right-3 sm:left-auto sm:right-5 sm:bottom-5 sm:max-w-md z-50 rounded-2xl border border-border bg-card p-4 shadow-premium"
     >
       <div className="flex items-start gap-3">
         <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5">

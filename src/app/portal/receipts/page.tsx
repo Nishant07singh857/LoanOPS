@@ -126,7 +126,7 @@ export default function ReceiptsPage() {
     <div className="space-y-6">
       <SectionHeading
         title="Receipts"
-        description="Download, print, or email official receipts for every successful payment."
+        description="Download, print or email receipts for your payments."
         icon={<FileText className="h-5 w-5" />}
       />
 

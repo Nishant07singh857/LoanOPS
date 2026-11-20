@@ -108,7 +108,7 @@ export default function OwnerProfilePage() {
               variant="outline"
               className="text-destructive border-destructive/40 hover:bg-destructive/10"
               onClick={() => {
-                toast.success('Signed out', { description: 'See you soon!' })
+                toast.success('Signed out')
                 setTimeout(() => logout(), 600)
               }}
             >

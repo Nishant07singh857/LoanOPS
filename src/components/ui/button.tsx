@@ -10,7 +10,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-gradient-to-r from-primary via-primary/95 to-primary/90 text-primary-foreground shadow-sm hover:brightness-105 active:scale-[0.98]",
+          "bg-primary text-primary-foreground shadow-sm hover:brightness-105 active:scale-[0.98]",
         destructive:
           "bg-destructive text-white shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
         outline:
@@ -23,7 +23,7 @@ const buttonVariants = cva(
         gold:
           "bg-gradient-gold text-slate-950 font-semibold shadow-gold hover:brightness-105 active:scale-[0.98] border border-amber-300/40",
         luxury:
-          "bg-gradient-to-r from-purple-950 via-purple-900 to-indigo-950 text-amber-200 font-medium shadow-glow hover:brightness-110 active:scale-[0.98] border border-amber-400/30",
+          "bg-primary text-primary-foreground font-medium shadow-sm hover:brightness-105 active:scale-[0.98]",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",

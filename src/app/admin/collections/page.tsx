@@ -274,7 +274,7 @@ export default function CollectionsPage() {
     <div className="space-y-6">
       <SectionHeading
         title="Collections"
-        description="Track cash pickups, agent unverified cash in hand, escalations, broken PTPs and overdue loans in one place."
+        description="Cash pickups, unverified cash with agents, escalations, broken PTPs and overdue loans."
         icon={<Wallet className="h-5 w-5" />}
       />
 

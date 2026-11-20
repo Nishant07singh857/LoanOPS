@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const DEFAULT_TITLE = "LoanOps — Premium Loan Operations Platform";
+const DEFAULT_TITLE = "LoanOps — Loan Operations Platform";
 const DEFAULT_DESCRIPTION =
   "Loan operations platform for lending businesses — origination, KYC, disbursement, repayment schedules, collections and audit trails across owner, agent and borrower portals.";
 
@@ -75,7 +75,6 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground min-h-screen overflow-x-hidden selection:bg-primary/20`}
       >
-        <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/5 via-background to-background z-[-1]" />
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
           <QueryProvider>
             <SmoothScroll>

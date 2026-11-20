@@ -7,7 +7,7 @@ import type { PortalNavGroup } from './layout'
 export const CANDIDATE_BRAND = {
   name: 'Sterling Lending',
   subtitle: 'My Loan',
-  accentClass: 'bg-gradient-to-br from-purple-950 via-purple-800 to-amber-600 shadow-glow',
+  accentClass: 'bg-primary',
 } as const
 
 export const CANDIDATE_NAV: PortalNavGroup[] = [
@@ -24,7 +24,7 @@ export const CANDIDATE_NAV: PortalNavGroup[] = [
     label: 'More',
     items: [
       { href: '/portal/receipts', label: 'Receipts', icon: <FileText className="h-4 w-4" /> },
-      { href: '/portal/notifications', label: 'Notifications', icon: <Bell className="h-4 w-4" />, badge: 1 },
+      { href: '/portal/notifications', label: 'Notifications', icon: <Bell className="h-4 w-4" /> },
       { href: '/portal/support', label: 'Support', icon: <LifeBuoy className="h-4 w-4" /> },
       { href: '/portal/profile', label: 'Profile', icon: <UserCircle className="h-4 w-4" /> },
     ],

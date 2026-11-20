@@ -137,7 +137,7 @@ test('buildReminderMessage picks the overdue wording for overdue stages', () => 
     amountPaise: 500000,
     dueDate: istDay('2026-10-29'),
   })
-  assert.ok(msg.includes('OVERDUE'), msg)
+  assert.ok(msg.includes('is now overdue'), msg)
 })
 
 test('buildReceiptMessage carries formatted amount and receipt number', () => {

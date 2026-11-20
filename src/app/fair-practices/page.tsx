@@ -14,8 +14,8 @@ export const metadata = {
 
 export default function FairPracticesPage() {
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-background via-background to-muted/30">
-      <header className="sticky top-0 z-30 bg-background/85 backdrop-blur-xl border-b border-border/60">
+    <div className="min-h-screen flex flex-col bg-background">
+      <header className="sticky top-0 z-30 bg-background border-b border-border">
         <div className="max-w-4xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           <Button variant="ghost" size="sm" asChild className="h-9">
             <Link href="/">

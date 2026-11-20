@@ -76,8 +76,8 @@ export function PortalLayout({ role, groups, brand, children, notifications, nav
   return (
     <TooltipProvider>
       <div className="min-h-screen bg-background flex flex-col w-full overflow-x-hidden transition-colors duration-300">
-        {/* Top bar with subtle luxury gold highlight */}
-        <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-border shadow-sm transition-all duration-300">
+        {/* Top bar */}
+        <header className="sticky top-0 z-30 bg-background border-b border-border shadow-sm transition-all duration-300">
           <div className="flex items-center justify-between gap-2 h-16 px-4 sm:px-6 max-w-full">
             <div className="flex items-center gap-3">
               <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -221,7 +221,7 @@ export function PortalLayout({ role, groups, brand, children, notifications, nav
       {/* Body */}
       <div className="flex flex-1">
         {useSidebar && (
-          <aside className="hidden lg:flex flex-col w-64 xl:w-72 border-r border-border bg-sidebar/30 backdrop-blur-xl sticky top-16 self-start h-[calc(100vh-4rem)] overflow-hidden transition-all duration-300">
+          <aside className="hidden lg:flex flex-col w-64 xl:w-72 border-r border-border bg-sidebar sticky top-16 self-start h-[calc(100vh-4rem)] overflow-hidden transition-all duration-300">
             <SidebarContent
               groups={groups}
               pathname={pathname}
@@ -301,7 +301,7 @@ function SidebarContent({
                     className={cn(
                       'flex items-center gap-3 px-3 py-1 rounded-xl text-sm font-medium transition-all min-h-[36px]',
                       active
-                        ? 'bg-gradient-to-r from-primary via-primary/95 to-primary/90 text-primary-foreground shadow-glow border-l-2 border-amber-400 font-semibold'
+                        ? 'bg-primary text-primary-foreground font-semibold'
                         : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                     )}
                   >
@@ -342,7 +342,7 @@ function SidebarContent({
 
 function BottomNav({ items, pathname, className }: { items: PortalNavItem[]; pathname: string; className?: string }) {
   return (
-    <nav aria-label="Bottom navigation" className={cn('fixed bottom-0 inset-x-0 z-30 bg-background/95 backdrop-blur-xl border-t border-border/80 shadow-[0_-1px_0_0_rgba(212,175,55,0.12)] pb-safe', className)}>
+    <nav aria-label="Bottom navigation" className={cn('fixed bottom-0 inset-x-0 z-30 bg-background border-t border-border pb-safe', className)}>
       <div className="grid gap-1 px-2 pt-2" style={{ gridTemplateColumns: `repeat(${items.length || 5}, minmax(0, 1fr))` }}>
         {items.map((item) => {
           const active = pathname === item.href || (item.href !== '/admin' && item.href !== '/portal' && item.href !== '/agent' && pathname.startsWith(item.href + '/'))
@@ -353,7 +353,7 @@ function BottomNav({ items, pathname, className }: { items: PortalNavItem[]; pat
               aria-current={active ? 'page' : undefined}
               className={cn(
                 'relative flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl text-[10px] font-medium transition-colors min-h-[44px]',
-                active ? 'text-primary dark:text-purple-300 font-semibold' : 'text-muted-foreground'
+                active ? 'text-primary font-semibold' : 'text-muted-foreground'
               )}
             >
               <span className={cn('h-5 w-5 flex items-center justify-center', active && 'scale-110 text-amber-500 dark:text-amber-400 transition-transform')}>

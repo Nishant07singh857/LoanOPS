@@ -58,7 +58,7 @@ export function LegalFooter({ compact = false, className }: LegalFooterProps) {
   return (
     <footer
       className={cn(
-        'mt-auto border-t border-border/60 bg-card/60 backdrop-blur-sm text-muted-foreground',
+        'mt-auto border-t border-border/60 bg-card text-muted-foreground',
         className
       )}
     >
