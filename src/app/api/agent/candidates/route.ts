@@ -1,4 +1,7 @@
-// GET /api/agent/candidates — list candidates assigned to the agent
+// GET /api/agent/candidates — list candidates assigned to the agent,
+// plus unassigned pool candidates in the agent's organisation (pool
+// semantics live in src/lib/agent-candidates.ts, shared with the
+// detail route's rule)
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
@@ -6,6 +9,7 @@ import { requireAgent } from '@/lib/server/auth'
 import { apiHandler, success, notFound, validate, paginate, paginationSchema } from '@/lib/server/api'
 import { decryptPIIForMask } from '@/lib/server/crypto'
 import { maskAadhaar, maskPan, maskBankAccount } from '@/lib/utils'
+import { agentCandidateListWhere } from '@/lib/agent-candidates'
 
 const schema = paginationSchema.extend({
   search: z.string().trim().optional().default(''),
@@ -21,16 +25,11 @@ export const GET = apiHandler(async (req: NextRequest) => {
   const { page, pageSize, search } = validate(schema, params)
   const { skip, take } = paginate(page, pageSize)
 
-  const where = {
+  const where = agentCandidateListWhere({
     organizationId: ctx.user.organizationId,
-    assignedAgentId: agentProfile.id,
-    ...(search ? {
-      OR: [
-        { fullName: { contains: search, mode: 'insensitive' as const } },
-        { mobile: { contains: search } },
-      ],
-    } : {}),
-  }
+    agentProfileId: agentProfile.id,
+    search: search || undefined,
+  })
 
   const [items, total] = await Promise.all([
     db.candidate.findMany({
