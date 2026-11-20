@@ -359,7 +359,7 @@ export default function CollectionsPage() {
 
       {/* Agent Unverified Cash in Hand */}
       <FadeIn>
-        <Card className="shadow-premium border-warning/30 bg-gradient-to-br from-warning/5 via-card to-card">
+        <Card className="shadow-premium border-warning/30 bg-warning/5">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>

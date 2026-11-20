@@ -126,7 +126,7 @@ export default function PaymentsPage() {
 
       {loan && loan.loanNumber ? (
         <FadeIn>
-          <Card className="shadow-premium overflow-hidden border-amber-400/30 bg-gradient-to-br from-amber-500/10 via-card to-card">
+          <Card className="shadow-premium overflow-hidden border-amber-400/30 bg-amber-500/10">
             <CardContent className="p-4 sm:p-6">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div className="flex items-start gap-3.5">

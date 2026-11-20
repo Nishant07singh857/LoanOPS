@@ -423,7 +423,7 @@ export default function LoanDetailPage() {
       </FadeIn>
 
       <FadeIn>
-        <Card className="border-dashed border-success/30 bg-gradient-to-br from-success/5 to-transparent">
+        <Card className="border-dashed border-success/30 bg-success/5">
           <CardContent className="p-4 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-start gap-3">
               <div className="h-10 w-10 rounded-xl bg-success/15 text-success flex items-center justify-center flex-shrink-0">

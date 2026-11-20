@@ -145,7 +145,7 @@ export default function AgentDashboardPage() {
     <div className="space-y-6 sm:space-y-8">
       {/* Welcome banner */}
       <FadeIn>
-        <Card className="overflow-hidden border-info/15 bg-gradient-to-br from-info/10 via-primary/5 to-transparent">
+        <Card className="overflow-hidden border-info/15 bg-info/10">
           <CardContent className="p-4 sm:p-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex items-start gap-3.5">

@@ -156,7 +156,7 @@ export default function SchedulePage() {
 
       {nextDue && (
         <FadeIn>
-          <Card className="shadow-premium border-amber-400/30 bg-gradient-to-br from-amber-500/10 via-card to-card">
+          <Card className="shadow-premium border-amber-400/30 bg-amber-500/10">
             <CardContent className="p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex items-start gap-3.5">
                 <div className="h-12 w-12 rounded-2xl bg-gradient-gold text-slate-950 flex items-center justify-center flex-shrink-0 shadow-gold">

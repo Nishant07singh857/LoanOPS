@@ -132,7 +132,7 @@ export default function CandidateHomePage() {
     <div className="space-y-6 sm:space-y-8">
       {/* Greeting hero */}
       <FadeIn>
-        <Card className="overflow-hidden border-success/15 bg-gradient-to-br from-success/10 via-primary/5 to-transparent">
+        <Card className="overflow-hidden border-success/15 bg-success/10">
           <CardContent className="p-4 sm:p-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex items-start gap-3.5">
@@ -279,7 +279,7 @@ export default function CandidateHomePage() {
             </FadeIn>
 
             <FadeIn delay={0.05}>
-              <Card className="shadow-premium h-full border-warning/20 bg-gradient-to-br from-warning/10 via-card to-card">
+              <Card className="shadow-premium h-full border-warning/20 bg-warning/10">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm flex items-center gap-2 text-warning">
                     <Clock className="h-4 w-4" /> Next Payment Due
@@ -658,7 +658,7 @@ function DraftApplicationFlow({
 
   return (
     <FadeIn>
-      <Card className="shadow-premium border-amber-400/50 bg-gradient-to-br from-amber-500/5 via-card to-card">
+      <Card className="shadow-premium border-amber-400/50 bg-amber-500/5">
         <CardHeader className="space-y-3">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>

@@ -45,7 +45,7 @@ export const REQUIRED_CONSENTS: ConsentDefinition[] = [
     id: 'COMMUNICATION',
     title: 'Promotional Offers & Optional WhatsApp Updates (Optional)',
     description:
-      'I consent to receive optional product updates, financial literacy tips, and pre-approved credit offers via WhatsApp, SMS, or Email. (Note: Transactional payment reminders, digital receipts, and statutory notices will still be sent regardless of this preference.)',
+      'I consent to receive optional product updates, financial literacy tips, and credit offers you may be eligible for via WhatsApp, SMS, or Email. (Note: Transactional payment reminders, digital receipts, and statutory notices will still be sent regardless of this preference.)',
     required: false,
     legalBasis: 'DPDP Act 2023 — Unbundled Optional Consent (Withdrawable Anytime)',
   },
