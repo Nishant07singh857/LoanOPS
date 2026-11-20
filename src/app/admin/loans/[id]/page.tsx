@@ -267,7 +267,7 @@ export default function LoanDetailPage() {
     mutationFn: (input: { tenureMonths: number; newFrequency: string; notes: string }) =>
       api.post(`/api/owner/loans/${params.id}/restructure`, input),
     onSuccess: () => {
-      toast.success('Loan successfully restructured')
+      toast.success('Loan restructured')
       queryClient.invalidateQueries({ queryKey: ['owner-loan', params.id] })
       queryClient.invalidateQueries({ queryKey: ['owner-loans'] })
       queryClient.invalidateQueries({ queryKey: ['owner-dashboard'] })

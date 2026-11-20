@@ -84,7 +84,7 @@ export default function AdminNotificationsPage() {
     <div className="space-y-6">
       <SectionHeading
         title="Notifications"
-        description={isLoading ? 'Loading…' : unread > 0 ? `${unread} unread` : 'You are all caught up.'}
+        description={isLoading ? 'Loading…' : unread > 0 ? `${unread} unread` : 'No unread notifications.'}
         icon={<Bell className="h-5 w-5" />}
         action={
           unread > 0 ? (

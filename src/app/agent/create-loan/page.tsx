@@ -137,7 +137,7 @@ export default function CreateLoanPage() {
         window.scrollTo({ top: 0, behavior: 'smooth' })
       } else {
         setGeneratedLink(res)
-        toast.success('QR Link Generated!')
+        toast.success('QR link generated')
         window.scrollTo({ top: 0, behavior: 'smooth' })
       }
     },
@@ -175,7 +175,7 @@ export default function CreateLoanPage() {
           <Card className="shadow-premium border-success/50 bg-success/5">
             <CardHeader className="pb-2 text-center">
               <CardTitle className="text-xl flex justify-center items-center gap-2 text-success">
-                <CheckCircle2 className="h-6 w-6" /> Success! Link Generated
+                <CheckCircle2 className="h-6 w-6" /> Link generated
               </CardTitle>
               <CardDescription>Share this QR code or link with the borrower to proceed.</CardDescription>
             </CardHeader>

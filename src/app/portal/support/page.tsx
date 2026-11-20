@@ -143,7 +143,7 @@ export default function SupportPage() {
     <div className="space-y-6">
       <SectionHeading
         title="Support"
-        description="We're here for you — reach us via WhatsApp, raise a ticket, or browse FAQs."
+        description="Message your agent on WhatsApp, raise a ticket, or read the FAQs."
         icon={<LifeBuoy className="h-5 w-5" />}
         action={
           <Button size="sm" onClick={() => setNewOpen(true)}>
@@ -184,7 +184,7 @@ export default function SupportPage() {
           </Card>
         </StaggerItem>
         <StaggerItem>
-          <Card className="shadow-premium border-amber-400/30 bg-gradient-to-br from-purple-950/20 via-card to-card">
+          <Card className="shadow-premium">
             <CardContent className="p-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">

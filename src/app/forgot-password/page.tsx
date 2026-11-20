@@ -39,7 +39,7 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-background to-muted/40">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-background">
       <div className="w-full max-w-md">
         <div className="flex items-center gap-2.5 mb-6 justify-center">
           <div className="h-10 w-10 rounded-xl bg-gradient-fintech flex items-center justify-center text-primary-foreground">
@@ -55,7 +55,7 @@ export default function ForgotPasswordPage() {
                 <CheckCircle2 className="h-10 w-10 text-success mx-auto" />
                 <h1 className="text-xl font-bold">Check your email</h1>
                 <p className="text-sm text-muted-foreground">
-                  If an active account matches the details you entered, password reset instructions have been issued. The link expires shortly and can be used once.
+                  If an active account matches the details you entered, password reset instructions have been issued. The link expires in 30 minutes and can be used once.
                 </p>
                 {devResetToken && (
                   <p className="text-xs rounded-lg bg-warning/10 border border-warning/30 px-3 py-2">

@@ -83,7 +83,7 @@ export default function AgentsPage() {
   const createMutation = useMutation({
     mutationFn: (newAgent: any) => api.post('/api/owner/agents', newAgent),
     onSuccess: () => {
-      toast.success('Agent created successfully')
+      toast.success('Agent created')
       queryClient.invalidateQueries({ queryKey: ['owner-agents'] })
       setCreateOpen(false)
     },

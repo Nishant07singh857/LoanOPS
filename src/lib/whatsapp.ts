@@ -44,21 +44,21 @@ export function buildWhatsAppMessage(template: string, ctx: WhatsAppContext): st
 
 export const WHATSAPP_TEMPLATES = {
   PAYMENT_REMINDER:
-    'Hello {candidateName}, this is a friendly reminder from {orgName}. Your loan {loanNumber} installment of ₹{amount} is due on {dueDate}. Please pay on time to maintain good standing. Thank you.',
+    'Hello {candidateName}, a reminder from {orgName}: your installment of ₹{amount} for loan {loanNumber} is due on {dueDate}.',
   DUE_TODAY:
-    'Hi {candidateName}, your loan {loanNumber} payment of ₹{amount} is due TODAY ({dueDate}). Please complete payment via UPI or contact us. - {orgName}',
+    'Hi {candidateName}, your payment of ₹{amount} for loan {loanNumber} is due today ({dueDate}). Please contact us if you need help. - {orgName}',
   OVERDUE:
-    'Dear {candidateName}, your loan {loanNumber} payment of ₹{amount} is OVERDUE (was due {dueDate}). Please pay immediately to avoid late charges. Contact us for assistance. - {orgName}',
+    'Hello {candidateName}, your payment of ₹{amount} for loan {loanNumber} was due on {dueDate} and is now overdue. Please contact us to arrange payment. - {orgName}',
   PTP_REMINDER:
-    'Hello {candidateName}, as promised, your payment of ₹{amount} for loan {loanNumber} is due tomorrow ({dueDate}). Kindly ensure payment. - {orgName}',
+    'Hello {candidateName}, a reminder that your promised payment of ₹{amount} for loan {loanNumber} is due tomorrow ({dueDate}). - {orgName}',
   RECEIPT:
-    'Hello {candidateName}, we have received your payment of ₹{amount} for loan {loanNumber}. Thank you! - {orgName}',
+    'Hello {candidateName}, we have received your payment of ₹{amount} for loan {loanNumber}. - {orgName}',
   DOCUMENT_REQUEST:
-    'Hello {candidateName}, we need additional documents for your loan application with {orgName}. Please upload: {amount}. Reply here if you have questions.',
+    'Hello {candidateName}, we need a few more documents for your loan application with {orgName}: {amount}. Reply here if you have questions.',
   APPLICATION_REMINDER:
-    'Hi {candidateName}, your loan application with {orgName} is pending. Please complete the application using the link we shared. - {orgName}',
+    'Hi {candidateName}, your loan application with {orgName} is not complete yet. Please finish it using the link we shared. - {orgName}',
   GENERAL_FOLLOW_UP:
-    'Hello {candidateName}, this is {agentName} from {orgName} regarding your loan {loanNumber}. Please give us a call back at your convenience.',
+    'Hello {candidateName}, this is {agentName} from {orgName} about your loan {loanNumber}. Please call back when you can.',
   CANDIDATE_TO_AGENT:
     'Hello, I need assistance with my loan {loanNumber} from {orgName}. Please contact me back. - {candidateName}',
   CANDIDATE_TO_OWNER:

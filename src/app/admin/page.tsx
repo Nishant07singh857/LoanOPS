@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic'
 import { motion } from 'framer-motion'
 import {
   Banknote, TrendingUp, Wallet, AlertTriangle, Landmark, Activity,
-  FileText, Clock, ArrowRight, Sparkles, Plus, QrCode, FileCheck,
+  FileText, Clock, ArrowRight, LayoutGrid, Plus, QrCode, FileCheck, ShieldCheck,
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { SectionHeading } from '@/components/ui/section-heading'
@@ -240,7 +240,7 @@ export default function AdminDashboardPage() {
     <div className="space-y-6 sm:space-y-8">
       <SectionHeading
         title="Owner Dashboard"
-        description="Portfolio pulse, disbursement & collections health, AI signals and recent activity."
+        description="Disbursements, collections, overdue loans and recent activity."
         icon={<Activity className="h-5 w-5" />}
         action={
           <Button asChild variant="outline" size="sm" className="min-h-[44px] sm:min-h-8">
@@ -256,7 +256,7 @@ export default function AdminDashboardPage() {
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex items-start gap-3">
                 <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
-                  <Sparkles className="h-5 w-5" />
+                  <LayoutGrid className="h-5 w-5" />
                 </div>
                 <div>
                   <p className="font-semibold text-sm sm:text-base">Quick actions</p>
@@ -311,7 +311,6 @@ export default function AdminDashboardPage() {
               <KPICard
                 label="Total Disbursed"
                 value={formatPaiseToINRShort(Number(kpis.totalDisbursed))}
-                delta={{ value: 'live', positive: true }}
                 icon={<Banknote className="h-5 w-5" />}
                 variant="default"
                
@@ -321,7 +320,6 @@ export default function AdminDashboardPage() {
               <KPICard
                 label="Outstanding Principal"
                 value={formatPaiseToINRShort(Number(kpis.outstandingPrincipal))}
-                delta={{ value: 'live', positive: false }}
                 icon={<Wallet className="h-5 w-5" />}
                 variant="info"
                
@@ -331,7 +329,6 @@ export default function AdminDashboardPage() {
               <KPICard
                 label="Total Collected"
                 value={formatPaiseToINRShort(Number(kpis.totalCollected))}
-                delta={{ value: 'live', positive: true }}
                 icon={<TrendingUp className="h-5 w-5" />}
                 variant="success"
                
@@ -341,7 +338,6 @@ export default function AdminDashboardPage() {
               <KPICard
                 label="Total Overdue"
                 value={formatPaiseToINRShort(Number(kpis.totalOverdue))}
-                delta={{ value: 'live', positive: false }}
                 icon={<AlertTriangle className="h-5 w-5" />}
                 variant="destructive"
                
@@ -351,7 +347,6 @@ export default function AdminDashboardPage() {
               <KPICard
                 label="Active Loans"
                 value={String(kpis.activeLoans)}
-                delta={{ value: 'live', positive: true }}
                 icon={<Landmark className="h-5 w-5" />}
                 variant="default"
                
@@ -361,7 +356,6 @@ export default function AdminDashboardPage() {
               <KPICard
                 label="Collection Rate"
                 value={`${kpis.collectionRate.toFixed(1)}%`}
-                delta={{ value: 'live', positive: true }}
                 icon={<Activity className="h-5 w-5" />}
                 variant="success"
                
@@ -371,7 +365,6 @@ export default function AdminDashboardPage() {
               <KPICard
                 label="Pending Applications"
                 value={String(kpis.pendingApplications)}
-                delta={{ value: 'live', positive: false }}
                 icon={<FileText className="h-5 w-5" />}
                 variant="warning"
                
@@ -381,7 +374,6 @@ export default function AdminDashboardPage() {
               <KPICard
                 label="Overdue Loans"
                 value={String(kpis.overdueLoans)}
-                delta={{ value: 'live', positive: false }}
                 icon={<AlertTriangle className="h-5 w-5" />}
                 variant="destructive"
                
@@ -445,7 +437,7 @@ export default function AdminDashboardPage() {
         </FadeIn>
       </div>
 
-      {/* AI alerts + Recent activity */}
+      {/* risk alerts + Recent activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <FadeIn>
           <Card className="border-border shadow-premium h-full">
@@ -453,11 +445,11 @@ export default function AdminDashboardPage() {
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2.5">
                   <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                    <Sparkles className="h-5 w-5" />
+                    <AlertTriangle className="h-5 w-5" />
                   </div>
                   <div>
-                    <CardTitle className="text-base sm:text-lg">AI Alerts</CardTitle>
-                    <CardDescription className="text-xs">Risk signals requiring attention</CardDescription>
+                    <CardTitle className="text-base sm:text-lg">Risk alerts</CardTitle>
+                    <CardDescription className="text-xs">Overdue loans, broken promises-to-pay and missed installments</CardDescription>
                   </div>
                 </div>
                 <StatusBadge variant="AI_HIGH">{aiAlerts.length} active</StatusBadge>
@@ -465,23 +457,23 @@ export default function AdminDashboardPage() {
             </CardHeader>
             <CardContent className="space-y-3 max-h-[440px] overflow-y-auto no-scrollbar">
               {aiLoading ? (
-                <div className="space-y-3" role="status" aria-label="Loading AI alerts">
+                <div className="space-y-3" role="status" aria-label="Loading risk alerts">
                   {Array.from({ length: 3 }).map((_, i) => (
                     <Skeleton key={i} className="h-24 w-full rounded-2xl" />
                   ))}
                 </div>
               ) : aiError ? (
                 <div className="py-8 flex flex-col items-center justify-center gap-2 text-center">
-                  <p className="text-sm text-destructive font-medium">Failed to load AI insights</p>
+                  <p className="text-sm text-destructive font-medium">Failed to load risk alerts</p>
                   <Button variant="outline" size="sm" onClick={() => refetchAi()} className="min-h-[44px] sm:min-h-8">
                     Retry
                   </Button>
                 </div>
               ) : aiAlerts.length === 0 ? (
                 <EmptyState
-                  icon={<Sparkles className="h-6 w-6" />}
-                  title="No AI alerts"
-                  description="All loans are healthy. Insights appear when overdue loans, broken PTPs, or repeated missed installments are detected."
+                  icon={<ShieldCheck className="h-6 w-6" />}
+                  title="No risk alerts"
+                  description="Nothing needs attention right now. Alerts appear here when a loan goes overdue, a promise-to-pay is broken, or installments are missed repeatedly."
                 />
               ) : (
                 aiAlerts.map((a) => (

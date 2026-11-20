@@ -214,7 +214,7 @@ export default function PrintableReceiptPage() {
         <FadeIn>
           <Card className="shadow-premium overflow-hidden border-border print:shadow-none print:border-slate-300">
             {/* Official Header Banner */}
-            <div className="bg-gradient-to-r from-success/15 via-primary/10 to-transparent p-6 border-b border-border print:bg-transparent">
+            <div className="bg-success/15 p-6 border-b border-border print:bg-transparent">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div className="flex items-start gap-3.5">
                   <div className="h-12 w-12 rounded-2xl bg-success text-success-foreground flex items-center justify-center flex-shrink-0 shadow-sm">

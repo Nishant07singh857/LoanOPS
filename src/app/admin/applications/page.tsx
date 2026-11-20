@@ -88,7 +88,7 @@ export default function ApplicationsPage() {
     },
     onSuccess: (_, { action }) => {
       const verb = action === 'REJECT' ? 'rejected' : action === 'APPROVE' ? 'approved' : 'deleted'
-      toast.success(`Application ${verb} successfully`)
+      toast.success(`Application ${verb}`)
       queryClient.invalidateQueries({ queryKey: ['owner-applications'] })
       queryClient.invalidateQueries({ queryKey: ['owner-loans'] })
       queryClient.invalidateQueries({ queryKey: ['owner-dashboard'] })

@@ -180,7 +180,7 @@ export default function ProfilePage() {
     <div className="space-y-6">
       <SectionHeading
         title="My Profile"
-        description="Your personal, KYC, bank, employment, and DPDP Act 2023 data privacy rights — all in one place."
+        description="Your personal, KYC, bank and employment details, and your DPDP Act 2023 data rights."
         icon={<UserCircle className="h-5 w-5" />}
         action={
           <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>

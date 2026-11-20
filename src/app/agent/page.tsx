@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Home, ListTodo, Banknote, Handshake, AlertTriangle, PhoneCall,
   MessageCircle, CheckCircle2, ArrowRight, Clock, MapPin, Sun,
-  Sparkles, ChevronRight, Users,
+  LayoutGrid, ChevronRight, Users,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { KPICard } from '@/components/ui/kpi-card'
@@ -145,7 +145,7 @@ export default function AgentDashboardPage() {
     <div className="space-y-6 sm:space-y-8">
       {/* Welcome banner */}
       <FadeIn>
-        <Card className="overflow-hidden border-info/15 bg-gradient-to-br from-info/10 via-primary/5 to-transparent">
+        <Card className="overflow-hidden border-info/15 bg-info/10">
           <CardContent className="p-4 sm:p-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex items-start gap-3.5">
@@ -220,7 +220,7 @@ export default function AgentDashboardPage() {
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2.5">
               <div className="h-9 w-9 rounded-xl bg-success/15 text-success flex items-center justify-center">
-                <Sparkles className="h-5 w-5" />
+                <LayoutGrid className="h-5 w-5" />
               </div>
               <div>
                 <CardTitle className="text-base">Quick Actions</CardTitle>

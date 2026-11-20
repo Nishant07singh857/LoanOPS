@@ -274,7 +274,7 @@ export default function CollectionsPage() {
     <div className="space-y-6">
       <SectionHeading
         title="Collections"
-        description="Track cash pickups, agent unverified cash in hand, escalations, broken PTPs and overdue loans in one place."
+        description="Cash pickups, unverified cash with agents, escalations, broken PTPs and overdue loans."
         icon={<Wallet className="h-5 w-5" />}
       />
 
@@ -359,7 +359,7 @@ export default function CollectionsPage() {
 
       {/* Agent Unverified Cash in Hand */}
       <FadeIn>
-        <Card className="shadow-premium border-warning/30 bg-gradient-to-br from-warning/5 via-card to-card">
+        <Card className="shadow-premium border-warning/30 bg-warning/5">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>

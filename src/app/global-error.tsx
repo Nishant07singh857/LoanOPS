@@ -65,8 +65,7 @@ export default function GlobalError({
             Something went wrong
           </h1>
           <p style={{ margin: '0.5rem 0 0', fontSize: '0.875rem', lineHeight: 1.6, color: '#64748b' }}>
-            We encountered an unexpected error while loading this page. Your financial data and
-            ledger records remain safe.
+            This page failed to load. Try again — if it keeps happening, contact support.
           </p>
           {error?.digest && (
             <p

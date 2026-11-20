@@ -57,7 +57,7 @@ test.describe('Create Loan Application', () => {
     await generateResponse;
 
     // Verify success banner and QR link are visible
-    await expect(page.getByText('Success! Link Generated')).toBeVisible();
+    await expect(page.getByText('Link generated', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Copy' })).toBeVisible();
   });
 });

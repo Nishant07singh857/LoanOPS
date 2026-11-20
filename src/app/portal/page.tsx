@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Wallet, CreditCard, CalendarClock, FileText, MessageCircle,
   Bell, ShieldCheck, Landmark, CheckCircle2, Clock, ChevronRight,
-  ArrowRight, Sparkles, Sun, IndianRupee, Lock, LifeBuoy,
+  ArrowRight, LayoutGrid, Sun, IndianRupee, Lock, LifeBuoy,
   Upload, AlertCircle, Eye, EyeOff, Loader2, IdCard, Building2,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -36,7 +36,7 @@ import {
 } from '@/lib/utils'
 
 const TRUST = [
-  { icon: <ShieldCheck className="h-4 w-4" />, label: 'Bank-grade security' },
+  { icon: <ShieldCheck className="h-4 w-4" />, label: 'Access logged and audited' },
   { icon: <Lock className="h-4 w-4" />, label: 'Personal data encrypted' },
 ]
 
@@ -132,7 +132,7 @@ export default function CandidateHomePage() {
     <div className="space-y-6 sm:space-y-8">
       {/* Greeting hero */}
       <FadeIn>
-        <Card className="overflow-hidden border-success/15 bg-gradient-to-br from-success/10 via-primary/5 to-transparent">
+        <Card className="overflow-hidden border-success/15 bg-success/10">
           <CardContent className="p-4 sm:p-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex items-start gap-3.5">
@@ -144,7 +144,7 @@ export default function CandidateHomePage() {
                     <Sun className="h-3.5 w-3.5" /> {today}
                   </p>
                   <h1 className="text-lg sm:text-2xl font-bold tracking-tight mt-0.5">
-                    Hello, {firstName} <span className="inline-block">👋</span>
+                    Hello, {firstName}
                   </h1>
                   <p className="text-xs sm:text-sm text-muted-foreground mt-1">
                     {loanLoading ? (
@@ -152,9 +152,9 @@ export default function CandidateHomePage() {
                     ) : loan?.loanNumber ? (
                       <>Your loan is <span className="font-semibold text-success">on track</span>. {paidCount} of {installmentsTotal} installments paid.</>
                     ) : loan?.draftApplication ? (
-                      <>Complete your loan application below to unlock instant disbursement.</>
+                      <>Complete your loan application below. Your lender will review it and confirm the next steps.</>
                     ) : (
-                      <>Welcome! No active loan yet — check back after your application is approved.</>
+                      <>No active loan yet. Once your application is approved, your loan will appear here.</>
                     )}
                   </p>
                 </div>
@@ -279,7 +279,7 @@ export default function CandidateHomePage() {
             </FadeIn>
 
             <FadeIn delay={0.05}>
-              <Card className="shadow-premium h-full border-warning/20 bg-gradient-to-br from-warning/10 via-card to-card">
+              <Card className="shadow-premium h-full border-warning/20 bg-warning/10">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm flex items-center gap-2 text-warning">
                     <Clock className="h-4 w-4" /> Next Payment Due
@@ -312,11 +312,11 @@ export default function CandidateHomePage() {
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2.5">
                   <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                    <Sparkles className="h-5 w-5" />
+                    <LayoutGrid className="h-5 w-5" />
                   </div>
                   <div>
                     <CardTitle className="text-base">Quick Actions</CardTitle>
-                    <CardDescription className="text-xs">Everything you need, one tap away</CardDescription>
+                    <CardDescription className="text-xs">Payments, schedule, receipts and support</CardDescription>
                   </div>
                 </div>
               </CardHeader>
@@ -658,7 +658,7 @@ function DraftApplicationFlow({
 
   return (
     <FadeIn>
-      <Card className="shadow-premium border-amber-400/50 bg-gradient-to-br from-amber-500/5 via-card to-card">
+      <Card className="shadow-premium border-amber-400/50 bg-amber-500/5">
         <CardHeader className="space-y-3">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
@@ -666,7 +666,7 @@ function DraftApplicationFlow({
                 <FileText className="h-5 w-5" /> Complete Your Loan Application
               </CardTitle>
               <CardDescription className="mt-0.5">
-                Application <span className="font-mono font-medium">{draftApplication.applicationNumber}</span> · Follow the 3 quick steps below to submit for instant review.
+                Application <span className="font-mono font-medium">{draftApplication.applicationNumber}</span> · Follow the 3 steps below to submit it for review.
               </CardDescription>
             </div>
             <StatusBadge variant="PENDING">Step {step} of 3</StatusBadge>

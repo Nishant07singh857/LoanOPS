@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { FileSignature, Plus, Calendar, Eye, CheckCircle2, AlertTriangle, RefreshCw, Sparkles } from 'lucide-react'
+import { FileSignature, Plus, Calendar, Eye, CheckCircle2, AlertTriangle, RefreshCw, FileText } from 'lucide-react'
 import { SectionHeading } from '@/components/ui/section-heading'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -142,7 +142,7 @@ export default function AgreementsPage() {
         <EmptyState
           icon={<FileSignature className="h-6 w-6" />}
           title="No agreement templates"
-          description="Create your first agreement template to get started."
+          description="No templates yet. Create the first one above."
         />
       ) : (
         <StaggerContainer className="space-y-3">
@@ -220,7 +220,7 @@ export default function AgreementsPage() {
                   className="h-7 px-2 text-xs text-primary"
                   onClick={() => setBody(DEFAULT_TRANSPARENT_BODY)}
                 >
-                  <Sparkles className="h-3.5 w-3.5" /> Insert Transparent KFS Template
+                  <FileText className="h-3.5 w-3.5" /> Insert Transparent KFS Template
                 </Button>
               </div>
               <Textarea id="body" rows={6} value={body} onChange={(e) => setBody(e.target.value)} placeholder="# Loan Agreement&#10;&#10;This agreement is entered into between..." className="font-mono text-base sm:text-xs" />

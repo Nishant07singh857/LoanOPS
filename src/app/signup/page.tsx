@@ -66,7 +66,7 @@ export default function SignupPage() {
         consents,
         ...(needsClaimCode && claimCode.trim() ? { claimCode: claimCode.trim() } : {}),
       })
-      toast.success('Account created successfully', { description: 'Please log in to continue' })
+      toast.success('Account created', { description: 'Please sign in to continue' })
       router.push('/login?role=CANDIDATE')
     } catch (err: any) {
       const message = err?.message || 'Failed to create account'
@@ -84,24 +84,23 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen flex bg-gradient-to-br from-background via-background to-muted/40">
+    <div className="min-h-screen flex bg-background">
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-fintech" />
-        <div className="absolute -top-24 -right-24 h-96 w-96 rounded-full bg-primary-foreground/10 blur-3xl" />
         <div className="relative flex flex-col justify-between p-12 text-primary-foreground">
           <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-xl bg-primary-foreground/15 backdrop-blur flex items-center justify-center">
+            <div className="h-11 w-11 rounded-xl bg-primary-foreground/15 flex items-center justify-center">
               <Wallet className="h-6 w-6" />
             </div>
             <div>
               <p className="font-bold tracking-tight text-lg">{COMPLIANCE_CONFIG.companyName}</p>
-              <p className="text-xs text-primary-foreground/70 tracking-wider">Premium Loan Operations</p>
+              <p className="text-xs text-primary-foreground/70 tracking-wider">Loan Operations</p>
             </div>
           </div>
           <div className="max-w-md">
             <h2 className="text-3xl font-bold leading-tight">Create your account.</h2>
             <p className="mt-3 text-primary-foreground/80">
-              Apply for loans, review your Key Facts Statement (KFS), view schedules, and make payments seamlessly.
+              Apply for loans, review your Key Facts Statement (KFS), view your schedule, and make payments.
             </p>
           </div>
           <div className="text-xs text-primary-foreground/60 flex items-center gap-2">
@@ -119,7 +118,7 @@ export default function SignupPage() {
             </div>
             <div>
               <p className="font-bold leading-none">{COMPLIANCE_CONFIG.companyName}</p>
-              <p className="text-[10px] text-muted-foreground tracking-wider mt-0.5">Premium Loan Operations</p>
+              <p className="text-[10px] text-muted-foreground tracking-wider mt-0.5">Loan Operations</p>
             </div>
           </div>
 

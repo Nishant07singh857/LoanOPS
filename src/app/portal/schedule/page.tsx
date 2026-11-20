@@ -93,7 +93,7 @@ export default function SchedulePage() {
     <div className="space-y-6">
       <SectionHeading
         title="Repayment Schedule"
-        description="Every installment, at a glance. Coordinate cash pickup with your assigned field agent."
+        description="Every installment for this loan, with due dates and status. Coordinate cash pickup with your assigned field agent."
         icon={<CalendarClock className="h-5 w-5" />}
       />
 
@@ -114,7 +114,7 @@ export default function SchedulePage() {
 
       {installments.length > 0 && (
         <FadeIn>
-          <Card className="shadow-premium border-amber-400/30 bg-gradient-to-br from-purple-950/20 via-card to-card">
+          <Card className="shadow-premium">
             <CardContent className="p-4 sm:p-6 space-y-4">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2.5">
@@ -156,7 +156,7 @@ export default function SchedulePage() {
 
       {nextDue && (
         <FadeIn>
-          <Card className="shadow-premium border-amber-400/30 bg-gradient-to-br from-amber-500/10 via-card to-card">
+          <Card className="shadow-premium border-amber-400/30 bg-amber-500/10">
             <CardContent className="p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex items-start gap-3.5">
                 <div className="h-12 w-12 rounded-2xl bg-gradient-gold text-slate-950 flex items-center justify-center flex-shrink-0 shadow-gold">

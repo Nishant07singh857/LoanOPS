@@ -91,35 +91,34 @@ function LoginInner() {
   }
 
   return (
-    <div className="min-h-screen flex bg-gradient-to-br from-background via-background to-muted/40">
+    <div className="min-h-screen flex bg-background">
       {/* Left panel (brand) */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-fintech" />
-        <div className="absolute -top-24 -right-24 h-96 w-96 rounded-full bg-primary-foreground/10 blur-3xl" />
         <div className="relative flex flex-col justify-between p-12 text-primary-foreground">
           <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-xl bg-primary-foreground/15 backdrop-blur flex items-center justify-center">
+            <div className="h-11 w-11 rounded-xl bg-primary-foreground/15 flex items-center justify-center">
               <Wallet className="h-6 w-6" />
             </div>
             <div>
               <p className="font-bold tracking-tight text-lg">LoanOps</p>
-              <p className="text-xs text-primary-foreground/70 tracking-wider">Premium Loan Operations</p>
+              <p className="text-xs text-primary-foreground/70 tracking-wider">Loan Operations</p>
             </div>
           </div>
 
           <div className="max-w-md">
-            <h2 className="text-3xl font-bold leading-tight">Bank-grade lending, end-to-end.</h2>
+            <h2 className="text-3xl font-bold leading-tight">Loan operations, from application to closure.</h2>
             <p className="mt-3 text-primary-foreground/80">
-              Origination, KYC, agreement, disbursement, repayments, collections, ledger, reconciliation, AI insights & audit — unified.
+              Applications, KYC, agreements, disbursement, repayments, collections, ledger and reconciliation — for owners, agents and borrowers.
             </p>
             <div className="mt-6 grid grid-cols-2 gap-3">
               {[
-                ['Real auth', 'HTTP-only cookie sessions'],
-                ['RBAC', 'Server-side authorization'],
-                ['BigInt paise', 'No float math'],
-                ['Audit trail', 'Every action logged'],
+                ['Sessions', 'Signed, HTTP-only cookies'],
+                ['Access control', 'Checked on the server'],
+                ['Amounts in paise', 'No rounding to floats'],
+                ['Audit log', 'Sign-ins and changes recorded'],
               ].map(([t, d]) => (
-                <div key={t} className="rounded-xl bg-primary-foreground/20 border border-primary-foreground/10 backdrop-blur p-3">
+                <div key={t} className="rounded-xl bg-primary-foreground/20 border border-primary-foreground/10 p-3">
                   <p className="font-semibold text-sm">{t}</p>
                   <p className="text-xs text-primary-foreground/80 mt-0.5">{d}</p>
                 </div>
@@ -129,7 +128,7 @@ function LoginInner() {
 
           <div className="text-xs text-primary-foreground/60 flex items-center gap-2">
             <ShieldCheck className="h-3.5 w-3.5" />
-            <span>Multi-tenant · Neon PostgreSQL · Prisma</span>
+            <span>Every sign-in and change is recorded in the audit log.</span>
           </div>
         </div>
       </div>
@@ -148,7 +147,7 @@ function LoginInner() {
             </div>
             <div>
               <p className="font-bold leading-none">LoanOps</p>
-              <p className="text-[10px] text-muted-foreground tracking-wider mt-0.5">Premium Loan Operations</p>
+              <p className="text-[10px] text-muted-foreground tracking-wider mt-0.5">Loan Operations</p>
             </div>
           </div>
 
